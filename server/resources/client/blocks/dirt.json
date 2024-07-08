@@ -1,0 +1,17 @@
+{
+    "parent": "default_block.json",
+    "name": "dirt",
+    "faces": {
+        "top": "dirt.png",
+        "bottom": "dirt.png",
+        "left": "dirt.png",
+        "right": "dirt.png",
+        "front": "dirt.png",
+        "back": "dirt.png"
+    },
+    "tools": ["shovel"],
+    "drop": {
+        "requires_tool": false,
+        "drop": "dirt"
+    }
+}

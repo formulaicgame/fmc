@@ -1,0 +1,17 @@
+{
+    "parent": "default_block.json",
+    "name": "stone",
+    "faces": {
+        "top": "stone.png",
+        "bottom": "stone.png",
+        "left": "stone.png",
+        "right": "stone.png",
+        "front": "stone.png",
+        "back": "stone.png"
+    },
+    "tools": ["pickaxe"],
+    "drop": {
+        "requires_tool": true,
+        "drop": "stone"
+    }
+}

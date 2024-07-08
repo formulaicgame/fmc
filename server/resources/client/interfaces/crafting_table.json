@@ -1,0 +1,125 @@
+{
+    "style": {
+        "margin": {
+            "left": "Auto",
+            "right": "Auto",
+            "top": "Auto",
+            "bottom": "Auto" 
+        }
+    },
+    "exclusive": true,
+    "image": "crafting_table.png",
+    "content": {
+        "Nodes": [
+            {
+                "path": "hotbar",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 9
+                    },
+                    "top": {
+                        "Px": 142
+                    },
+                    "width": {
+                        "Px": 160
+                    },
+                    "height": {
+                        "Px": 16
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": true
+                    }
+                }
+            },
+            {
+                "path": "inventory",
+                "style": {
+                    "position_type": "Absolute",
+                    "flex_wrap": "Wrap",
+                    "left": {
+                        "Px": 9
+                    },
+                    "top": {
+                        "Px": 84
+                    },
+                    "width": {
+                        "Px": 160
+                    },
+                    "height": {
+                        "Px": 16
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    },
+                    "row_gap": {
+                        "Px": 2
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": true
+                    }
+                }
+            },
+            {
+                "path": "crafting_table/input",
+                "style": {
+                    "position_type": "Absolute",
+                    "flex_wrap": "Wrap",
+                    "left": {
+                        "Px": 31
+                    },
+                    "top": {
+                        "Px": 17
+                    },
+                    "width": {
+                        "Px": 52
+                    },
+                    "height": {
+                        "Px": 52
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    },
+                    "row_gap": {
+                        "Px": 2
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": false
+                    }
+                }
+            },
+            {
+                "path": "crafting_table/output",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 126
+                    },
+                    "top": {
+                        "Px": 35
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": []
+                    }
+                }
+            }
+        ]
+    }
+}

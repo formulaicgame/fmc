@@ -1,0 +1,7 @@
+{
+    "name": "Torch",
+    "image": "torch.png",
+    "block": "torch",
+    "equip_model": "torch",
+    "stack_size": 64
+}

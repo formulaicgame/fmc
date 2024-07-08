@@ -1,0 +1,23 @@
+[package]
+name = "fmc_networking"
+version = "0.5.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = { version = "0.13.2", features = [], default-features = false }
+bincode = "1.3.3"
+crossbeam-channel = "0.5.8"
+dashmap = "5.5.3"
+derive_more = "0.99.17"
+downcast-rs = "1.2.0"
+serde = { version = "1.0.188", features = ["derive"] }
+thiserror = "1.0.48"
+tokio = { version = "1.32.0", features = ["net", "io-util", "sync", "rt-multi-thread", "time"] }
+typetag = "0.2.13"
+serde_json = { path = "../json"}
+fmc_networking_derive = { path = "./fmc_networking_derive" }
+
+#[dev-dependencies]
+#bevy = { version = "0.6.1" }

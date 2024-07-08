@@ -1,0 +1,7 @@
+{
+    "name": "Sand",
+    "image": "sand.png",
+    "block": "sand",
+    "equip_model": "sand",
+    "stack_size": 64
+}

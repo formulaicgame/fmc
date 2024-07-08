@@ -1,0 +1,6 @@
+{
+    "name": "Hoe",
+    "image": "hoe.png",
+    "equip_model": "hoe",
+    "stack_size": 1
+}

@@ -1,0 +1,17 @@
+{
+    "parent": "default_block.json",
+    "name": "oak",
+    "faces": {
+        "top": "oak_top.png",
+        "bottom": "oak_top.png",
+        "left": "oak_side.png",
+        "right": "oak_side.png",
+        "front": "oak_side.png",
+        "back": "oak_side.png"
+    },
+    "tools": ["axe"],
+    "drop": {
+        "requires_tool": false,
+        "drop": "oak"
+    }
+}

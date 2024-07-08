@@ -1,0 +1,10 @@
+[
+    {
+        "command": "/interface inventory",
+        "key_binding": "e"
+    },
+    {
+        "command": "/interface chat",
+        "key_binding": "t"
+    }
+]

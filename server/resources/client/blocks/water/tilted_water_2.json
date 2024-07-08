@@ -1,0 +1,183 @@
+{
+    "type": "cube",
+    "name": "tilted_water_2",
+    "material": "water",
+    "friction": {
+        "drag": [
+            0.8,
+            0.5,
+            0.8
+        ]
+    },
+    "light_attenuation": 1,
+    "fog": {
+        "color": {
+            "Rgba": {
+                "red": 0,
+                "green": 0,
+                "blue": 1,
+                "alpha": 1
+            }
+        },
+        "distance": 50
+    },
+    "is_rotatable": true,
+    "quads": [
+        {
+            "vertices": [
+                [
+                    0.0,
+                    0.2,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.3,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.3,
+                    0.0
+                ],
+                [
+                    1.0,
+                    0.2,
+                    1.0
+                ]
+            ],
+            "texture": "still_water.png",
+            "rotate_texture": false
+        },
+        {
+            "vertices": [
+                [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    0.0
+                ]
+            ],
+            "texture": "still_water.png",
+            "cull_face": "bottom"
+        },
+        {
+            "vertices": [
+                [
+                    1.0,
+                    0.2,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.3,
+                    0.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    0.0
+                ]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "right"
+        },
+        {
+            "vertices": [
+                [
+                    0.0,
+                    0.2,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.3,
+                    1.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    1.0
+                ]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "left"
+        },
+        {
+            "vertices": [
+                [
+                    0.0,
+                    0.3,
+                    1.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.2,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    1.0
+                ]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "front"
+        },
+        {
+            "vertices": [
+                [
+                    1.0,
+                    0.3,
+                    0.0
+                ],
+                [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.2,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
+            ],
+            "texture": "flowing_water.png",
+            "cull_face": "back"
+        }
+    ]
+}

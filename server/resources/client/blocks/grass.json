@@ -1,0 +1,22 @@
+{
+    "parent": "default_block.json",
+    "name": "grass",
+    "faces": {
+        "top": "grass_top.png",
+        "bottom": "dirt.png",
+        "left": "grass_side.png",
+        "right": "grass_side.png",
+        "front": "grass_side.png",
+        "back": "grass_side.png"
+    },
+    "drop": {
+        "requires_tool": false,
+        "drop": "dirt"
+    },
+    "sound": [
+        "server_assets/audio/grass_1.ogg",
+        "server_assets/audio/grass_2.ogg",
+        "server_assets/audio/grass_3.ogg",
+        "server_assets/audio/grass_4.ogg"
+    ]
+}

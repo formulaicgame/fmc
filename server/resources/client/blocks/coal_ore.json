@@ -1,0 +1,17 @@
+{
+    "parent": "default_block.json",
+    "name": "coal_ore",
+    "faces": {
+        "top": "coal_ore.png",
+        "bottom": "coal_ore.png",
+        "left": "coal_ore.png",
+        "right": "coal_ore.png",
+        "front": "coal_ore.png",
+        "back": "coal_ore.png"
+    },
+    "tools": ["pickaxe"],
+    "drop": {
+        "requires_tool": true,
+        "drop": "coal_ore"
+    }
+}

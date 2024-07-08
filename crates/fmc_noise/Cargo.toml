@@ -1,0 +1,20 @@
+[package]
+name = "noise"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+multiversion = { git = "https://github.com/fmcgg/multiversion" }
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "benchmark"
+harness = false
+
+#[profile.release]
+#debug=true
+

@@ -1,0 +1,188 @@
+{
+  "path": "death_screen",
+  "exclusive": true,
+  "style": {
+    "position_type": "Absolute",
+    "flex_direction": "Column",
+    "justify_content": "Center",
+    "align_items": "Center",
+    "row_gap": {
+      "Px": 10
+    },
+    "width": {
+      "Percent": 100.0
+    },
+    "height": {
+      "Percent": 100.0
+    }
+  },
+  "background_color": {
+    "Rgba": {
+      "red": 0.25,
+      "green": 0.25,
+      "blue": 0.25,
+      "alpha": 0.5
+    }
+  },
+  "content": {
+    "Nodes": [
+      {
+        "style": {
+          "justify_content": "Center",
+          "align_items": "Center",
+          "width": {
+              "Percent": 100
+          }
+        },
+        "content": {
+            "Text": {
+                "text": "Total Death!",
+                "font_size": 18,
+                "color": {
+                    "Rgba": {
+                        "red": 1,
+                        "green": 1,
+                        "blue": 1,
+                        "alpha": 1
+                    }
+                }
+            }
+        }
+      },
+      {
+        "path": "respawn_button",
+        "style": {
+          "aspect_ratio": 10,
+          "width": {
+            "Px": 200
+          },
+          "border": {
+            "right": {
+              "Px": 1
+            },
+            "left": {
+              "Px": 1
+            },
+            "top": {
+              "Px": 1
+            },
+            "bottom": {
+              "Px": 1
+            }
+          },
+          "align_items": "Center",
+          "justify_content": "Center"
+        },
+        "background_color": {
+          "Rgba": {
+            "red": 0.43,
+            "green": 0.43,
+            "blue": 0.43,
+            "alpha": 1.0
+          }
+        },
+        "border_color": {
+          "Rgba": {
+            "red": 0,
+            "green": 0,
+            "blue": 0,
+            "alpha": 1.0
+          }
+        },
+        "content": {
+          "Button": [
+            {
+              "style": {
+                "width": {
+                  "Percent": 100.0
+                },
+                "height": {
+                  "Percent": 100.0
+                }
+              },
+              "content": {
+                "Nodes": [
+                  {
+                    "style": {
+                      "position_type": "Absolute",
+                      "width": {
+                        "Percent": 100.0
+                      },
+                      "height": {
+                        "Percent": 100.0
+                      },
+                      "border": {
+                        "top": {
+                          "Px": 1
+                        },
+                        "left": {
+                          "Px": 1
+                        }
+                      }
+                    },
+                    "border_color": {
+                      "Rgba": {
+                        "red": 0.66,
+                        "green": 0.66,
+                        "blue": 0.66,
+                        "alpha": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "style": {
+                      "position_type": "Absolute",
+                      "width": {
+                        "Percent": 100.0
+                      },
+                      "height": {
+                        "Percent": 100.0
+                      },
+                      "border": {
+                        "bottom": {
+                          "Px": 1
+                        },
+                        "right": {
+                          "Px": 1
+                        }
+                      }
+                    },
+                    "border_color": {
+                      "Rgba": {
+                        "red": 0.243,
+                        "green": 0.243,
+                        "blue": 0.243,
+                        "alpha": 0.58
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "style": {
+                "justify_content": "Center",
+                "align_items": "Center",
+                "position_type": "Absolute"
+              },
+              "content": {
+                "Text": {
+                  "text": "Respawn",
+                  "font_size": 9,
+                  "color": {
+                    "Rgba": {
+                      "red": 1,
+                      "green": 1,
+                      "blue": 1,
+                      "alpha": 1
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

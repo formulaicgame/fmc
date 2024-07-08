@@ -1,0 +1,10 @@
+{
+    "block": {
+        "top": "coal_ore.png",
+        "bottom": "coal_ore.png",
+        "left": "coal_ore.png",
+        "right": "coal_ore.png",
+        "front": "coal_ore.png",
+        "back": "coal_ore.png"
+    }
+}

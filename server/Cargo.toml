@@ -1,0 +1,35 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fmc = { path = "../crates/fmc"}
+fmc_networking = { path = "../crates/fmc_networking"}
+serde_json = { path = "../crates/json"}
+
+serde = { version = "1.0.188", features = ["derive"] }
+rand = "0.8.5"
+futures-lite = "1.13.0"
+tar = "0.4.40"
+zstd = "0.12.4"
+rusqlite = "0.29.0"
+bincode = "1.3.3"
+indexmap = "2.2.6"
+
+[build-dependencies]
+tar = "0.4.40"
+zstd = "0.12.4"
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+#strip = "debuginfo"
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+# TODO: The procedural noise is 10-20x slower with debug assertions on. The
+# standard library has some debug asserts in the vec module. Probably from the
+# set_len method. Try to remove the method.
+debug-assertions = false

@@ -1,0 +1,12 @@
+[
+    {
+        "collection_name": "crafting",
+        "pattern_type": "shaped",
+        "pattern": [
+            [["stick", 1]],
+            [["stick", 1]]
+        ],
+        "output_item": "torch",
+        "output_amount": 1
+    }
+]

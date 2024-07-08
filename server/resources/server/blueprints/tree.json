@@ -1,0 +1,14 @@
+{
+    "type": "tree",
+    "trunk_block": "oak",
+    "leaf_block": "leaves",
+    "trunk_height": 5,
+    "random_height": 2,
+    "trunk_width": 1,
+    "soil_blocks": [
+        "grass"
+    ],
+    "can_replace": [
+        "air"
+    ]
+}

@@ -1,0 +1,11 @@
+[
+    {
+        "collection_name": "crafting",
+        "pattern_type": "shaped",
+        "pattern": [
+            [["wheat", 1], ["wheat", 1], ["wheat", 1]]
+        ],
+        "output_item": "bread",
+        "output_amount": 1
+    }
+]

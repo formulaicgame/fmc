@@ -1,0 +1,11 @@
+[
+    {
+        "collection_name": "crafting",
+        "pattern_type": "shaped",
+        "pattern": [
+            [["oak", 1]]
+        ],
+        "output_item": "oak_planks",
+        "output_amount": 4
+    }
+]

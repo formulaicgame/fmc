@@ -1,0 +1,6 @@
+{
+    "name": "Wheat",
+    "image": "wheat.png",
+    "equip_model": "wheat",
+    "stack_size": 64
+}

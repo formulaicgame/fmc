@@ -1,0 +1,2 @@
+#world-name = world.sqlite
+#pvp = false

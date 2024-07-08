@@ -1,0 +1,14 @@
+{
+    "parent": "default_block.json",
+    "name": "leaves",
+    "material": "leaves",
+    "faces": {
+        "top": "leaves.png",
+        "bottom": "leaves.png",
+        "left": "leaves.png",
+        "right": "leaves.png",
+        "front": "leaves.png",
+        "back": "leaves.png"
+    },
+    "light_attenuation": 1
+}

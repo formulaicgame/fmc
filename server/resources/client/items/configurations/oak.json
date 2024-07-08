@@ -1,0 +1,7 @@
+{
+    "name": "Oak",
+    "image": "oak.png",
+    "block": "oak",
+    "equip_model": "oak",
+    "stack_size": 64
+}

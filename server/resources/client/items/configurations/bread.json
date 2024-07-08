@@ -1,0 +1,6 @@
+{
+    "name": "Bread",
+    "image": "bread.png",
+    "equip_model": "bread",
+    "stack_size": 1
+}

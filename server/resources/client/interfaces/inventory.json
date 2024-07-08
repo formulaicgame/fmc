@@ -1,0 +1,217 @@
+{
+    "style": {
+        "margin": {
+            "left": "Auto",
+            "right": "Auto",
+            "top": "Auto",
+            "bottom": "Auto" 
+        }
+    },
+    "exclusive": true,
+    "image": "inventory.png",
+    "content": {
+        "Nodes": [
+            {
+                "path": "hotbar",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 9
+                    },
+                    "top": {
+                        "Px": 106
+                    },
+                    "width": {
+                        "Px": 160
+                    },
+                    "height": {
+                        "Px": 16
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": true
+                    }
+                }
+            },
+            {
+                "path": "inventory",
+                "style": {
+                    "position_type": "Absolute",
+                    "flex_wrap": "Wrap",
+                    "left": {
+                        "Px": 9
+                    },
+                    "top": {
+                        "Px": 48
+                    },
+                    "width": {
+                        "Px": 160
+                    },
+                    "height": {
+                        "Px": 16
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    },
+                    "row_gap": {
+                        "Px": 2
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": true
+                    }
+                }
+            },
+            {
+                "path": "equipment/helmet",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 9
+                    },
+                    "top": {
+                        "Px": 17
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": ["helmet"]
+                    }
+                }
+            },
+            {
+                "path": "equipment/chestplate",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 27
+                    },
+                    "top": {
+                        "Px": 17
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": ["chestplate"]
+                    }
+                }
+            },
+            {
+                "path": "equipment/leggings",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 45
+                    },
+                    "top": {
+                        "Px": 17
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": ["leggings"]
+                    }
+                }
+            },
+            {
+                "path": "equipment/boots",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 63
+                    },
+                    "top": {
+                        "Px": 17
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": ["boots"]
+                    }
+                }
+            },
+            {
+                "path": "inventory/crafting_input",
+                "style": {
+                    "position_type": "Absolute",
+                    "flex_wrap": "Wrap",
+                    "left": {
+                        "Px": 99
+                    },
+                    "top": {
+                        "Px": 8
+                    },
+                    "width": {
+                        "Px": 34
+                    },
+                    "height": {
+                        "Px": 34
+                    },
+                    "column_gap": {
+                        "Px": 4
+                    },
+                    "row_gap": {
+                        "Px": 2
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allow_quick_place": false
+                    }
+                }
+            },
+            {
+                "path": "inventory/crafting_output",
+                "style": {
+                    "position_type": "Absolute",
+                    "left": {
+                        "Px": 153
+                    },
+                    "top": {
+                        "Px": 18
+                    },
+                    "width": {
+                        "Px": 16
+                    },
+                    "height": {
+                        "Px": 16
+                    }
+                },
+                "content": {
+                    "Items": {
+                        "allowed_item_types": []
+                    }
+                }
+            }
+        ]
+        }
+}

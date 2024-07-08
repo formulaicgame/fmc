@@ -1,0 +1,94 @@
+{
+  "path": "chat",
+  "exclusive": true,
+  "keyboard_focus": "Full",
+  "style": {
+      "position_type": "Absolute",
+      "width": {
+          "Percent": 100
+      },
+      "height": {
+          "Percent": 100
+      }
+  },
+  "content": {
+    "Nodes": [
+      {
+        "path": "history",
+        "style": {
+          "position_type": "Absolute",
+          "flex_direction": "ColumnReverse",
+          "width": {
+              "Percent": 50
+          },
+          "aspect_ratio": 2,
+          "margin": {
+              "left": {
+                  "Percent": 1
+              },
+              "bottom": {
+                  "Percent": 10
+              },
+              "top": "Auto",
+              "right": "Auto" 
+          }
+        },
+        "content": {
+            "TextBox": {
+                "input": false,
+                "scrollable": true,
+                "text_background_color": {
+                    "Rgba": {
+                        "red": 0.0,
+                        "green": 0.0,
+                        "blue": 0.0,
+                        "alpha": 0.5
+                    }
+                },
+                "fade": true
+            } 
+        }
+      },
+      {
+        "path": "input",
+        "style": {
+          "position_type": "Absolute",
+          "align_items": "Center",
+          "width": {
+            "Percent": 98
+          },
+          "aspect_ratio": 40,
+          "margin": {
+              "left": {
+                  "Percent": 1
+              },
+              "bottom": {
+                  "Percent": 2
+              },
+              "top": "Auto",
+              "right": "Auto" 
+          },
+          "padding": {
+              "left": {
+                  "Px": 2
+              }
+          }
+        },
+        "background_color": {
+          "Rgba": {
+            "red": 0.0,
+            "green": 0.0,
+            "blue": 0.0,
+            "alpha": 0.5
+          }
+        },
+        "content": {
+            "TextBox": {
+                "input": true,
+                "scrollable": false
+            } 
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+[
+    {
+        "collection_name": "crafting",
+        "pattern_type": "shaped",
+        "pattern": [
+            [["oak_planks", 1],["oak_planks", 1]],
+            [["", 0],["stick", 1]],
+            [["", 0],["stick", 1]]
+        ],
+        "output_item": "hoe",
+        "output_amount": 1
+    }
+]

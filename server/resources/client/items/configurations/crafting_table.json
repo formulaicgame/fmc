@@ -1,0 +1,7 @@
+{
+    "name": "Crafting table",
+    "image": "crafting_table.png",
+    "block": "crafting_table",
+    "equip_model": "crafting_table",
+    "stack_size": 64
+}

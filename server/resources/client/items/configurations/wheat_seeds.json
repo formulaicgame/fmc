@@ -1,0 +1,6 @@
+{
+    "name": "Wheat seeds",
+    "image": "wheat_seeds.png",
+    "equip_model": "wheat_seeds",
+    "stack_size": 64
+}
