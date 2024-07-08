@@ -1,9 +1,8 @@
 # Fmc 
 ![picture](.github/picture.png)
 
-# How to build
+# How to run
 ```
-cd server && cargo run --release
 cd client && cargo run --release
 ```
 # Controls
