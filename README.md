@@ -20,8 +20,8 @@ cd client && cargo run --release
 # Licensing
 You can find the licenses in the respective directories
 
-client                - AGPL
-server                - GPL
-crates/fmc            - LGPL
-crates/fmc_networking - MIT
+client                - AGPL\
+server                - GPL\
+crates/fmc            - LGPL\
+crates/fmc_networking - MIT\
 crates/fmc_noise      - MIT
