@@ -16,6 +16,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             file_extension: .exe
@@ -23,9 +29,6 @@ jobs:
     name: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Tree
-        run: tree ./client
 
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -42,11 +45,8 @@ jobs:
       - name: Build
         run: cd client && cargo build --release --target ${{ matrix.target }}
 
-      - name: Tree
-        run: tree ./client/target
-
       - name: Rename Artifact
-        run: cp ./client/target/${{ matrix.target }}/release/client ${{ matrix.target }}${{ matrix.file_extension }}
+        run: cp ./client/target/${{ matrix.target }}/release/client${{ matrix.file_extension }} ${{ matrix.target }}${{ matrix.file_extension }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
