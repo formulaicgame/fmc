@@ -2,7 +2,6 @@
 ![picture](.github/picture.png)
 
 # How to build
-Rust nightly **required**
 ```
 cd server && cargo run --release
 cd client && cargo run --release
