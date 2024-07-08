@@ -60,6 +60,7 @@ impl Plugin for AssetPlugin {
 }
 
 fn finish(mut asset_state: ResMut<NextState<AssetState>>) {
+    info!("Finished loading assets");
     asset_state.set(AssetState::Inactive);
 }
 

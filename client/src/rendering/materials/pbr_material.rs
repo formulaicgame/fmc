@@ -1,4 +1,5 @@
 use bevy::{
+    asset::load_internal_asset,
     math::Vec3A,
     pbr::{
         ExtendedMaterial, MaterialExtension, MaterialPipeline, MaterialPipelineKey,
@@ -21,6 +22,9 @@ use crate::{
 
 use super::ATTRIBUTE_PACKED_BITS_0;
 
+const PBR_MESH_SHADER: Handle<Shader> = Handle::weak_from_u128(34096891246294360);
+const PBR_FRAGMENT_SHADER: Handle<Shader> = Handle::weak_from_u128(569708293840967);
+
 pub struct PbrMaterialPlugin;
 impl Plugin for PbrMaterialPlugin {
     fn build(&self, app: &mut App) {
@@ -31,6 +35,19 @@ impl Plugin for PbrMaterialPlugin {
             // Chosen at random until it worked.
             .add_systems(PostUpdate, replace_material_and_mesh)
             .add_systems(Last, update_light);
+
+        load_internal_asset!(
+            app,
+            PBR_MESH_SHADER,
+            "../shaders/pbr_mesh.wgsl",
+            Shader::from_wgsl
+        );
+        load_internal_asset!(
+            app,
+            PBR_FRAGMENT_SHADER,
+            "../shaders/pbr.wgsl",
+            Shader::from_wgsl
+        );
     }
 }
 
@@ -137,11 +154,11 @@ pub struct PbrLightExtension {
 
 impl MaterialExtension for PbrLightExtension {
     fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/pbr_mesh.wgsl".into()
+        PBR_MESH_SHADER.into()
     }
 
     fn fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/pbr.wgsl".into()
+        PBR_FRAGMENT_SHADER.into()
     }
 
     fn specialize(

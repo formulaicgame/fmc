@@ -1,5 +1,5 @@
 use bevy::{
-    asset::Handle,
+    asset::{load_internal_asset, Handle},
     pbr::{AlphaMode, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
@@ -10,6 +10,29 @@ use bevy::{
 };
 
 use super::ATTRIBUTE_PACKED_BITS_0;
+
+const BLOCK_MESH_SHADER: Handle<Shader> = Handle::weak_from_u128(182903180293810293);
+const BLOCK_FRAGMENT_SHADER: Handle<Shader> = Handle::weak_from_u128(234982304982304);
+
+pub struct BlockMaterialPlugin;
+impl Plugin for BlockMaterialPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MaterialPlugin::<BlockMaterial>::default());
+
+        load_internal_asset!(
+            app,
+            BLOCK_MESH_SHADER,
+            "../shaders/block_mesh.wgsl",
+            Shader::from_wgsl
+        );
+        load_internal_asset!(
+            app,
+            BLOCK_FRAGMENT_SHADER,
+            "../shaders/block.wgsl",
+            Shader::from_wgsl
+        );
+    }
+}
 
 // TODO: For a 32x world meshes take up around 2gb of memory. Each vertex is a 3xf32, each normal
 // the same, and each uv 2xf32. This can be packed, there exists only 4 uvs, that is 2 bits. For a
@@ -358,11 +381,11 @@ impl Material for BlockMaterial {
     //}
 
     fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/block_mesh.wgsl".into()
+        BLOCK_MESH_SHADER.into()
     }
 
     fn fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/block.wgsl".into()
+        BLOCK_FRAGMENT_SHADER.into()
     }
 
     #[inline]

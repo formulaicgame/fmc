@@ -9,9 +9,9 @@ edition = "2021"
 #bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", default-features=false, features = ["filesystem_watcher", "multi-threaded"]}
 bevy = { version = "0.13.2", default-features=false, features = ["file_watcher", "multi-threaded"]}
 
-fmc_networking = { path = "../fmc_networking" }
-serde_json = { path = "../json"}
-noise = { path = "../fmc_noise" }
+fmc_networking = { git = "https://github.com/formulaicgame/fmc_networking"}
+serde_json = { git = "https://github.com/fmcgg/json"}
+noise = { git = "https://github.com/formulaicgame/fmc_noise" }
 
 gltf = "1.4.1"
 tar = "0.4.40"

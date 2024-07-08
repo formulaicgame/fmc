@@ -1,9 +1,26 @@
 use bevy::{
+    asset::load_internal_asset,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
     render::{mesh::MeshVertexBufferLayout, render_resource::*},
 };
+
+const SKY_SHADER: Handle<Shader> = Handle::weak_from_u128(1708015959337029744);
+
+pub struct SkyMaterialPlugin;
+impl Plugin for SkyMaterialPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MaterialPlugin::<SkyMaterial>::default());
+
+        load_internal_asset!(
+            app,
+            SKY_SHADER,
+            "../shaders/physical_sky.wgsl",
+            Shader::from_wgsl
+        );
+    }
+}
 
 #[derive(Asset, AsBindGroup, Debug, Clone, TypePath)]
 //#[bind_group_data(BlockMaterialKey)]
@@ -256,6 +273,6 @@ impl Material for SkyMaterial {
     }
 
     fn fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/physical_sky.wgsl".into()
+        SKY_SHADER.into()
     }
 }

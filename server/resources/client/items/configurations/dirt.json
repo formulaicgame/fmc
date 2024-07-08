@@ -1,7 +1,0 @@
-{
-    "name": "Dirt",
-    "image": "dirt.png",
-    "block": "dirt",
-    "equip_model": "dirt",
-    "stack_size": 64
-}

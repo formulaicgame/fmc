@@ -1,7 +1,0 @@
-{
-    "name": "Stone",
-    "image": "stone.png",
-    "block": "stone",
-    "equip_model": "stone",
-    "stack_size": 64
-}
