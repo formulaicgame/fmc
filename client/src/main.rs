@@ -2,6 +2,7 @@ use bevy::{
     //diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     audio::{AudioPlugin, Volume},
     prelude::*,
+    tasks::IoTaskPool,
     window::WindowFocused,
 };
 
@@ -47,6 +48,7 @@ fn main() {
         .add_plugins(ui::UiPlugin)
         .add_plugins(settings::SettingsPlugin)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)
+        .add_systems(Startup, download_game)
         .run();
 }
 
@@ -61,4 +63,37 @@ fn fix_keys_not_released_on_focus_loss(
             key_input.bypass_change_detection().release_all();
         }
     }
+}
+
+// Temporary hard link to game until proper game hub
+fn download_game() {
+    let server_path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
+    if std::path::Path::new(&server_path).exists() {
+        return;
+    }
+
+    IoTaskPool::get().spawn(async {
+        let url = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("linux", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-unknown-linux-gnu",
+            ("windows", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-pc-windows-msvc.exe",
+            ("macos", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-apple-darwin",
+            ("macos", "aarch64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/aarch64-apple-darwin",
+            _ => return
+        };
+        let response = match reqwest::blocking::get(url) {
+            Ok(r) => r,
+            Err(_) => return
+        };
+        let bytes = match response.bytes() {
+            Ok(b) => b,
+            Err(_) => return
+        };
+
+        std::fs::create_dir("fmc_server").ok();
+        let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
+        std::fs::write(&path, bytes).ok();
+        if std::env::consts::FAMILY == "unix" {
+            std::process::Command::new("chmod").arg("+x").arg(&path).output().ok();
+        }
+    }).detach();
 }

@@ -62,7 +62,7 @@ fn press_play_button(
             ip.push_str(":42069");
         }
 
-        net.connect(ip.clone());
+        net.connect(ip);
         game_state.set(GameState::Connecting);
     }
 }

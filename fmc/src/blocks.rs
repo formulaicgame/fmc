@@ -4,7 +4,6 @@
 //       missing, and update the database if a config has been changed.
 use std::{
     collections::{HashMap, HashSet},
-    ops::Deref,
     path::Path,
 };
 
