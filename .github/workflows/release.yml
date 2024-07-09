@@ -33,14 +33,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install rust
-        run: rustup install nightly
+        run: rustup install nightly && rustup target add ${{ matrix.target }}
 
-      - name: rust toolchain
-        run: rustup target add ${{ matrix.target }}
-
-        - uses: Swatinem/rust-cache@v2
-          with: 
-            workspaces: ./client -> target
+      - uses: Swatinem/rust-cache@v2
+        with: 
+          workspaces: ./client -> target
 
       - name: Install dependencies
         if: ${{ matrix.target == 'x86_64-unknown-linux-gnu'}}

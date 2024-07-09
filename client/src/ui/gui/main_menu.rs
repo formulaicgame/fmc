@@ -37,7 +37,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         .with_children(|parent| {
             // Singleplayer button
             parent
-                .spawn_button(200.0, "Singleplayer (Not implemented)")
+                .spawn_button(200.0, "Singleplayer")
                 .insert(SinglePlayerButton);
             parent
                 .spawn_button(200.0, "Multiplayer")
