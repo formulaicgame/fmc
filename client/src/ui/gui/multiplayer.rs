@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    ui::{widget::UiImageSize, ContentSize},
+};
 
 use crate::{game_state::GameState, ui::widgets::*};
 
@@ -20,10 +23,14 @@ struct ServerIp;
 #[derive(Component)]
 struct PlayButton;
 
-fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut interfaces: ResMut<Interfaces>,
+) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::BLACK.into(),
+            background_color: Color::ANTIQUE_WHITE.into(),
             style: Style {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
@@ -36,6 +43,18 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             },
             ..default()
         })
+        .insert((
+            ContentSize::default(),
+            UiImageSize::default(),
+            UiImage::from(
+                asset_server.load::<Image>("embedded://client/ui/gui/assets/background.png"),
+            ),
+            ImageScaleMode::Tiled {
+                tile_x: true,
+                tile_y: true,
+                stretch_value: 2.0,
+            },
+        ))
         .with_children(|parent| {
             parent.spawn_textbox(41.5, "127.0.0.1").insert(ServerIp);
             parent.spawn_button(200.0, "PLAY").insert(PlayButton);

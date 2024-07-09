@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{
+    asset::embedded_asset,
     prelude::*,
     ui::FocusPolicy,
     window::{CursorGrabMode, PrimaryWindow},
@@ -27,6 +28,8 @@ impl Plugin for GuiPlugin {
             .add_systems(Startup, setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>))
             .add_systems(Update, enter_exit_ui.run_if(state_changed::<GameState>));
+
+        embedded_asset!(app, "assets/background.png");
     }
 }
 

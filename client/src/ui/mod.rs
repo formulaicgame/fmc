@@ -31,9 +31,9 @@ impl Plugin for UiPlugin {
         .add_systems(Startup, setup)
         .add_systems(Update, scale_ui.run_if(on_event::<WindowResized>()));
 
-        // TODO: It would be nice to overwrite bevy's default handle
-        // instead, so it never has to be specified by any entity, but doing it increases compile time
-        // by a lot. Maybe because it reaches into the bevy crates.
+        // TODO: It would be nice to overwrite bevy's default handle instead, so it never has to be
+        // specified by an entity, but doing it increases compile time by a lot. Maybe because it
+        // reaches into the bevy crates.
         load_internal_binary_asset!(
             app,
             DEFAULT_FONT_HANDLE,

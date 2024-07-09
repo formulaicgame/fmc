@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    ui::{widget::UiImageSize, ContentSize},
+};
 
 use super::{InterfaceBundle, Interfaces, UiState};
 use crate::{game_state::GameState, ui::widgets::*};
@@ -18,10 +21,14 @@ struct SinglePlayerButton;
 #[derive(Component)]
 struct MultiPlayerButton;
 
-fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut interfaces: ResMut<Interfaces>,
+) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::DARK_GRAY.into(),
+            background_color: Color::ANTIQUE_WHITE.into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -34,6 +41,18 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             },
             ..default()
         })
+        .insert((
+            ContentSize::default(),
+            UiImageSize::default(),
+            UiImage::from(
+                asset_server.load::<Image>("embedded://client/ui/gui/assets/background.png"),
+            ),
+            ImageScaleMode::Tiled {
+                tile_x: true,
+                tile_y: true,
+                stretch_value: 2.0,
+            },
+        ))
         .with_children(|parent| {
             // Singleplayer button
             parent
