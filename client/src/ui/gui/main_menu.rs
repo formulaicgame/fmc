@@ -47,6 +47,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     interfaces.insert(UiState::MainMenu, entity);
 }
 
+// TODO: The button should lead to its own screen where you select game and save file
 fn press_singleplayer(
     mut net: ResMut<fmc_networking::NetworkClient>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
@@ -62,6 +63,11 @@ fn press_singleplayer(
             }
 
             let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
+
+            if !std::path::Path::new(&path).exists() {
+                return;
+            }
+
             match std::process::Command::new(&std::fs::canonicalize(path).unwrap())
                 .current_dir("fmc_server")
                 .spawn()
