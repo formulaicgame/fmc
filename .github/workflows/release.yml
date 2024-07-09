@@ -42,7 +42,7 @@ jobs:
 
       - name: Install dependencies
         if: ${{ matrix.target == 'x86_64-unknown-linux-gnu'}}
-        run: sudo apt-get install g++ pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0
+        run: sudo apt-get install g++ pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
 
       - name: Build
         run: cd client && cargo build --release --target ${{ matrix.target }}
