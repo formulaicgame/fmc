@@ -18,5 +18,5 @@ cd client && cargo run --release
 # Licensing
 You can find the licenses in the respective directories
 
-client                - AGPL\
-crates/fmc            - LGPL
+client - AGPL\
+fmc    - LGPL
