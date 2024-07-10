@@ -9,11 +9,11 @@ use bevy::{
 mod assets;
 mod audio;
 mod game_state;
-mod launcher;
 mod networking;
 mod player;
 mod rendering;
 mod settings;
+mod singleplayer;
 mod ui;
 mod utils;
 mod world;
@@ -47,6 +47,7 @@ fn main() {
         .add_plugins(world::WorldPlugin)
         .add_plugins(ui::UiPlugin)
         .add_plugins(settings::SettingsPlugin)
+        .add_plugins(singleplayer::SinglePlayerPlugin)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)
         .add_systems(Startup, download_game)
         .run();
