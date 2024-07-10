@@ -1,10 +1,9 @@
 use bevy::{
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task},
+    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
 use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent};
-use futures_lite::future;
 
 use crate::{
     bevy_extensions::f64_transform::GlobalTransform,

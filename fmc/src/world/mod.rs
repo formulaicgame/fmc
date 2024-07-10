@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Index};
 
-use bevy::{app::AppExit, tasks::IoTaskPool};
+use bevy::{app::AppExit, tasks::futures_lite::future, tasks::IoTaskPool};
 use fmc_networking::{messages, NetworkServer};
 
 use crate::{
@@ -263,7 +263,7 @@ fn save_block_updates_to_database(
 
     if !exit_events.is_empty() {
         let block_updates = block_updates.drain().collect();
-        futures_lite::future::block_on(save_blocks(database.clone(), block_updates));
+        future::block_on(save_blocks(database.clone(), block_updates));
     }
 }
 

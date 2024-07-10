@@ -6,9 +6,8 @@ use bevy::{
         mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology,
         view::NoFrustumCulling,
     },
-    tasks::{AsyncComputeTaskPool, Task},
+    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use futures_lite::future;
 
 use crate::{
     game_state::GameState,
