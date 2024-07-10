@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use super::{InterfaceBundle, Interfaces, UiState};
-use crate::{game_state::GameState, ui::widgets::*};
+use crate::{game_state::GameState, singleplayer::LaunchSinglePlayer, ui::widgets::*};
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
@@ -68,38 +68,12 @@ fn setup(
 
 // TODO: The button should lead to its own screen where you select game and save file
 fn press_singleplayer(
-    mut net: ResMut<fmc_networking::NetworkClient>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
-    mut game_state: ResMut<NextState<GameState>>,
-    mut server_process: Local<Option<std::process::Child>>,
+    mut launch_single_player: EventWriter<LaunchSinglePlayer>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
-            if let Some(mut child) = server_process.take() {
-                // TODO: Manage the server process properly, it currently runs in the back when you
-                // disconnect, should stop immediately.
-                child.kill().ok();
-            }
-
-            let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
-
-            if !std::path::Path::new(&path).exists() {
-                return;
-            }
-
-            match std::process::Command::new(&std::fs::canonicalize(path).unwrap())
-                .current_dir("fmc_server")
-                .spawn()
-            {
-                Err(e) => {
-                    error!("Failed to start server, error: {e}");
-                    return;
-                }
-                Ok(c) => *server_process = Some(c),
-            };
-
-            net.connect("127.0.0.1:42069");
-            game_state.set(GameState::Connecting);
+            launch_single_player.send(LaunchSinglePlayer {});
         }
     }
 }

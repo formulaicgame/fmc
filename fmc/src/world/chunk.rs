@@ -51,7 +51,7 @@ impl Chunk {
         let changed_blocks = database.load_chunk_blocks(&position);
         for (index, (block_id, maybe_block_state, maybe_block_data)) in changed_blocks {
             chunk.changed_blocks.insert(index);
-            chunk.blocks[index] = block_id;
+            chunk[index] = block_id;
             if let Some(block_state) = maybe_block_state {
                 chunk.block_state.insert(index, block_state.0);
             }
