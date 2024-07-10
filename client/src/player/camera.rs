@@ -91,18 +91,13 @@ fn rotate_camera(
 ) {
     let window = window.single();
 
-    // Mouse in use by some interface
-    if window.cursor.visible == true {
-        return;
-    }
-
     // It empties the iterator so it can't access it after loop.
     let should_send = mouse_events.len() > 0;
 
     for ev in mouse_events.read() {
         let mut transform = camera_query.single_mut();
 
-        if window.cursor.grab_mode != CursorGrabMode::Locked {
+        if window.cursor.grab_mode == CursorGrabMode::None {
             return;
         }
 

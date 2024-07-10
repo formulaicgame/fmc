@@ -16,7 +16,7 @@ cd client && cargo run --release
 | `e`                | inventory                                                                   |
 
 # Licensing
-You can find the license in the directories by the same name
+You can find the licenses in the directories with the same names
 
-client - AGPL\
-fmc    - LGPL
+client - AGPLv3\
+fmc    - LGPLv3
