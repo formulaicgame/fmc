@@ -10,7 +10,10 @@ impl Plugin for SinglePlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LaunchSinglePlayer>()
             .insert_resource(ServerProcess(None))
-            .add_systems(Update, (start, kill_server_on_disconnect));
+            .add_systems(
+                Update,
+                (launch_singleplayer_server, kill_server_on_disconnect),
+            );
     }
 }
 
@@ -20,6 +23,7 @@ pub struct LaunchSinglePlayer {}
 #[derive(Resource)]
 struct ServerProcess(Option<Child>);
 
+// TODO: If sigkill is issued I don't think this is enough
 impl Drop for ServerProcess {
     fn drop(&mut self) {
         if let Some(mut server) = self.0.take() {
@@ -28,7 +32,7 @@ impl Drop for ServerProcess {
     }
 }
 
-fn start(
+fn launch_singleplayer_server(
     mut net: ResMut<fmc_networking::NetworkClient>,
     mut game_state: ResMut<NextState<GameState>>,
     mut server_process: ResMut<ServerProcess>,
@@ -51,7 +55,7 @@ fn start(
                 error!("Failed to start server, error: {e}");
                 return;
             }
-            Ok(c) => server_process.0 = Some(c),
+            Ok(c) => *server_process = ServerProcess(Some(c)),
         };
 
         net.connect("127.0.0.1:42069");

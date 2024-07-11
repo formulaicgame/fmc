@@ -256,10 +256,9 @@ fn tint_button_on_hover(
                 prev_color.0 = background_color.0;
                 background_color.0 *= Vec3::splat(139.0 / 110.0);
             }
-            Interaction::None => {
+            _ => {
                 background_color.0 = prev_color.0;
             }
-            _ => (),
         }
     }
 }
