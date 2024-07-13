@@ -27,7 +27,7 @@ fn handle_chat_messages(
             continue;
         };
 
-        let mut chat_history_update = messages::InterfaceTextBoxUpdate::new("chat/history");
+        let mut chat_history_update = messages::InterfaceTextUpdate::new("chat/history");
         chat_history_update.append_line().with_text(
             format!("[{}] {}", &username, &chat_message.text),
             CHAT_FONT_SIZE,
@@ -49,7 +49,7 @@ fn send_connection_messages(
     for event in network_events.read() {
         match event {
             ServerNetworkEvent::Connected { entity } => {
-                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
+                let mut chat_update = messages::InterfaceTextUpdate::new("chat/history");
                 let username = username_query.get(*entity).unwrap();
                 chat_update.append_line().with_text(
                     format!("{} joined the game", username),
@@ -60,7 +60,7 @@ fn send_connection_messages(
             }
             ServerNetworkEvent::Disconnected { entity } => {
                 let username = username_query.get(*entity).unwrap();
-                let mut chat_update = messages::InterfaceTextBoxUpdate::new("chat/history");
+                let mut chat_update = messages::InterfaceTextUpdate::new("chat/history");
                 chat_update.append_line().with_text(
                     format!("{} left the game", username),
                     CHAT_FONT_SIZE,

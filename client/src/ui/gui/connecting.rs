@@ -2,23 +2,26 @@ use bevy::{
     prelude::*,
     ui::{widget::UiImageSize, ContentSize},
 };
+use fmc_networking::NetworkClient;
 
 use super::{InterfaceBundle, Interfaces, UiState};
-use crate::{networking::Identity, ui::widgets::*};
+use crate::{assets::AssetState, game_state::GameState, ui::widgets::*};
 
-pub struct LoginPlugin;
-impl Plugin for LoginPlugin {
+pub struct ConnectingPlugin;
+impl Plugin for ConnectingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, press_play.run_if(in_state(UiState::Login)));
+            .add_systems(Update, press_cancel.run_if(in_state(UiState::Connecting)))
+            .add_systems(OnEnter(AssetState::Downloading), downloading_assets_text)
+            .add_systems(OnEnter(AssetState::Loading), loading_assets_text);
     }
 }
 
 #[derive(Component)]
-struct LoginButton;
+struct CancelButton;
 
 #[derive(Component)]
-struct Username;
+struct StatusText;
 
 fn setup(
     mut commands: Commands,
@@ -32,7 +35,7 @@ fn setup(
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                row_gap: Val::Px(4.0),
+                row_gap: Val::Px(20.0),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
@@ -56,39 +59,43 @@ fn setup(
             parent
                 .spawn(NodeBundle {
                     style: Style {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(12.0),
+                        align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
+                        width: Val::Percent(100.0),
                         ..default()
                     },
                     ..default()
                 })
                 .with_children(|parent| {
-                    parent.spawn_text("Enter username:");
+                    parent
+                        .spawn_text("Connecting to server...")
+                        .insert(StatusText);
                 });
-            parent.spawn_textbox(41.5, "").insert(Username);
-            parent.spawn_button(200.0, "Play").insert(LoginButton);
+            parent.spawn_button(200.0, "Cancel").insert(CancelButton);
         })
         .id();
-    interfaces.insert(UiState::Login, entity);
+    interfaces.insert(UiState::Connecting, entity);
 }
 
-fn press_play(
-    mut ui_state: ResMut<NextState<UiState>>,
-    mut identity: ResMut<Identity>,
-    username: Query<&TextBox, With<Username>>,
-    button_query: Query<&Interaction, (Changed<Interaction>, With<LoginButton>)>,
+fn press_cancel(
+    net: Res<NetworkClient>,
+    mut game_state: ResMut<NextState<GameState>>,
+    button_query: Query<&Interaction, (Changed<Interaction>, With<CancelButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
-        identity.username = username.single().text.clone();
-        if identity.username.is_empty() {
-            return;
-        }
-
-        std::fs::write("./identity.txt", &identity.username).ok();
-
         if *interaction == Interaction::Pressed {
-            ui_state.set(UiState::MainMenu);
+            net.disconnect("");
+            game_state.set(GameState::Launcher);
         }
     }
+}
+
+fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
+    let mut text = status_text.single_mut();
+    text.sections[0].value = "Downloading assets...".to_owned();
+}
+
+fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
+    let mut text = status_text.single_mut();
+    text.sections[0].value = "Downloading assets...".to_owned();
 }

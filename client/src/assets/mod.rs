@@ -2,7 +2,7 @@ use sha1::Digest;
 use std::io::prelude::*;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkData};
+use fmc_networking::{messages, NetworkClient, NetworkData};
 
 mod block_textures;
 mod materials;
@@ -10,6 +10,8 @@ pub mod models;
 
 pub use block_textures::BlockTextures;
 pub use materials::Materials;
+
+use crate::game_state::GameState;
 
 /// Assets are downloaded on connection to the server. It first waits for the server config. Then
 /// checks if server_config.asset_hash is the same as the hash of any stored assets. If not it asks
@@ -35,7 +37,9 @@ impl Plugin for AssetPlugin {
         app.add_systems(
             Update,
             (
-                begin_asset_loading.run_if(in_state(AssetState::Inactive)),
+                begin_asset_loading.run_if(
+                    in_state(AssetState::Inactive).and_then(in_state(GameState::Connecting)),
+                ),
                 handle_assets_response.run_if(in_state(AssetState::Downloading)),
             ),
         )
@@ -59,13 +63,17 @@ impl Plugin for AssetPlugin {
     }
 }
 
-fn finish(mut asset_state: ResMut<NextState<AssetState>>) {
+fn finish(
+    net: Res<NetworkClient>,
+    mut asset_state: ResMut<NextState<AssetState>>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
     info!("Finished loading assets");
+    net.send_message(messages::ClientFinishedLoading);
     asset_state.set(AssetState::Inactive);
+    game_state.set(GameState::Playing);
 }
 
-// TODO: The server can crash the client by sending multiple server configs. Need proper cleanup of
-// state between connections, and then just listen for when serverconfig is added as a resource.
 fn begin_asset_loading(
     net: Res<fmc_networking::NetworkClient>,
     mut server_config_event: EventReader<NetworkData<messages::ServerConfig>>,

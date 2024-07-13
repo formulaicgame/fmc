@@ -13,14 +13,20 @@ use bevy::{
 use fmc_networking::{messages, NetworkClient, NetworkData};
 use serde::Deserialize;
 
-use crate::{game_state::GameState, ui::widgets::TextBox};
+use crate::{
+    game_state::GameState,
+    ui::{
+        widgets::{TextBox, TextShadow},
+        DEFAULT_FONT_HANDLE,
+    },
+};
 
 use self::items::{CursorItemBox, ItemBoxSection};
 use super::widgets::Widgets;
 
 pub mod items;
 pub mod key_bindings;
-mod textbox;
+mod text;
 
 const INTERFACE_CONFIG_PATH: &str = "server_assets/interfaces/";
 const INTERFACE_TEXTURE_PATH: &str = "server_assets/textures/interfaces/";
@@ -33,7 +39,7 @@ impl Plugin for ServerInterfacesPlugin {
             .insert_resource(KeyboardFocus::default())
             .add_plugins((
                 items::ItemPlugin,
-                textbox::TextBoxPlugin,
+                text::TextPlugin,
                 key_bindings::KeyBindingsPlugin,
             ))
             .add_systems(
@@ -52,15 +58,21 @@ impl Plugin for ServerInterfacesPlugin {
     }
 }
 
+// This is inserted for every node in the interface that has an interface path. For easy reverse
+// lookup when updates are sent to the server.
 #[derive(Component)]
 pub struct InterfaceNode {
     pub path: String,
 }
 
+// Many interfaces may share the same interface paths. This is so that the same information can be
+// displayed in different interfaces. You might for example want items shown in an inventory, to
+// also be shown in a hotbar, an update will then reflect in both.
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct InterfacePaths(HashMap<String, Vec<Entity>>);
 
-// A map from 'InterfacePath' to entity.
+// Maps interface names to their root entity, e.g. "inventory", but NOT "inventory/equipment".
+// The interface names are extracted from their file names.
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct Interfaces(HashMap<String, Entity>);
 
@@ -245,22 +257,20 @@ pub fn load_interfaces(
                         }
                     });
                 }
-                NodeContent::TextBox {
-                    input: is_input,
-                    scrollable,
+                NodeContent::TextContainer {
                     text_background_color,
                     fade,
                 } => {
-                    entity_commands.insert(TextBox {
-                        is_input: *is_input,
-                        scrollable: *scrollable,
+                    entity_commands.insert(text::TextContainer {
                         text_background_color: text_background_color.unwrap_or(Color::NONE),
-                        ..default()
                     });
 
                     if *fade {
-                        entity_commands.insert(textbox::FadeLines);
+                        entity_commands.insert(text::FadeLines);
                     }
+                }
+                NodeContent::TextBox => {
+                    entity_commands.insert(TextBox::default());
                 }
                 NodeContent::Text {
                     text,
@@ -268,14 +278,25 @@ pub fn load_interfaces(
                     color,
                 } => {
                     entity_commands.with_children(|parent| {
-                        parent.spawn_text(
-                            text,
-                            *font_size,
-                            *color,
-                            style.flex_direction,
-                            style.justify_content,
-                            style.align_items,
-                        );
+                        parent.spawn((
+                            TextBundle {
+                                text: Text::from_section(
+                                    text,
+                                    TextStyle {
+                                        font_size: *font_size,
+                                        font: DEFAULT_FONT_HANDLE,
+                                        color: *color,
+                                        ..default()
+                                    },
+                                ),
+                                style: Style {
+                                    position_type: PositionType::Absolute,
+                                    ..default()
+                                },
+                                ..default()
+                            },
+                            TextShadow::default(),
+                        ));
                     });
                 }
                 NodeContent::None => (),
@@ -412,15 +433,11 @@ enum NodeContent {
     // Customizable button that has its interactions sent to the server.
     Button(Vec<NodeConfig>),
     // Dual use text container, can be filled with text by the server, or used as an input field.
-    TextBox {
-        #[serde(default)]
-        input: bool,
-        #[serde(default)]
-        scrollable: bool,
+    TextContainer {
         // TODO: Maybe this should be part of the InterfaceTextBoxUpdate message instead, so that
         // you can have individual colors for each line.
         //
-        // If you do not want the textbox itself to have color, this allows you to set the
+        // If you do not want the container itself to have color, this allows you to set the
         // background color of the lines themselves.
         text_background_color: Option<Color>,
         // If true, new lines will be set to visible when received and then faded out after a short
@@ -428,7 +445,9 @@ enum NodeContent {
         #[serde(default)]
         fade: bool,
     },
-    // A predefined text field
+    // Text input
+    TextBox,
+    // A text field
     Text {
         text: String,
         font_size: f32,

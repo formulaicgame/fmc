@@ -9,6 +9,7 @@ use bevy::{
 
 use crate::{game_state::GameState, networking::Identity};
 
+mod connecting;
 mod login;
 mod main_menu;
 mod multiplayer;
@@ -23,11 +24,12 @@ impl Plugin for GuiPlugin {
                 login::LoginPlugin,
                 main_menu::MainMenuPlugin,
                 multiplayer::MultiPlayerPlugin,
+                connecting::ConnectingPlugin,
                 pause_menu::PauseMenuPlugin,
             ))
             .add_systems(Startup, setup)
             .add_systems(Update, change_interface.run_if(state_changed::<UiState>))
-            .add_systems(Update, enter_exit_ui.run_if(state_changed::<GameState>));
+            .add_systems(Update, game_state_change.run_if(state_changed::<GameState>));
 
         embedded_asset!(app, "assets/background.png");
     }
@@ -63,6 +65,7 @@ enum UiState {
     Login,
     MainMenu,
     MultiPlayer,
+    Connecting,
     PauseMenu,
 }
 
@@ -136,21 +139,21 @@ fn change_interface(
     }
 }
 
-fn enter_exit_ui(
+fn game_state_change(
     game_state: Res<State<GameState>>,
     identity: Res<Identity>,
     mut ui_state: ResMut<NextState<UiState>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     match game_state.get() {
-        GameState::MainMenu => {
+        GameState::Launcher => {
             if identity.username.is_empty() {
                 ui_state.set(UiState::Login);
             } else {
                 ui_state.set(UiState::MainMenu);
             }
         }
-        GameState::Connecting => (),
+        GameState::Connecting => ui_state.set(UiState::Connecting),
         GameState::Playing => ui_state.set(UiState::None),
         GameState::Paused => ui_state.set(UiState::PauseMenu),
     }

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use fmc_networking::NetworkClient;
 
 use super::{InterfaceBundle, Interfaces, UiState};
 use crate::{game_state::GameState, ui::widgets::*};
@@ -44,12 +45,12 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
 }
 
 fn quit_button(
-    mut game_state: ResMut<NextState<GameState>>,
+    net: Res<NetworkClient>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
-            game_state.set(GameState::MainMenu);
+            net.disconnect("");
         }
     }
 }

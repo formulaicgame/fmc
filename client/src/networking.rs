@@ -19,7 +19,7 @@ impl Plugin for ClientPlugin {
                 PreUpdate,
                 (
                     handle_connection,
-                    handle_server_config,
+                    handle_server_config.run_if(in_state(GameState::Connecting)),
                     handle_disconnect_messages,
                 ),
             );
@@ -41,7 +41,6 @@ fn handle_connection(
     net: Res<NetworkClient>,
     identity: Res<Identity>,
     mut network_events: EventReader<ClientNetworkEvent>,
-    mut game_state: ResMut<NextState<GameState>>,
 ) {
     for event in network_events.read() {
         match event {
@@ -52,11 +51,9 @@ fn handle_connection(
                 info!("Connected to server");
             }
             ClientNetworkEvent::Disconnected(_message) => {
-                game_state.set(GameState::MainMenu);
                 info!("Disconnected from server");
             }
             ClientNetworkEvent::Error(err) => {
-                game_state.set(GameState::MainMenu);
                 error!("{}", err);
             }
         }

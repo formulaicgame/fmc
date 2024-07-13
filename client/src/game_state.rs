@@ -1,14 +1,11 @@
 use bevy::{prelude::*, window::WindowFocused};
-use fmc_networking::{messages, NetworkClient};
-
-use crate::assets::AssetState;
+use fmc_networking::ClientNetworkEvent;
 
 pub struct GameStatePlugin;
 impl Plugin for GameStatePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>();
-        app.add_systems(Update, pause_when_unfocused)
-            .add_systems(OnExit(AssetState::Loading), finished_loading_start_game);
+        app.add_systems(Update, (pause_when_unfocused, connection_change));
     }
 }
 
@@ -16,7 +13,7 @@ impl Plugin for GameStatePlugin {
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 pub enum GameState {
     #[default]
-    MainMenu,
+    Launcher,
     Connecting,
     Playing,
     Paused,
@@ -31,12 +28,6 @@ impl GameState {
     }
 }
 
-// All assets are loaded, it can now start the main game loop
-fn finished_loading_start_game(net: Res<NetworkClient>, mut state: ResMut<NextState<GameState>>) {
-    net.send_message(messages::ClientFinishedLoading);
-    state.set(GameState::Playing);
-}
-
 // TODO: If the client was paused by being unfocused it should unpause when focused again.
 fn pause_when_unfocused(
     state: Res<State<GameState>>,
@@ -48,6 +39,23 @@ fn pause_when_unfocused(
             if !event.focused {
                 next_state.set(GameState::Paused);
             }
+        }
+    }
+}
+
+fn connection_change(
+    mut network_events: EventReader<ClientNetworkEvent>,
+    game_state: Res<State<GameState>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+) {
+    for event in network_events.read() {
+        match event {
+            ClientNetworkEvent::Disconnected(_) | ClientNetworkEvent::Error(_) => {
+                if *game_state.get() != GameState::Connecting {
+                    next_game_state.set(GameState::Launcher);
+                }
+            }
+            _ => (),
         }
     }
 }

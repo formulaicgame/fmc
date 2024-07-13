@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use super::{InterfaceBundle, Interfaces, UiState};
-use crate::{game_state::GameState, singleplayer::LaunchSinglePlayer, ui::widgets::*};
+use crate::{singleplayer::LaunchSinglePlayer, ui::widgets::*};
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
@@ -54,7 +54,6 @@ fn setup(
             },
         ))
         .with_children(|parent| {
-            // Singleplayer button
             parent
                 .spawn_button(200.0, "Singleplayer")
                 .insert(SinglePlayerButton);

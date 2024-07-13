@@ -1,30 +1,33 @@
-use bevy::{prelude::*, text::TextLayoutInfo};
+use bevy::{
+    prelude::*,
+    text::{BreakLineOn, TextLayoutInfo},
+};
 use fmc_networking::{messages, NetworkClient, NetworkData};
 
 use crate::{
     game_state::GameState,
     ui::{
-        widgets::{FocusedTextBox, TextBox},
+        widgets::{FocusedTextBox, TextBox, TextShadow},
         DEFAULT_FONT_HANDLE,
     },
 };
 
 use super::{InterfaceNode, InterfacePaths};
 
-pub struct TextBoxPlugin;
-impl Plugin for TextBoxPlugin {
+pub struct TextPlugin;
+impl Plugin for TextPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                size_textbox_lines,
-                handle_text_box_updates,
-                send_text,
-                fade_lines,
-            )
+            (handle_text_updates, change_line_size, send_text, fade_lines)
                 .run_if(GameState::in_game),
         );
     }
+}
+
+#[derive(Component)]
+pub struct TextContainer {
+    pub text_background_color: Color,
 }
 
 #[derive(Component)]
@@ -39,50 +42,48 @@ struct Fade {
 #[derive(Component)]
 pub struct FadeLines;
 
-// TODO: Why can't I drain these events? I don't want to re-allocate the strings. I remember last
-// time I tried I had to do DerefMut on NetworkData, but now that doesn't work anymore. Does it
-// have to do with the internal types of the event itself?
-fn handle_text_box_updates(
+fn handle_text_updates(
     mut commands: Commands,
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
-    text_box_query: Query<(Option<&Children>, &TextBox, Has<FadeLines>)>,
-    mut text_box_update_events: EventReader<NetworkData<messages::InterfaceTextBoxUpdate>>,
+    text_container_query: Query<(Option<&Children>, &TextContainer, Has<FadeLines>)>,
+    mut text_update_events: EventReader<NetworkData<messages::InterfaceTextUpdate>>,
 ) {
-    for text_box_update in text_box_update_events.read() {
-        let interface_entities = match interface_paths.get(&text_box_update.interface_path) {
+    for text_update in text_update_events.read() {
+        let interface_entities = match interface_paths.get(&text_update.interface_path) {
             Some(i) => i,
             None => {
                 net.disconnect(&format!(
-                    "Server sent item box update for interface with name: {}, but there is no interface by that name.",
-                    &text_box_update.interface_path
+                    "Server sent text update for interface with name: {}, but there is no interface by that name.",
+                    &text_update.interface_path
                 ));
                 return;
             }
         };
 
         for interface_entity in interface_entities.iter() {
-            let (children, text_box, should_fade) = match text_box_query.get(*interface_entity) {
+            let (children, text_container, should_fade) = match text_container_query
+                .get(*interface_entity)
+            {
                 Ok(c) => c,
                 Err(_) => {
                     net.disconnect(&format!(
-                            "Server sent text box update for interface with name: {}, but the interface is not configured to contain text.",
-                            &text_box_update.interface_path
+                            "Server sent text update for interface with name: {}, but the interface is not configured to contain text.",
+                            &text_update.interface_path
                             ));
                     return;
                 }
             };
 
-            for new_line in &text_box_update.lines {
+            for new_line in &text_update.lines {
                 let mut sections = Vec::with_capacity(new_line.sections.len());
-                let mut shadow_sections = Vec::with_capacity(new_line.sections.len());
                 for section in &new_line.sections {
                     let color = match Color::hex(&section.color) {
                         Ok(c) => c,
                         Err(_) => {
                             net.disconnect(&format!(
-                                    "Server malformed text box update for interface with name: {}. The text contained a malformed color property. '{}', is not a valid hex color.",
-                                    &text_box_update.interface_path,
+                                    "Server sent malformed text box update for interface with name: {}. The text contained a malformed color property. '{}', is not a valid hex color.",
+                                    &text_update.interface_path,
                                     &section.color
                                     ));
                             return;
@@ -96,15 +97,10 @@ fn handle_text_box_updates(
                             color,
                         },
                     });
-                    shadow_sections.push(TextSection {
-                        value: section.text.clone(),
-                        style: TextStyle {
-                            font: DEFAULT_FONT_HANDLE,
-                            font_size: section.font_size,
-                            color: Color::DARK_GRAY,
-                        },
-                    });
                 }
+
+                let mut text = Text::from_sections(sections);
+                text.linebreak_behavior = BreakLineOn::AnyCharacter;
 
                 let mut entity_commands = if children.is_none() {
                     let entity = commands.spawn_empty().id();
@@ -134,14 +130,10 @@ fn handle_text_box_updates(
                     });
                 }
 
-                // TODO: Move font size to the line instead of in the secions.
-                // XXX: This relies on all sections being the same font size
-                let height = sections[0].style.font_size;
-
                 entity_commands.insert((
                     NodeBundle {
                         style: Style {
-                            width: Val::Percent(100.0),
+                            //width: Val::Percent(100.0),
                             ..default()
                         },
                         visibility: if should_fade {
@@ -149,36 +141,26 @@ fn handle_text_box_updates(
                         } else {
                             Visibility::Inherited
                         },
-                        background_color: text_box.text_background_color.into(),
+                        background_color: text_container.text_background_color.into(),
                         ..default()
                     },
                     Line,
                 ));
 
                 entity_commands.with_children(|parent| {
-                    parent.spawn(TextBundle {
-                        text: Text::from_sections(shadow_sections),
-                        style: Style {
-                            width: Val::Percent(100.0),
-                            position_type: PositionType::Absolute,
-                            margin: UiRect {
-                                top: Val::Px(height / 10.6),
-                                left: Val::Px(height / 9.0),
+                    parent
+                        .spawn(TextBundle {
+                            text,
+                            style: Style {
+                                // XXX: Since the fake shadow text extends a little farther it
+                                // often wraps before the real text. To counteract this the real
+                                // text is made to wrap a little sooner by shrinking the width.
+                                width: Val::Percent(98.0),
                                 ..default()
                             },
                             ..default()
-                        },
-                        ..default()
-                    });
-                    parent.spawn(TextBundle {
-                        text: Text::from_sections(sections),
-                        style: Style {
-                            width: Val::Percent(100.0),
-                            position_type: PositionType::Absolute,
-                            ..default()
-                        },
-                        ..default()
-                    });
+                        })
+                        .insert(TextShadow::default());
                 });
             }
         }
@@ -202,7 +184,8 @@ fn fade_lines(
     }
 }
 
-fn size_textbox_lines(
+// Increase background size vertically to make room for fake shadow text
+fn change_line_size(
     mut line_query: Query<(&mut Style, &Children), Added<Line>>,
     layout_query: Query<&TextLayoutInfo>,
 ) {

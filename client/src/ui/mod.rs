@@ -67,7 +67,7 @@ struct LogicalMonitorWidth {
     width: f32,
 }
 
-// TODO: Scaling like this uses a lot of memory because of how fonts sizes are stored.
+// TODO: Scaling like this uses a lot of memory because of how font sizes are stored.
 // https://github.com/bevyengine/bevy/issues/5636
 // It was fixed, but then reversed. Haven't found anyone discussing it afterwards.
 fn scale_ui(
