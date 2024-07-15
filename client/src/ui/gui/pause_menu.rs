@@ -1,7 +1,7 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::WindowFocused};
 use fmc_networking::NetworkClient;
 
-use super::{InterfaceBundle, Interfaces, UiState};
+use super::{GuiState, InterfaceBundle, Interfaces};
 use crate::{game_state::GameState, ui::widgets::*};
 
 pub struct PauseMenuPlugin;
@@ -9,7 +9,10 @@ impl Plugin for PauseMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            (resume_button, quit_button, escape_key).run_if(in_state(UiState::PauseMenu)),
+            (
+                (resume_button, quit_button, escape_key).run_if(in_state(GuiState::PauseMenu)),
+                (pause_when_unfocused, escape_key).run_if(in_state(GameState::Playing)),
+            ),
         );
     }
 }
@@ -41,7 +44,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             parent.spawn_button(200.0, "Quit").insert(QuitButton);
         })
         .id();
-    interfaces.insert(UiState::PauseMenu, entity);
+    interfaces.insert(GuiState::PauseMenu, entity);
 }
 
 fn quit_button(
@@ -56,18 +59,38 @@ fn quit_button(
 }
 
 fn resume_button(
-    mut game_state: ResMut<NextState<GameState>>,
+    mut gui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
-            game_state.set(GameState::Playing);
+            gui_state.set(GuiState::None);
         }
     }
 }
 
-fn escape_key(mut game_state: ResMut<NextState<GameState>>, input: Res<ButtonInput<KeyCode>>) {
+fn escape_key(
+    gui_state: Res<State<GuiState>>,
+    mut next_gui_state: ResMut<NextState<GuiState>>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
     if input.just_pressed(KeyCode::Escape) {
-        game_state.set(GameState::Playing);
+        if *gui_state.get() == GuiState::PauseMenu {
+            next_gui_state.set(GuiState::None);
+        } else {
+            next_gui_state.set(GuiState::PauseMenu);
+        }
+    }
+}
+
+// TODO: If the client was paused by being unfocused it should unpause when focused again.
+fn pause_when_unfocused(
+    mut gui_state: ResMut<NextState<GuiState>>,
+    mut focus_events: EventReader<WindowFocused>,
+) {
+    for event in focus_events.read() {
+        if !event.focused {
+            gui_state.set(GuiState::PauseMenu);
+        }
     }
 }

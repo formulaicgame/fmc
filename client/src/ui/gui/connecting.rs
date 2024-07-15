@@ -4,14 +4,18 @@ use bevy::{
 };
 use fmc_networking::NetworkClient;
 
-use super::{InterfaceBundle, Interfaces, UiState};
+use super::{GuiState, InterfaceBundle, Interfaces};
 use crate::{assets::AssetState, game_state::GameState, ui::widgets::*};
 
+// TODO: I think this looks better as an event architecture. You have something you want to
+// show in the connection ui -> you send an event with the string you want shown -> the ui is
+// shown. No logic needed for when to enter during connection, and no logic needed to enter when
+// disconnecting by some network error.
 pub struct ConnectingPlugin;
 impl Plugin for ConnectingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, press_cancel.run_if(in_state(UiState::Connecting)))
+            .add_systems(Update, press_cancel.run_if(in_state(GuiState::Connecting)))
             .add_systems(OnEnter(AssetState::Downloading), downloading_assets_text)
             .add_systems(OnEnter(AssetState::Loading), loading_assets_text);
     }
@@ -74,7 +78,7 @@ fn setup(
             parent.spawn_button(200.0, "Cancel").insert(CancelButton);
         })
         .id();
-    interfaces.insert(UiState::Connecting, entity);
+    interfaces.insert(GuiState::Connecting, entity);
 }
 
 fn press_cancel(
@@ -97,5 +101,5 @@ fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) 
 
 fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut();
-    text.sections[0].value = "Downloading assets...".to_owned();
+    text.sections[0].value = "Loading assets...".to_owned();
 }

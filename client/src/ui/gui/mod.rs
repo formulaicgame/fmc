@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use bevy::{
-    asset::embedded_asset,
-    prelude::*,
-    ui::FocusPolicy,
-    window::{CursorGrabMode, PrimaryWindow},
-};
+use bevy::{asset::embedded_asset, prelude::*, ui::FocusPolicy};
 
 use crate::{game_state::GameState, networking::Identity};
 
@@ -18,7 +13,7 @@ mod pause_menu;
 pub struct GuiPlugin;
 impl Plugin for GuiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<UiState>()
+        app.init_state::<GuiState>()
             .insert_resource(Interfaces::default())
             .add_plugins((
                 login::LoginPlugin,
@@ -28,8 +23,11 @@ impl Plugin for GuiPlugin {
                 pause_menu::PauseMenuPlugin,
             ))
             .add_systems(Startup, setup)
-            .add_systems(Update, change_interface.run_if(state_changed::<UiState>))
-            .add_systems(Update, game_state_change.run_if(state_changed::<GameState>));
+            .add_systems(Update, change_interface.run_if(state_changed::<GuiState>))
+            .add_systems(
+                Update,
+                change_with_game_state.run_if(state_changed::<GameState>),
+            );
 
         embedded_asset!(app, "assets/background.png");
     }
@@ -53,24 +51,24 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
         })
         .id();
 
-    interfaces.insert(UiState::None, entity);
+    interfaces.insert(GuiState::None, entity);
 }
 
-// TODO: Make sub states(https://github.com/bevyengine/bevy/issues/8187)
-// of the main GameState?
+// Decides which gui interface is shown
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
-enum UiState {
-    #[default]
+pub(super) enum GuiState {
     None,
     Login,
+    #[default]
     MainMenu,
     MultiPlayer,
     Connecting,
     PauseMenu,
 }
 
+// To link the GuiState to the entity holding the layout it must be registered here.
 #[derive(Resource, Deref, DerefMut, Default)]
-struct Interfaces(HashMap<UiState, Entity>);
+struct Interfaces(HashMap<GuiState, Entity>);
 
 #[derive(Component)]
 struct InterfaceMarker;
@@ -125,7 +123,7 @@ impl Default for InterfaceBundle {
 }
 
 fn change_interface(
-    state: Res<State<UiState>>,
+    state: Res<State<GuiState>>,
     interfaces: Res<Interfaces>,
     mut interface_query: Query<(Entity, &mut Visibility), With<InterfaceMarker>>,
 ) {
@@ -139,41 +137,13 @@ fn change_interface(
     }
 }
 
-fn game_state_change(
+fn change_with_game_state(
     game_state: Res<State<GameState>>,
-    identity: Res<Identity>,
-    mut ui_state: ResMut<NextState<UiState>>,
-    mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut gui_state: ResMut<NextState<GuiState>>,
 ) {
     match game_state.get() {
-        GameState::Launcher => {
-            if identity.username.is_empty() {
-                ui_state.set(UiState::Login);
-            } else {
-                ui_state.set(UiState::MainMenu);
-            }
-        }
-        GameState::Connecting => ui_state.set(UiState::Connecting),
-        GameState::Playing => ui_state.set(UiState::None),
-        GameState::Paused => ui_state.set(UiState::PauseMenu),
-    }
-
-    let mut window = window.single_mut();
-
-    match game_state.get() {
-        GameState::Playing => {
-            window.cursor.grab_mode = if cfg!(unix) {
-                CursorGrabMode::Locked
-            } else {
-                CursorGrabMode::Confined
-            };
-            window.cursor.visible = false;
-        }
-        _ => {
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
-            let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
-            window.set_cursor_position(Some(position));
-        }
+        GameState::Launcher => gui_state.set(GuiState::MainMenu),
+        GameState::Connecting => gui_state.set(GuiState::Connecting),
+        GameState::Playing => gui_state.set(GuiState::None),
     }
 }

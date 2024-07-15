@@ -5,14 +5,14 @@ use bevy::{
 
 use crate::{game_state::GameState, ui::widgets::*};
 
-use super::{InterfaceBundle, Interfaces, UiState};
+use super::{GuiState, InterfaceBundle, Interfaces};
 
 pub struct MultiPlayerPlugin;
 impl Plugin for MultiPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            press_play_button.run_if(in_state(UiState::MultiPlayer)),
+            press_play_button.run_if(in_state(GuiState::MultiPlayer)),
         );
     }
 }
@@ -60,7 +60,7 @@ fn setup(
             parent.spawn_button(200.0, "PLAY").insert(PlayButton);
         })
         .id();
-    interfaces.insert(UiState::MultiPlayer, entity);
+    interfaces.insert(GuiState::MultiPlayer, entity);
 }
 
 fn press_play_button(

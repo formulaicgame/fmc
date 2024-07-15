@@ -4,7 +4,7 @@ use bevy::{gltf::Gltf, prelude::*};
 
 use fmc_networking::{
     messages::{self, ServerConfig},
-    ConnectionId, NetworkClient, NetworkData,
+    NetworkClient, NetworkData,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,22 +26,16 @@ impl Plugin for ItemPlugin {
         app.add_systems(
             Update,
             (
-                (
-                    handle_item_box_updates,
-                    initial_select_item_box,
-                    return_cursor_item.after(super::handle_toggle_events),
-                )
-                    .run_if(GameState::in_game),
-                (
-                    left_click_item_box,
-                    right_click_item_box,
-                    update_cursor_image.after(left_click_item_box),
-                    update_cursor_item_stack_position,
-                    keyboard_select_item_box,
-                )
-                    // Don't run when paused
-                    .run_if(in_state(GameState::Playing)),
-            ),
+                handle_item_box_updates,
+                initial_select_item_box,
+                return_cursor_item.after(super::handle_toggle_events),
+                left_click_item_box,
+                right_click_item_box,
+                update_cursor_image.after(left_click_item_box),
+                update_cursor_item_stack_position,
+                keyboard_select_item_box,
+            )
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -575,7 +569,7 @@ fn left_click_item_box(
             }
         }
 
-        let mut item_box_update = messages::InterfaceItemBoxUpdate::new();
+        let mut item_box_update = messages::InterfaceItemBoxUpdate::default();
 
         if item_box.item_stack.is_empty() {
             item_box_update.add_empty_itembox(&interface_node.path, item_box.index as u32);
@@ -689,7 +683,7 @@ fn right_click_item_box(
         };
     }
 
-    let mut item_box_update = messages::InterfaceItemBoxUpdate::new();
+    let mut item_box_update = messages::InterfaceItemBoxUpdate::default();
 
     if item_box.item_stack.is_empty() {
         item_box_update.add_empty_itembox(&interface_node.path, item_box.index as u32);

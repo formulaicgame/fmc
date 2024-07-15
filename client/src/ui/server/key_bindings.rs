@@ -1,23 +1,22 @@
 use std::collections::HashMap;
 
-use bevy::{app::AppExit, prelude::*};
+use bevy::prelude::*;
 use fmc_networking::{messages, NetworkClient};
 use serde::Deserialize;
 
-use crate::{
-    game_state::GameState,
-    ui::server::{InterfaceToggleEvent, Interfaces},
+use crate::ui::{
+    server::{InterfaceToggleEvent, Interfaces},
+    UiState,
 };
+
+use super::InterfaceConfig;
 
 pub struct KeyBindingsPlugin;
 impl Plugin for KeyBindingsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                handle_key_presses.run_if(in_state(GameState::Playing)),
-                //escape_key.run_if(in_state(GameState::Playing)),
-            ),
+            handle_key_presses.run_if(in_state(UiState::ServerInterfaces)),
         );
     }
 }
@@ -159,9 +158,19 @@ fn handle_key_presses(
     input: Res<ButtonInput<KeyCode>>,
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
+    interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
     mut interface_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for pressed_key in input.get_just_pressed() {
+        if *pressed_key == KeyCode::KeyE {
+            for (interface_entity, visibility, interface_config) in interface_query.iter() {
+                if visibility == Visibility::Visible && interface_config.is_exclusive {
+                    interface_events.send(InterfaceToggleEvent { interface_entity });
+                    return;
+                }
+            }
+        }
+
         if let Some(command) = key_bindings.get(pressed_key) {
             if let Some(interface_name) = command.strip_prefix("/interface ") {
                 let entity = match interfaces.get(interface_name) {
@@ -186,16 +195,5 @@ fn handle_key_presses(
                 });
             }
         }
-    }
-}
-
-fn escape_key(
-    net: Res<NetworkClient>,
-    mut exit_events: EventWriter<AppExit>,
-    input: Res<ButtonInput<KeyCode>>,
-) {
-    if input.just_pressed(KeyCode::Escape) {
-        net.disconnect("");
-        exit_events.send(AppExit);
     }
 }

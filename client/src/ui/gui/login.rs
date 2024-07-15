@@ -3,14 +3,14 @@ use bevy::{
     ui::{widget::UiImageSize, ContentSize},
 };
 
-use super::{InterfaceBundle, Interfaces, UiState};
+use super::{GuiState, InterfaceBundle, Interfaces};
 use crate::{networking::Identity, ui::widgets::*};
 
 pub struct LoginPlugin;
 impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, press_play.run_if(in_state(UiState::Login)));
+        app.add_systems(Startup, interface_setup)
+            .add_systems(Update, (press_play.run_if(in_state(GuiState::Login)),));
     }
 }
 
@@ -20,7 +20,7 @@ struct LoginButton;
 #[derive(Component)]
 struct Username;
 
-fn setup(
+fn interface_setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut interfaces: ResMut<Interfaces>,
@@ -70,25 +70,31 @@ fn setup(
             parent.spawn_button(200.0, "Play").insert(LoginButton);
         })
         .id();
-    interfaces.insert(UiState::Login, entity);
+    interfaces.insert(GuiState::Login, entity);
 }
 
 fn press_play(
-    mut ui_state: ResMut<NextState<UiState>>,
+    mut ui_state: ResMut<NextState<GuiState>>,
     mut identity: ResMut<Identity>,
     username: Query<&TextBox, With<Username>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<LoginButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
-        identity.username = username.single().text.clone();
-        if identity.username.is_empty() {
+        if *interaction != Interaction::Pressed {
             return;
         }
 
+        let username = &username.single().text;
+
+        if username.is_empty() {
+            return;
+        }
+
+        identity.username = username.clone();
+
         std::fs::write("./identity.txt", &identity.username).ok();
 
-        if *interaction == Interaction::Pressed {
-            ui_state.set(UiState::MainMenu);
-        }
+        dbg!("jalla");
+        ui_state.set(GuiState::MainMenu);
     }
 }

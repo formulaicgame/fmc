@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
 use bevy::{
-    ecs::system::EntityCommands,
-    input::keyboard::{Key, KeyboardInput},
+    ecs::{entity, system::EntityCommands},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         texture::{CompressedImageFormats, ImageSampler},
     },
-    window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_networking::{messages, NetworkClient, NetworkData};
 use serde::Deserialize;
@@ -22,7 +20,8 @@ use crate::{
 };
 
 use self::items::{CursorItemBox, ItemBoxSection};
-use super::widgets::Widgets;
+
+use super::{CursorVisibility, UiState};
 
 pub mod items;
 pub mod key_bindings;
@@ -45,15 +44,13 @@ impl Plugin for ServerInterfacesPlugin {
             .add_systems(
                 Update,
                 (
-                    handle_visibility_updates,
+                    button_interaction.run_if(in_state(UiState::ServerInterfaces)),
+                    hide_interfaces_when_paused.run_if(state_changed::<UiState>),
+                    handle_node_visibility_updates,
+                    handle_interface_visibility_updates,
                     handle_toggle_events,
-                    handle_open_request,
-                    handle_close_request,
-                    button_interaction,
-                    cursor_visibility,
-                    handle_escape_key,
                 )
-                    .run_if(GameState::in_game),
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -376,7 +373,7 @@ pub fn load_interfaces(
 
 /// Event used by keybindings to toggle an interface open or closed.
 #[derive(Event)]
-pub struct InterfaceToggleEvent {
+struct InterfaceToggleEvent {
     pub interface_entity: Entity,
 }
 #[derive(Default, Deserialize)]
@@ -407,7 +404,7 @@ struct InterfaceConfig {
     keyboard_focus: KeyboardFocus,
 }
 
-// The current focus is stored as a resource
+// TODO: This is not implemented. Should allow you to move around when some interfaces are open
 #[derive(Resource, Deserialize, Default, PartialEq, Clone, Copy)]
 enum KeyboardFocus {
     // Keyboard focus is not taken
@@ -617,31 +614,6 @@ impl From<NodeStyle> for Style {
 #[derive(Resource, Deref, DerefMut, Default)]
 struct InterfaceStack(Vec<Entity>);
 
-fn cursor_visibility(
-    mut window: Query<&mut Window, With<PrimaryWindow>>,
-    changed_interfaces: Query<(&Visibility, &InterfaceConfig), Changed<Visibility>>,
-) {
-    for (visibility, config) in changed_interfaces.iter() {
-        if config.is_exclusive {
-            let mut window = window.single_mut();
-
-            if visibility == Visibility::Visible {
-                window.cursor.visible = true;
-                let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
-                window.set_cursor_position(Some(position));
-                window.cursor.grab_mode = CursorGrabMode::None;
-            } else {
-                window.cursor.visible = false;
-                window.cursor.grab_mode = if cfg!(unix) {
-                    CursorGrabMode::Locked
-                } else {
-                    CursorGrabMode::Confined
-                };
-            }
-        }
-    }
-}
-
 // TODO: Interaction isn't granular enough. Buttons should only be pressed when they are hovered
 // over and the button is released. https://github.com/bevyengine/bevy/pull/9240 is fix I think.
 // Remember to also change it for the client GUI buttons, it will solve the problem
@@ -661,14 +633,14 @@ fn button_interaction(
     }
 }
 
-fn handle_visibility_updates(
+fn handle_node_visibility_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     mut interface_query: Query<&mut Visibility, With<InterfaceNode>>,
-    mut visibility_update_events: EventReader<NetworkData<messages::InterfaceVisibilityUpdate>>,
+    mut visibility_update_events: EventReader<NetworkData<messages::InterfaceNodeVisibilityUpdate>>,
 ) {
     for visibility_updates in visibility_update_events.read() {
-        for (interface_path, new_visibility) in visibility_updates.updates.iter() {
+        for (interface_path, should_be_visible) in visibility_updates.updates.iter() {
             let interface_entities = match interface_paths.get(interface_path) {
                 Some(i) => i,
                 None => {
@@ -680,81 +652,25 @@ fn handle_visibility_updates(
                 }
             };
 
-            for entity in interface_entities {
-                let mut visibility = interface_query.get_mut(*entity).unwrap();
+            dbg!(interface_path, should_be_visible, &interface_entities);
+            for interface_entity in interface_entities.iter().cloned() {
+                let mut visibility = interface_query.get_mut(interface_entity).unwrap();
 
-                if *new_visibility == 0 {
+                if *visibility == Visibility::Hidden && *should_be_visible {
                     *visibility = Visibility::Inherited;
-                } else if *new_visibility == 1 {
+                } else if *visibility == Visibility::Inherited && !should_be_visible {
                     *visibility = Visibility::Hidden;
-                } else if *new_visibility == 2 {
-                    *visibility = Visibility::Visible;
-                } else {
-                    net.disconnect(&format!(
-                        "Server sent an invalid visibility update for the interface: '{}'. The received visibility was ({}), but it must be one of:\
-                        \n    0 = Visibility is inherited from the parent interface\
-                        \n    1 = Hidden\
-                        \n    2 = Visible",
-                        &interface_path,
-                        new_visibility
-                        ));
-                    return;
                 }
             }
         }
     }
 }
 
-// This is a common hub for changing the visibility of interfaces. The client uses
-// InterfaceToggleEvent, but the server will set visibility explicitly. Handlers are used to
-// translate the server requests into toggle events by checking if the interface isn't already in
-// the wanted state.
-fn handle_toggle_events(
-    mut keyboard_focus: ResMut<KeyboardFocus>,
-    mut interface_stack: ResMut<InterfaceStack>,
-    mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
-    mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
-) {
-    for event in interface_toggle_events.read() {
-        if *keyboard_focus == KeyboardFocus::Full {
-            return;
-        }
-
-        let (_, mut visibility, toggled_config) =
-            interface_query.get_mut(event.interface_entity).unwrap();
-        if *visibility == Visibility::Visible {
-            *keyboard_focus = KeyboardFocus::None;
-            *visibility = Visibility::Hidden;
-        } else {
-            *keyboard_focus = toggled_config.keyboard_focus;
-            *visibility = Visibility::Visible;
-        }
-
-        if toggled_config.is_exclusive {
-            if *visibility == Visibility::Visible {
-                for (entity, mut visibility, config) in interface_query.iter_mut() {
-                    if entity != event.interface_entity && *visibility == Visibility::Visible {
-                        *visibility = Visibility::Hidden;
-                        if !config.is_exclusive {
-                            interface_stack.push(entity);
-                        }
-                    }
-                }
-            } else if *visibility == Visibility::Hidden {
-                for interface_entity in interface_stack.drain(..) {
-                    let (_, mut visibility, _) = interface_query.get_mut(interface_entity).unwrap();
-                    *visibility = Visibility::Visible;
-                }
-            }
-        }
-    }
-}
-
-fn handle_open_request(
+fn handle_interface_visibility_updates(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
     interface_query: Query<&Visibility, With<InterfaceConfig>>,
-    mut interface_open_events: EventReader<NetworkData<messages::InterfaceOpen>>,
+    mut interface_open_events: EventReader<NetworkData<messages::InterfaceVisibilityUpdate>>,
     mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for event in interface_open_events.read() {
@@ -768,7 +684,13 @@ fn handle_open_request(
                 return;
             }
         };
-        if *interface_query.get(*interface_entity).unwrap() == Visibility::Hidden {
+
+        let visibility = *interface_query.get(*interface_entity).unwrap();
+        if visibility == Visibility::Hidden && event.visible {
+            interface_toggle_events.send(InterfaceToggleEvent {
+                interface_entity: *interface_entity,
+            });
+        } else if visibility == Visibility::Inherited && !event.visible {
             interface_toggle_events.send(InterfaceToggleEvent {
                 interface_entity: *interface_entity,
             });
@@ -776,59 +698,81 @@ fn handle_open_request(
     }
 }
 
-fn handle_close_request(
-    interfaces: Res<Interfaces>,
-    net: Res<NetworkClient>,
-    interface_query: Query<&Visibility, With<InterfaceConfig>>,
-    mut interface_open_events: EventReader<NetworkData<messages::InterfaceClose>>,
-    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
-) {
-    for event in interface_open_events.read() {
-        let interface_entity = match interfaces.get(&event.interface_path) {
-            Some(e) => e,
-            None => {
-                net.disconnect(&format!(
-                    "Server sent an interface with name '{}', but there is no interface known by this name.",
-                    event.interface_path
-                ));
-                return;
-            }
-        };
-        if *interface_query.get(*interface_entity).unwrap() == Visibility::Visible {
-            interface_toggle_events.send(InterfaceToggleEvent {
-                interface_entity: *interface_entity,
-            });
-        }
-    }
-}
-
-fn handle_escape_key(
+// This is a common hub for changing the visibility of interfaces. The client uses
+// InterfaceToggleEvent, but the server will set visibility explicitly. Handlers are used to
+// translate the server requests into toggle events by checking if the interface isn't already in
+// the wanted state.
+fn handle_toggle_events(
+    ui_state: Res<State<UiState>>,
+    mut cursor_visibility: ResMut<CursorVisibility>,
     mut keyboard_focus: ResMut<KeyboardFocus>,
     mut interface_stack: ResMut<InterfaceStack>,
-    mut game_state: ResMut<NextState<GameState>>,
-    mut interface_query: Query<(&mut Visibility, &InterfaceConfig)>,
-    mut keyboard_input: EventReader<KeyboardInput>,
+    mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
+    mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
 ) {
-    for key in keyboard_input.read() {
-        if key.logical_key != Key::Escape || !key.state.is_pressed() {
+    for event in interface_toggle_events.read() {
+        if *ui_state.get() == UiState::Gui {
+            // Toggles will be applied in correct order as soon as the game is resumed.
+            interface_stack.push(event.interface_entity);
             continue;
         }
-        let mut was_open = false;
-        for (mut visibility, config) in interface_query.iter_mut() {
-            if *visibility == Visibility::Visible && config.is_exclusive {
-                *visibility = Visibility::Hidden;
-                *keyboard_focus = KeyboardFocus::None;
-                was_open = true;
-            }
+
+        let (_, mut visibility, toggled_config) =
+            interface_query.get_mut(event.interface_entity).unwrap();
+
+        if *visibility == Visibility::Inherited {
+            *keyboard_focus = KeyboardFocus::None;
+            *visibility = Visibility::Hidden;
+        } else {
+            *keyboard_focus = toggled_config.keyboard_focus;
+            *visibility = Visibility::Inherited;
         }
 
-        if was_open {
-            for interface_entity in interface_stack.drain(..) {
-                let (mut visibility, _) = interface_query.get_mut(interface_entity).unwrap();
-                *visibility = Visibility::Visible;
+        if toggled_config.is_exclusive {
+            if *visibility == Visibility::Inherited {
+                cursor_visibility.server = true;
+
+                for (entity, mut visibility, config) in interface_query.iter_mut() {
+                    if entity != event.interface_entity && *visibility == Visibility::Inherited {
+                        *visibility = Visibility::Hidden;
+                        if !config.is_exclusive {
+                            interface_stack.push(entity);
+                        }
+                    }
+                }
+            } else if *visibility == Visibility::Hidden {
+                cursor_visibility.server = false;
+
+                for interface_entity in interface_stack.drain(..) {
+                    let (_, mut visibility, _) = interface_query.get_mut(interface_entity).unwrap();
+                    *visibility = Visibility::Inherited;
+                }
             }
-        } else {
-            game_state.set(GameState::Paused);
+        }
+    }
+}
+
+fn hide_interfaces_when_paused(
+    ui_state: Res<State<UiState>>,
+    mut interface_stack: ResMut<InterfaceStack>,
+    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
+    mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
+) {
+    if *ui_state.get() == UiState::Gui {
+        for (interface_entity, mut visibility, _) in interface_query.iter_mut() {
+            if *visibility == Visibility::Inherited {
+                *visibility = Visibility::Hidden;
+                interface_stack.push(interface_entity);
+            }
+        }
+    } else if *ui_state.get() == UiState::ServerInterfaces {
+        while let Some(interface_entity) = interface_stack.pop() {
+            let (_, _, interface_config) = interface_query.get(interface_entity).unwrap();
+            interface_toggle_events.send(InterfaceToggleEvent { interface_entity });
+
+            if interface_config.is_exclusive {
+                return;
+            }
         }
     }
 }

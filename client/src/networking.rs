@@ -5,16 +5,10 @@ use crate::game_state::GameState;
 
 pub struct ClientPlugin;
 
-// This is set during login, but is otherwise empty
-#[derive(Resource, Default)]
-pub struct Identity {
-    pub username: String,
-}
-
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(fmc_networking::ClientPlugin)
-            .add_systems(Startup, setup)
+        app.insert_resource(Identity::read_from_file())
+            .add_plugins(fmc_networking::ClientPlugin)
             .add_systems(
                 PreUpdate,
                 (
@@ -26,13 +20,26 @@ impl Plugin for ClientPlugin {
     }
 }
 
-fn setup(mut commands: Commands) {
-    if let Ok(username) = std::fs::read_to_string("./identity.txt") {
-        commands.insert_resource(Identity {
-            username: username.trim().to_owned(),
-        });
-    } else {
-        commands.insert_resource(Identity::default());
+#[derive(Resource)]
+pub struct Identity {
+    pub username: String,
+}
+
+impl Identity {
+    fn read_from_file() -> Self {
+        if let Ok(username) = std::fs::read_to_string("./identity.txt") {
+            Identity {
+                username: username.trim().to_owned(),
+            }
+        } else {
+            Identity {
+                username: String::new(),
+            }
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.username.is_empty()
     }
 }
 

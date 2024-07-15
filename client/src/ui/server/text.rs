@@ -20,7 +20,7 @@ impl Plugin for TextPlugin {
         app.add_systems(
             Update,
             (handle_text_updates, change_line_size, send_text, fade_lines)
-                .run_if(GameState::in_game),
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -38,7 +38,7 @@ struct Fade {
     delay: Timer,
 }
 
-// Marks textboxes that should have their new lines faded out.
+// Marks text containers that should have their new lines faded out.
 #[derive(Component)]
 pub struct FadeLines;
 

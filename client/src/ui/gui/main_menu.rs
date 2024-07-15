@@ -3,15 +3,16 @@ use bevy::{
     ui::{widget::UiImageSize, ContentSize},
 };
 
-use super::{InterfaceBundle, Interfaces, UiState};
-use crate::{singleplayer::LaunchSinglePlayer, ui::widgets::*};
+use super::{GuiState, InterfaceBundle, Interfaces};
+use crate::{networking::Identity, singleplayer::LaunchSinglePlayer, ui::widgets::*};
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            (press_singleplayer, press_multiplayer).run_if(in_state(UiState::MainMenu)),
+            (press_singleplayer, press_multiplayer, goto_login)
+                .run_if(in_state(GuiState::MainMenu)),
         );
     }
 }
@@ -62,7 +63,7 @@ fn setup(
                 .insert(MultiPlayerButton);
         })
         .id();
-    interfaces.insert(UiState::MainMenu, entity);
+    interfaces.insert(GuiState::MainMenu, entity);
 }
 
 // TODO: The button should lead to its own screen where you select game and save file
@@ -78,12 +79,19 @@ fn press_singleplayer(
 }
 
 fn press_multiplayer(
-    mut ui_state: ResMut<NextState<UiState>>,
+    mut ui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<MultiPlayerButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
-            ui_state.set(UiState::MultiPlayer);
+            ui_state.set(GuiState::MultiPlayer);
         }
+    }
+}
+
+fn goto_login(identity: Res<Identity>, mut gui_state: ResMut<NextState<GuiState>>) {
+    if !identity.is_valid() {
+        dbg!(&identity.username);
+        gui_state.set(GuiState::Login);
     }
 }
