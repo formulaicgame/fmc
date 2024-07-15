@@ -14,7 +14,10 @@ impl Plugin for WorldPlugin {
         app.add_plugins(world_map::WorldMapPlugin);
 
         app.insert_resource(Origin(IVec3::ZERO));
-        app.add_systems(PostUpdate, update_origin.run_if(GameState::in_game));
+        app.add_systems(
+            PostUpdate,
+            update_origin.run_if(in_state(GameState::Playing)),
+        );
     }
 }
 

@@ -4,7 +4,6 @@ use fmc_networking::{messages, NetworkData};
 use crate::{
     game_state::GameState,
     player::PlayerState,
-    settings::Settings,
     world::{blocks::Blocks, world_map::WorldMap, Origin},
 };
 
@@ -15,7 +14,7 @@ impl Plugin for AudioPlugin {
             .add_systems(
                 Update,
                 (play_sounds, toggle_client_side_sound, play_walking_sound)
-                    .run_if(GameState::in_game),
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }

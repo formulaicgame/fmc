@@ -30,7 +30,7 @@ impl Plugin for ModelPlugin {
                 play_animations.after(handle_model_add_delete),
                 play_queued_animations,
             )
-                .run_if(GameState::in_game),
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

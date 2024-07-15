@@ -40,7 +40,7 @@ impl Plugin for LightingPlugin {
                     light_chunk_unloading.run_if(resource_changed::<Origin>),
                 )
                     .in_set(RenderSet::Light)
-                    .run_if(GameState::in_game),
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }

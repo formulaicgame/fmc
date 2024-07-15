@@ -36,7 +36,7 @@ impl Plugin for ChunkMeshPlugin {
             (mesh_system, apply_deferred, handle_mesh_tasks)
                 .chain()
                 .in_set(RenderSet::Mesh)
-                .run_if(GameState::in_game),
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

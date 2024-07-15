@@ -20,7 +20,7 @@ impl Plugin for SkyPlugin {
             // be removed when the sky is defined by the server.
             setup,
         )
-        .add_systems(Update, pass_time.run_if(GameState::in_game));
+        .add_systems(Update, pass_time.run_if(in_state(GameState::Playing)));
     }
 }
 

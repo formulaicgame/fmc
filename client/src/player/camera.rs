@@ -28,7 +28,7 @@ impl Plugin for CameraPlugin {
                     handle_camera_rotation_from_server,
                     handle_camera_position_from_server,
                 )
-                    .run_if(GameState::in_game),
+                    .run_if(in_state(GameState::Playing)),
                 update_render_distance.run_if(resource_changed::<Settings>),
             ),
         );

@@ -34,7 +34,7 @@ impl Plugin for ChunkManagerPlugin {
                         .in_set(RenderSet::UpdateBlocks),
                     pause_system,
                 )
-                    .run_if(GameState::in_game),
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 // BUG: Other systems add components to the chunk entity. If we're unlucky this
