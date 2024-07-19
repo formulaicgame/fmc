@@ -144,10 +144,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>) {
 fn move_blocks_resource_to_static(mut commands: Commands, mut blocks: ResMut<Blocks>) {
     let blocks = std::mem::replace(
         &mut *blocks,
-        Blocks {
-            blocks: Vec::new(),
-            ids: HashMap::new(),
-        },
+        Blocks::default()
     );
     BLOCKS.set(blocks).ok();
     commands.remove_resource::<Blocks>();
@@ -231,7 +228,7 @@ impl Block {
 }
 
 /// The configurations and ids of the blocks in the game.
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Default)]
 pub struct Blocks {
     // block id -> block config
     blocks: Vec<Block>,

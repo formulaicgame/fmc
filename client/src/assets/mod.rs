@@ -69,7 +69,7 @@ fn finish(
     mut game_state: ResMut<NextState<GameState>>,
 ) {
     info!("Finished loading assets");
-    net.send_message(messages::ClientFinishedLoading);
+    net.send_message(messages::ClientReady);
     asset_state.set(AssetState::Inactive);
     game_state.set(GameState::Playing);
 }

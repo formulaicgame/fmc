@@ -42,6 +42,7 @@ impl Plugin for MovementPlugin {
                     change_player_acceleration,
                     simulate_player_physics,
                     swimming,
+                    send_position_to_server,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -205,9 +206,7 @@ fn simulate_player_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     fixed_time: Res<Time>,
-    net: Res<NetworkClient>,
     mut player: Query<(&mut PlayerState, &mut Transform, &Aabb)>,
-    mut last_position_sent_to_server: Local<Vec3>,
 ) {
     let (mut player, mut transform, player_aabb) = player.single_mut();
     let delta_time = fixed_time.delta_seconds();
@@ -359,19 +358,6 @@ fn simulate_player_physics(
     // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
     // should be read as 'velocity *= friction^time'
     player.velocity = player.velocity * (1.0 - friction).powf(4.0).powf(delta_time);
-
-    // Avoid sending constant position updates to the server.
-    if (*last_position_sent_to_server - transform.translation)
-        .abs()
-        .cmpgt(Vec3::splat(0.01))
-        .any()
-    {
-        *last_position_sent_to_server = transform.translation;
-        net.send_message(messages::PlayerPosition {
-            position: transform.translation.as_dvec3() + origin.as_dvec3(),
-            velocity: player.velocity.as_dvec3(),
-        });
-    }
 }
 
 fn swimming(
@@ -435,4 +421,33 @@ fn swimming(
     if was_swimming && !player.is_swimming {
         player.velocity.y += 1.5;
     }
+}
+
+fn send_position_to_server(
+    net: Res<NetworkClient>,
+    origin: Res<Origin>,
+    time: Res<Time>,
+    player_transform: Query<(&PlayerState, &Transform)>,
+    mut last_time: Local<f32>,
+    mut last_position: Local<Vec3>,
+) {
+    *last_time += time.delta_seconds();
+    if *last_time < 1.0 / 24.0 {
+        // Fixed time is 1/144, but we want to send updates to the server at a more reasonable
+        // cadence.
+        return;
+    }
+    *last_time = 0.0;
+
+    let (player, transform) = player_transform.single();
+
+    if *last_position == transform.translation {
+        return;
+    }
+    *last_position = transform.translation;
+
+    net.send_message(messages::PlayerPosition {
+        position: transform.translation.as_dvec3() + origin.as_dvec3(),
+        velocity: player.velocity.as_dvec3(),
+    });
 }

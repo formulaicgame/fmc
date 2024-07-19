@@ -22,15 +22,13 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             (
-                (
-                    rotate_camera,
-                    fog,
-                    handle_camera_rotation_from_server,
-                    handle_camera_position_from_server,
-                )
-                    .run_if(in_state(GameState::Playing)),
+                rotate_camera,
+                fog,
+                handle_camera_rotation_from_server,
+                handle_camera_position_from_server,
                 update_render_distance.run_if(resource_changed::<Settings>),
-            ),
+            )
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

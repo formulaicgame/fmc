@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, ConnectionId, NetworkServer, ServerNetworkEvent};
+use fmc_networking::{messages, NetworkServer};
 
 use crate::{blocks::Blocks, items::Items, models::Models, world::RenderDistance};
 
@@ -11,44 +11,30 @@ pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(fmc_networking::ServerPlugin)
-            .add_systems(PostStartup, server_setup)
-            .add_systems(Update, handle_network_events);
+            .add_systems(Startup, server_setup);
     }
 }
 
-fn server_setup(mut net: ResMut<NetworkServer>) {
-    let socket_address: SocketAddr = "127.0.0.1:42069".parse().unwrap();
-
-    net.listen(socket_address);
-
-    info!("Started listening for new connections!");
-}
-
-fn handle_network_events(
-    net: Res<NetworkServer>,
+fn server_setup(
+    mut net: ResMut<NetworkServer>,
     render_distance: Res<RenderDistance>,
     assets_hash: Res<crate::assets::AssetArchiveHash>,
     models: Res<Models>,
+    blocks: Res<Blocks>,
     items: Res<Items>,
-    connection_query: Query<&ConnectionId>,
-    mut network_events: EventReader<ServerNetworkEvent>,
 ) {
-    for event in network_events.read() {
-        match event {
-            ServerNetworkEvent::Connected { entity, .. } => {
-                let connection_id = connection_query.get(*entity).unwrap();
-                net.send_one(
-                    *connection_id,
-                    messages::ServerConfig {
-                        assets_hash: assets_hash.hash.clone(),
-                        block_ids: Blocks::get().asset_ids(),
-                        model_ids: models.asset_ids(),
-                        item_ids: items.asset_ids(),
-                        render_distance: render_distance.chunks,
-                    },
-                );
-            }
-            _ => {}
-        }
-    }
+    let socket_address: SocketAddr = "127.0.0.1:42069".parse().unwrap();
+
+    net.start(
+        socket_address,
+        messages::ServerConfig {
+            assets_hash: assets_hash.hash.clone(),
+            block_ids: blocks.asset_ids(),
+            model_ids: models.asset_ids(),
+            item_ids: items.asset_ids(),
+            render_distance: render_distance.chunks,
+        },
+    );
+
+    info!("Started listening for new connections!");
 }

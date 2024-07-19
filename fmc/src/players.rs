@@ -64,11 +64,11 @@ pub struct DefaultPlayerBundle {
 fn add_player(
     mut commands: Commands,
     models: Res<Models>,
-    mut player_ready_events: EventReader<NetworkData<messages::ClientFinishedLoading>>,
+    added_players: Query<Entity, Added<Username>>,
 ) {
-    for message in player_ready_events.read() {
+    for entity in added_players.iter() {
         commands
-            .entity(message.source.entity())
+            .entity(entity)
             .insert(DefaultPlayerBundle {
                 player: Player,
                 render_distance: RenderDistance::default(),

@@ -1,13 +1,10 @@
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkData, NetworkServer};
 use sha1::Digest;
 
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, make_asset_tarball)
-            // Run this in PreStartup so ObjectIds are available for other startup systems.
-            .add_systems(Update, handle_asset_requests);
+        app.add_systems(PreStartup, make_asset_tarball);
     }
 }
 
@@ -38,25 +35,6 @@ fn make_asset_tarball(mut commands: Commands) {
     commands.insert_resource(AssetArchiveHash {
         hash: sha1::Sha1::digest(&possibly_changed_assets).to_vec(),
     });
-}
-
-// TODO: Any client can dos the server through this. Cap to some small number of downloads per 24h?
-// TODO: Should have some way for the client to download assets from an external location to reduce
-// load on server.
-fn handle_asset_requests(
-    mut requests: EventReader<NetworkData<messages::AssetRequest>>,
-    net: Res<NetworkServer>,
-) {
-    for request in requests.read() {
-        info!("sending assets");
-        let asset_archive = std::fs::read("resources/assets.tar").unwrap();
-        net.send_one(
-            request.source,
-            messages::AssetResponse {
-                file: asset_archive,
-            },
-        )
-    }
 }
 
 /// Check that none of the assets have changed since the last run.

@@ -652,7 +652,6 @@ fn handle_node_visibility_updates(
                 }
             };
 
-            dbg!(interface_path, should_be_visible, &interface_entities);
             for interface_entity in interface_entities.iter().cloned() {
                 let mut visibility = interface_query.get_mut(interface_entity).unwrap();
 
