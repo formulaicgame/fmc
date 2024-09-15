@@ -10,9 +10,9 @@
     screen_space_ambient_occlusion_texture
 }
 #import bevy_pbr::mesh_view_types::FOG_MODE_OFF
+#import bevy_render::maths::powsafe
 #import bevy_core_pipeline::tonemapping:: {
     screen_space_dither,
-    powsafe,
     tone_mapping
 }
 #import bevy_pbr::parallax_mapping::parallaxed_uv
@@ -45,7 +45,7 @@ struct FragmentInput {
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = pbr_bindings::material.base_color;
 
-    let is_orthographic = view.projection[3].w == 1.0;
+    let is_orthographic = view.clip_from_view[3].w == 1.0;
     let V = pbr_functions::calculate_view(in.world_position, is_orthographic);
 
 #ifdef VERTEX_UVS
@@ -75,28 +75,24 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     output_color = output_color * in.color;
 #endif
 
-    let sunlight = (in.packed_bits >> 4u) & 0xFu;
-    let artificial_light = in.packed_bits & 0xFu;
+    let artificial = pow(0.8, f32(15u - in.packed_bits & 0xFu));
+    var sunlight = pow(0.8, f32(15u - (in.packed_bits >> 4u) & 0xFu));
+    // TODO: This should probably be done for the artifical light too, but I haven't implemented it yet.
+    // TODO: The 1.2 is a scaling factor to make it look bright enough, idk if it's the models
+    // themselves or something else in the shader that makes them darker than they should be.
+    sunlight = clamp(sunlight * lights.ambient_color.a, 0.04, 1.0) * 1.2;
     // The object is made both a little brighter at no brightness as well as full brightness to
     // make it contrast better against the terrain.
-    let light = pow(0.82, f32(15u - max(sunlight, artificial_light)));
-
-    if sunlight > artificial_light {
-        // TODO: This should probably be done for the artifical light too, but I haven't implemented it yet.
-        // TODO: The 1.2 is a scaling factor to make it look bright enough, idk if it's the models
-        // themselves or something else in the shader that makes them darker than they should be.
-        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.a, 0.04, 1.0) * 1.2, output_color.a);
-    } else {
-        output_color = vec4(output_color.rgb * light, output_color.a);
-    }
+    let light = max(sunlight, artificial);
+    output_color = vec4(output_color.rgb * light, output_color.a);
     
-    // TODO: The bottom are just given a somewhat dark color, but should be significantly darker than the sides.
+    // TODO: The bottom is just given a somewhat dark color, but should be significantly darker than the sides.
     //
     // If the face is angled down/up it is given a lighting penalty between -0.2 and 0.2
     // if the face is angled right/left it is given no lighting penalty, but if front/back it is given a penalty of 0.3
     let top_deflection = dot(in.world_normal, vec3(0.0, 1.0, 0.0)) * 0.2;
     // Notice how it inverts the absolute of the dot product. This is so that vertices pointing up and down will
-    // result in a 1.0 and not a 0.0 as their vec2 dot product will always yield zero with their x and z of 0.
+    // result in 1.0 and not 0.0 as their vec2 dot product will always yield zero with their x and z of 0.
     let deflection: f32 = 0.5 + (1.0 - abs(dot(vec2(1.0, 0.0), in.world_normal.xz))) * (0.3 + top_deflection);
     output_color = vec4(output_color.rgb * deflection, output_color.a);
 

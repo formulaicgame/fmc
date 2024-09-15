@@ -2,15 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::{gltf::Gltf, prelude::*};
 
-use fmc_networking::{
-    messages::{self, ServerConfig},
-    NetworkClient, NetworkData,
-};
+use fmc_protocol::messages;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    assets::models::Models,
+    assets::models::{ModelAssetId, Models},
     game_state::GameState,
+    networking::NetworkClient,
     world::blocks::{BlockId, Blocks},
 };
 
@@ -18,7 +16,7 @@ use super::{InterfaceNode, InterfacePaths};
 
 pub type ItemId = u32;
 
-const ITEM_IMAGE_PATH: &str = "server_assets/textures/items/";
+const ITEM_IMAGE_PATH: &str = "server_assets/active/textures/items/";
 
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
@@ -45,8 +43,8 @@ pub struct ItemConfig {
     pub name: String,
     /// Image shown in the interface
     pub image_path: String,
-    /// Model id, used to identify item to be equipped
-    pub model_handle: Handle<Gltf>,
+    /// Model that is displayed when the item is equipped
+    pub equip_model: ModelAssetId,
     /// The max amount of an item stack of this type
     pub stack_size: u32,
     /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in ui's.
@@ -89,7 +87,7 @@ impl Items {
 // function.
 pub fn load_items(
     mut commands: Commands,
-    server_config: Res<ServerConfig>,
+    server_config: Res<messages::ServerConfig>,
     net: Res<NetworkClient>,
     models: Res<Models>,
 ) {
@@ -97,7 +95,8 @@ pub fn load_items(
     let mut configs = HashMap::new();
 
     for (filename, id) in server_config.item_ids.iter() {
-        let file_path = "server_assets/items/configurations/".to_owned() + filename + ".json";
+        let file_path =
+            "server_assets/active/items/configurations/".to_owned() + filename + ".json";
 
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
@@ -111,7 +110,7 @@ pub fn load_items(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured resource pack: failed to read item config at: {}.\n\
+                    "Misconfigured assets: failed to read item config at: {}.\n\
                         Error: {}",
                     &file_path, e
                 ));
@@ -119,13 +118,13 @@ pub fn load_items(
             }
         };
 
-        let model_handle = match models.get_id_by_filename(&json_config.equip_model) {
-            Some(id) => models.get(&id).unwrap().handle.clone(),
+        let equip_model = match models.get_id_by_filename(&json_config.equip_model) {
+            Some(id) => id,
             None => {
                 //Server didn't send the correct set of model ids, this should never happen,
                 // as the server should read models from the same set of files.
                 net.disconnect(&format!(
-                    "Misconfigured resource pack: mismatch between model name and ids. \
+                    "Misconfigured assets: mismatch between model name and ids. \
                         Could not find id for model at path: {}",
                     &file_path
                 ));
@@ -138,7 +137,7 @@ pub fn load_items(
                 Some(block_id) => Some(*block_id),
                 None => {
                     net.disconnect(&format!(
-                        "Misconfigured resource pack: failed to read item config at: '{}'. \
+                        "Misconfigured assets: failed to read item config at: '{}'. \
                             No block with the name '{}'.",
                         &file_path, &name
                     ));
@@ -151,7 +150,7 @@ pub fn load_items(
         let config = ItemConfig {
             name: json_config.name,
             image_path: ITEM_IMAGE_PATH.to_owned() + &json_config.image,
-            model_handle,
+            equip_model,
             stack_size: json_config.stack_size,
             categories: json_config.categories,
             block: block_id,
@@ -159,7 +158,7 @@ pub fn load_items(
 
         if !std::path::Path::new(&config.image_path).exists() {
             net.disconnect(&format!(
-                "Misconfigured resource pack: failed to read item config at: '{}', \
+                "Misconfigured assets: failed to read item config at: '{}', \
                     no item image by the name '{}' at '{}', make sure it is present.",
                 &file_path, json_config.image, ITEM_IMAGE_PATH,
             ));
@@ -312,7 +311,7 @@ fn handle_item_box_updates(
     interface_paths: Res<InterfacePaths>,
     items: Res<Items>,
     interface_item_box_query: Query<Option<&Children>, With<ItemBoxSection>>,
-    mut item_box_update_events: EventReader<NetworkData<messages::InterfaceItemBoxUpdate>>,
+    mut item_box_update_events: EventReader<messages::InterfaceItemBoxUpdate>,
 ) {
     for item_box_update in item_box_update_events.read() {
         for (interface_path, new_item_boxes) in item_box_update.updates.iter() {
@@ -391,7 +390,7 @@ fn handle_item_box_updates(
                             text: Text::from_section(
                                 item_stack.size.to_string(),
                                 TextStyle {
-                                    font: asset_server.load("server_assets/font.otf"),
+                                    font: asset_server.load("server_assets/active/font.otf"),
                                     font_size: 8.0,
                                     color: if item_stack.size > 1 {
                                         Color::WHITE
@@ -416,11 +415,6 @@ fn handle_item_box_updates(
                                 asset_server.load(&items.get(item_id).image_path).into()
                             } else {
                                 UiImage::default()
-                            },
-                            background_color: if item_stack.item.is_some() {
-                                Color::WHITE.into()
-                            } else {
-                                Color::NONE.into()
                             },
                             // TODO: This doesn't actually block? Can't highlight items because of it.
                             focus_policy: bevy::ui::FocusPolicy::Block,
@@ -521,7 +515,7 @@ fn left_click_item_box(
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
     mut item_box_query: Query<(&mut ItemBox, &Interaction, &Parent), Changed<Interaction>>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
-    mut item_box_update_events: EventWriter<NetworkData<messages::InterfaceItemBoxUpdate>>,
+    mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
 ) {
     for (mut item_box, interaction, parent) in item_box_query.iter_mut() {
         if *interaction != Interaction::Pressed {
@@ -584,13 +578,13 @@ fn left_click_item_box(
             );
         }
 
-        // Multiple interfaces might share the same content, like a traditional hotbar will be
+        // Multiple interfaces might share the same content, like a hotbar will be
         // represented both in the players inventory, and at the bottom of the screen. We only
         // change one of the item stacks here, and we need the change to be reflected in both
         // interfaces. Instead of changing it in both places, we construct a false server update.
         // The server update is processed as normal, and the change will be shown in both
         // interfaces.
-        item_box_update_events.send(NetworkData::new(net.connection_id(), item_box_update));
+        item_box_update_events.send(item_box_update);
     }
 }
 
@@ -601,7 +595,7 @@ fn right_click_item_box(
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
     mut item_box_query: Query<(&mut ItemBox, &Interaction, &Parent)>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
-    mut item_box_update_events: EventWriter<NetworkData<messages::InterfaceItemBoxUpdate>>,
+    mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
 ) {
     if !mouse_button_input.just_pressed(MouseButton::Right) {
         return;
@@ -698,13 +692,13 @@ fn right_click_item_box(
         );
     }
 
-    // Multiple interfaces might share the same content, like a traditional hotbar will be
+    // Multiple interfaces might share the same content, like a hotbar will be
     // represented both in the players inventory, and at the bottom of the screen. We only
     // change one of the item stacks here, and we need the change to be reflected in both
     // interfaces. Instead of changing it in both places, we construct a false server update.
     // The server update is processed as normal, and the change will be shown in both
     // interfaces.
-    item_box_update_events.send(NetworkData::new(net.connection_id(), item_box_update));
+    item_box_update_events.send(item_box_update);
 }
 
 fn update_cursor_item_stack_position(
@@ -722,25 +716,20 @@ fn update_cursor_item_stack_position(
 fn update_cursor_image(
     asset_server: Res<AssetServer>,
     items: Res<Items>,
-    mut cursor_item_query: Query<(
-        &mut UiImage,
-        &CursorItemBox,
-        &mut BackgroundColor,
-        &Children,
-    )>,
+    mut cursor_item_query: Query<(&mut UiImage, &CursorItemBox, &Children)>,
     // TODO: Add marker component
     mut text_query: Query<&mut Text>,
 ) {
-    for (mut image, cursor_box, mut color, children) in cursor_item_query.iter_mut() {
+    for (mut image, cursor_box, children) in cursor_item_query.iter_mut() {
         if let Some(item_id) = cursor_box.item_stack.item {
             *image = asset_server.load(&items.get(&item_id).image_path).into();
-            *color = BackgroundColor(Color::WHITE);
+            image.color = Color::WHITE;
 
             let mut text = text_query.get_mut(children[0]).unwrap();
             *text = Text::from_section(
                 cursor_box.item_stack.size.to_string(),
                 TextStyle {
-                    font: asset_server.load("server_assets/font.otf"),
+                    font: asset_server.load("server_assets/active/font.otf"),
                     font_size: 8.0,
                     color: if cursor_box.item_stack.size > 1 {
                         Color::WHITE
@@ -752,12 +741,12 @@ fn update_cursor_image(
         } else {
             // Instead of hiding the node through visibility we mask it with the color. This is
             // because the item box still needs to be interactable so items can be put into it.
-            *color = BackgroundColor(Color::NONE);
+            image.color = Color::NONE;
             let mut text = text_query.get_mut(children[0]).unwrap();
             *text = Text::from_section(
                 cursor_box.item_stack.size.to_string(),
                 TextStyle {
-                    font: asset_server.load("server_assets/font.otf"),
+                    font: asset_server.load("server_assets/active/font.otf"),
                     font_size: 6.0,
                     color: Color::NONE,
                 },
@@ -770,7 +759,7 @@ fn update_cursor_image(
 // that contain item boxes. This way it can be used both for equipping items and for navigating
 // the item boxes through keyboard input.
 //
-// All interfaces with this component will render an outline around the selected item.
+// TODO: All interfaces with this component will render an outline around the selected item.
 // An item is always selected, and it persists on open/close of the interface.
 #[derive(Component)]
 pub struct SelectedItemBox(pub Entity);

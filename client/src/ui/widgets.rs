@@ -1,4 +1,4 @@
-use bevy::{ecs::system::EntityCommands, prelude::*};
+use bevy::{color::palettes::css::DARK_GRAY, ecs::system::EntityCommands, prelude::*};
 
 use super::DEFAULT_FONT_HANDLE;
 
@@ -145,7 +145,7 @@ impl Widgets for ChildBuilder<'_> {
 }
 
 #[derive(Component, Deref, Default)]
-struct PreviousButtonColor(Color);
+struct PreviousButtonColor(LinearRgba);
 
 fn tint_button_on_hover(
     mut commands: Commands,
@@ -164,11 +164,12 @@ fn tint_button_on_hover(
     for (interaction, mut prev_color, mut background_color) in button_query.iter_mut() {
         match *interaction {
             Interaction::Hovered => {
-                prev_color.0 = background_color.0;
-                background_color.0 *= Vec3::splat(139.0 / 110.0);
+                prev_color.0 = background_color.0.into();
+                let new_color = prev_color.0 * (139.0 / 110.0);
+                background_color.0 = new_color.into();
             }
             _ => {
-                background_color.0 = prev_color.0;
+                background_color.0 = prev_color.0.into();
             }
         }
     }
@@ -324,7 +325,7 @@ fn add_text_shadow(
         shadow_text
             .sections
             .iter_mut()
-            .for_each(|section| section.style.color = Color::DARK_GRAY);
+            .for_each(|section| section.style.color = DARK_GRAY.into());
         let shadow_text_entity = commands
             .spawn(TextBundle {
                 text: shadow_text,
@@ -361,7 +362,7 @@ fn update_text_shadow(
         new_shadow_text
             .sections
             .iter_mut()
-            .for_each(|section| section.style.color = Color::DARK_GRAY);
+            .for_each(|section| section.style.color = DARK_GRAY.into());
         let mut shadow_text = shadow_text_query.get_mut(shadow.shadow_entity).unwrap();
         *shadow_text = new_shadow_text;
     }

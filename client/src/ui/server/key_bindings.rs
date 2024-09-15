@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkClient};
+use fmc_protocol::messages;
 use serde::Deserialize;
 
-use crate::ui::{
-    server::{InterfaceToggleEvent, Interfaces},
-    UiState,
+use crate::{
+    networking::NetworkClient,
+    ui::{
+        server::{InterfaceToggleEvent, Interfaces},
+        UiState,
+    },
 };
 
 use super::InterfaceConfig;
@@ -37,12 +40,12 @@ struct KeyBindingJson {
 //       Commands that open/close interfaces should not have to parse the string AND check that it
 //       is a valid command.
 pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
-    let path = "./server_assets/commands.json";
+    let path = "./server_assets/active/commands.json";
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(e) => {
             net.disconnect(format!(
-                "Misconfigured resource pack: Failed to read commands file at '{}'\nError: {}",
+                "Misconfigured assets: Failed to read commands file at '{}'\nError: {}",
                 path, e
             ));
             return;
@@ -52,7 +55,7 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
         Ok(c) => c,
         Err(e) => {
             net.disconnect(format!(
-                "Misconfigured resource pack: Failed to read commands file at '{}'\nError: {}",
+                "Misconfigured assets: Failed to read commands file at '{}'\nError: {}",
                 path, e
             ));
             return;
@@ -90,7 +93,7 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
             "z" => KeyCode::KeyZ,
             key => {
                 net.disconnect(format!(
-                    "Misconfigured resource pack: Failed to map key to command. Can't map key: '{}', only a-z is allowed",
+                    "Misconfigured assets: Failed to map key to command. Can't map key: '{}', only a-z is allowed",
                     key
                 ));
                 continue;
@@ -118,7 +121,7 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
 //                    Some(e) => e,
 //                    None => {
 //                        net.disconnect(&format!(
-//                            "Misconfigured resource pack: Improperly configured keybindings, \
+//                            "Misconfigured assets: Improperly configured keybindings, \
 //                                command: '{}', mapped to '{:?}' could not be parsed.",
 //                            &command, pressed_key
 //                        ));
@@ -177,7 +180,7 @@ fn handle_key_presses(
                     Some(e) => e,
                     None => {
                         net.disconnect(&format!(
-                            "Misconfigured resource pack: Improperly configured keybindings, \
+                            "Misconfigured assets: Improperly configured keybindings, \
                                 command: '{}', mapped to '{:?}' could not be parsed.",
                             &command, pressed_key
                         ));

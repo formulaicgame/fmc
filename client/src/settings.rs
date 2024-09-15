@@ -1,12 +1,16 @@
 use bevy::prelude::*;
 
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
+
+use crate::{game_state::GameState, networking::NetworkClient};
 
 pub(super) struct SettingsPlugin;
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Settings::load())
-            .add_systems(Update, set_render_distance);
+        app.insert_resource(Settings::load()).add_systems(
+            Update,
+            set_render_distance.run_if(in_state(GameState::Playing)),
+        );
     }
 }
 
@@ -72,12 +76,15 @@ impl Default for Settings {
 //    }
 //}
 
-// TODO: This is a placeholder since there's no settings menu yet.
 fn set_render_distance(
+    net: Res<NetworkClient>,
+    server_config: Res<messages::ServerConfig>,
     mut settings: ResMut<Settings>,
-    mut server_config_events: EventReader<NetworkData<messages::ServerConfig>>,
 ) {
-    for server_config in server_config_events.read() {
+    if server_config.is_changed() {
         settings.render_distance = settings.render_distance.min(server_config.render_distance);
+        net.send_message(messages::RenderDistance {
+            chunks: settings.render_distance,
+        });
     }
 }

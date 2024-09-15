@@ -1,20 +1,21 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkClient};
+use fmc_protocol::messages;
 use serde::Deserialize;
 
 use crate::{
     assets,
+    networking::NetworkClient,
     rendering::materials::{self, BlockMaterial},
 };
 
 pub type BlockId = u16;
 pub static mut BLOCKS: std::sync::OnceLock<Blocks> = std::sync::OnceLock::new();
 
-const MODEL_PATH: &str = "server_assets/textures/models/";
+const MODEL_PATH: &str = "server_assets/active/textures/models/";
 
-const BLOCK_CONFIG_PATH: &str = "server_assets/blocks/";
+const BLOCK_CONFIG_PATH: &str = "server_assets/active/blocks/";
 
 const FACE_VERTICES: [[[f32; 3]; 4]; 6] = [
     // Top
@@ -100,7 +101,7 @@ pub fn load_blocks(
 ) {
     if server_config.block_ids.len() > u16::MAX as usize {
         net.disconnect(&format!(
-            "Misconfigured resource pack, too many blocks, {} is the limit, but {} were supplied.",
+            "Misconfigured assets: too many blocks, {} is the limit, but {} were supplied.",
             BlockId::MAX,
             server_config.block_ids.len()
         ));
@@ -149,7 +150,7 @@ pub fn load_blocks(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured resource pack, failed to read block config at {}\nError: {}",
+                    "Misconfigured assets: failed to read block config at {}\nError: {}",
                     file_path.display(),
                     e
                 ));
@@ -162,7 +163,7 @@ pub fn load_blocks(
                 Ok(result) => result,
                 Err(e) => {
                     net.disconnect(&format!(
-                        "Misconfigured resource pack, failed to read block config at {}\nError: {}",
+                        "Misconfigured assets: failed to read block config at {}\nError: {}",
                         file_path.display(),
                         e
                     ));
@@ -183,16 +184,17 @@ pub fn load_blocks(
                 material,
                 only_cull_self,
                 interactable,
-                is_rotatable,
                 light_attenuation,
+                light,
                 fog,
                 sound,
+                placement,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
                     m.clone().typed()
                 } else {
                     net.disconnect(&format!(
-                        "Misconfigured resource pack, tried to use material '{}' for block '{}', \
+                        "Misconfigured assets: tried to use material '{}' for block '{}', \
                         but the material does not exist.",
                         material, name
                     ));
@@ -218,7 +220,7 @@ pub fn load_blocks(
                             Some(id) => *id,
                             None => {
                                 net.disconnect(format!(
-                                    "Misconfigured resource pack, failed to read block at: {}, no block texture with the name {}",
+                                    "Misconfigured assets: failed to read block at: {}, no block texture with the name {}",
                                     file_path.display(),
                                     face_name
                                 ));
@@ -257,7 +259,7 @@ pub fn load_blocks(
                             Some(id) => *id,
                             None => {
                                 net.disconnect(format!(
-                                    "Misconfigured resource pack, failed to read block at: {}, no block texture with the name {}",
+                                    "Misconfigured assets: failed to read block at: {}, no block texture with the name {}",
                                     file_path.display(),
                                     &quad.texture
                                 ));
@@ -363,65 +365,37 @@ pub fn load_blocks(
                     interactable,
                     cull_method,
                     cull_delimiters,
-                    is_rotatable,
                     light_attenuation: light_attenuation.unwrap_or(15).min(15),
+                    light: light.min(15),
                     fog_settings,
                     sound,
+                    placement,
                 })
             }
 
             BlockConfig::Model {
                 name,
-                center_model,
-                side_model,
+                model,
                 friction,
                 interactable,
                 sound,
+                light,
+                placement,
             } => {
-                let center_model = if let Some(center_model) = center_model {
-                    let path = MODEL_PATH.to_owned() + &center_model.name + ".glb#Scene0";
-                    Some((
-                        asset_server.load::<Scene>(&path),
-                        Transform {
-                            translation: center_model.position,
-                            rotation: center_model.rotation,
-                            scale: Vec3::ONE,
-                        },
-                    ))
-                } else {
-                    None
+                // TODO: model must cause a disconnect if not found
+                let model = {
+                    let path = MODEL_PATH.to_owned() + &model + ".glb#Scene0";
+                    asset_server.load(&path)
                 };
-
-                let side_model = if let Some(side_model) = side_model {
-                    let path = MODEL_PATH.to_owned() + &side_model.name + ".glb#Scene0";
-                    Some((
-                        asset_server.load::<Scene>(&path),
-                        Transform {
-                            translation: side_model.position,
-                            rotation: side_model.rotation,
-                            scale: Vec3::ONE,
-                        },
-                    ))
-                } else {
-                    None
-                };
-
-                if center_model.is_none() && side_model.is_none() {
-                    net.disconnect(format!(
-                        "Misconfigured resource pack, failed to read block at: {}, \
-                        one of 'center_model' and 'side_model' must be defined",
-                        file_path.display()
-                    ));
-                    return;
-                }
 
                 Block::Model(BlockModel {
                     name,
-                    center: center_model,
-                    side: side_model,
+                    model,
                     friction,
                     interactable,
                     sound,
+                    light: light.min(15),
+                    placement,
                 })
             }
         };
@@ -433,7 +407,7 @@ pub fn load_blocks(
 
     if block_ids.len() > 0 {
         net.disconnect(format!(
-            "Misconfigured resource pack, missing blocks: {:?}",
+            "Misconfigured assets: missing blocks: {:?}",
             block_ids.keys().collect::<Vec<_>>()
         ));
     }
@@ -494,7 +468,7 @@ pub struct Cube {
     // Friction value for player contact.
     friction: Friction,
     // If when the player uses their equipped item on this block it should count as an
-    // interaction, or it should count as trying to place its associated block.
+    // interaction(true), or if it should count as trying to place its associated block(false).
     interactable: bool,
     // The alpha mode of the blocks associated material, used to determine face culling.
     cull_method: CullMethod,
@@ -510,8 +484,6 @@ pub struct Cube {
     // blocks like water as you only want the parts exposed to air to render when two water blocks
     // of different levels are adjacent to each other.
     cull_delimiters: [Option<(f32, f32)>; 4],
-    // If the block is rotateable around the y-axis
-    is_rotatable: bool,
     // How much the block attenuates light. '0' will make sunlight travel downwards unimpeded, but
     // otherwise as if '1'.
     light_attenuation: u8,
@@ -519,33 +491,34 @@ pub struct Cube {
     pub fog_settings: Option<FogSettings>,
     // Sounds played when walked on or in (random pick)
     sound: Vec<String>,
+    // Light emitted by the block
+    light: u8,
+    // How the block can be placed
+    placement: BlockPlacement,
 }
 
 // TODO: This was made before the Models collection was made. This could hold model ids instead of
 // the handles. I have hardcoded the glb extension here, which would no longer be a thing.
 //
-// Models are used to render all blocks of irregular shape. There are multiple ways to place
-// the model inside the cube. The server sends an orientation for all block models part of a
-// chunk which define if it should be placed on the side of the block or in the center, if it
-// should be upside down, and which direction it should point. Meanwhile when the player places
-// a block, if the bottom surface is clicked it will place the center model(if defined) in the
-// direction facing the player. If a side is clicked it will try to place the side model, if
-// that is not available, it will fall back to the center model. One of them is always defined.
+// Models are used to render all blocks of irregular shape. Even though they are assigned block
+// ids, they are not used in interaction with the server
 #[derive(Debug)]
 pub struct BlockModel {
-    /// Name of the block
+    // Name of the block
     name: String,
     /// Model used when centered in the block
-    pub center: Option<(Handle<Scene>, Transform)>,
-    /// Model used when on the side of the block
-    pub side: Option<(Handle<Scene>, Transform)>,
-    /// Friction or drag, applied by closest normal of the textures.
+    pub model: Handle<Scene>,
+    // Friction or drag, applied by closest normal of the textures.
     friction: Friction,
-    /// If when the player uses their equipped item on this block, it should count as an
-    /// interaction, or it should count as trying to place a block.
+    // If when the player uses their equipped item on this block, it should count as an
+    // interaction, or it should count as trying to place a block.
     interactable: bool,
     // Sounds played when walked on or in (random pick)
     sound: Vec<String>,
+    // Light emitted by the block
+    light: u8,
+    // How the block can be placed
+    placement: BlockPlacement,
 }
 
 #[derive(Debug)]
@@ -600,8 +573,10 @@ impl Block {
 
     pub fn can_have_block_state(&self) -> bool {
         match self {
-            Block::Cube(cube) => cube.is_rotatable,
-            Block::Model(model) => model.side.is_some(),
+            Block::Cube(cube) => {
+                cube.placement.rotatable || cube.placement.side_transform.is_some()
+            }
+            Block::Model(_model) => false,
         }
     }
 
@@ -615,7 +590,14 @@ impl Block {
     pub fn light_attenuation(&self) -> u8 {
         match self {
             Block::Cube(c) => c.light_attenuation,
-            Block::Model(_) => 1,
+            Block::Model(_) => 0,
+        }
+    }
+
+    pub fn light_level(&self) -> u8 {
+        match self {
+            Block::Cube(c) => c.light,
+            Block::Model(m) => m.light,
         }
     }
 
@@ -642,16 +624,36 @@ impl Block {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+// bits:
+//     0000 0000 0000 unused
+//     0000
+//       ^^-north/south/east/west
+//      ^---centered, overrides previous rotation, 1 = centered
+//     ^----upside down
+#[derive(Debug, Clone, Copy)]
 pub struct BlockState(pub u16);
 
+impl Default for BlockState {
+    fn default() -> Self {
+        Self(0b100)
+    }
+}
+
 impl BlockState {
+    pub fn new(rotation: BlockRotation) -> Self {
+        return Self(rotation as u16);
+    }
+
     pub fn rotation(&self) -> BlockRotation {
-        return unsafe { std::mem::transmute(self.0 & 0b11) };
+        if self.0 & 0b100 == 0 {
+            return unsafe { std::mem::transmute(self.0 & 0b11) };
+        } else {
+            return BlockRotation::None;
+        }
     }
 
     pub fn uses_side_model(&self) -> bool {
-        return self.0 & 0b100 != 0;
+        return self.0 & 0b100 == 0;
     }
 
     pub fn is_upside_down(&self) -> bool {
@@ -670,7 +672,7 @@ pub enum BlockRotation {
 }
 
 impl BlockRotation {
-    // Bevy's coordinate system is so that +z is out of the screen, +y up, +x right so if you do a
+    // Bevy's coordinate system has +z out of the screen, +y up, +x right so if you do a
     // normal rotation it would look like it's moving clockwise when viewing it from above. Since
     // rotations are expected to be counter clockwise the rotation is inverted. Making the true
     // rotation clockwise, but when you view it from above it will look counter clockwise. This is
@@ -683,6 +685,15 @@ impl BlockRotation {
         vertex[0] = new_x;
         vertex[2] = new_z;
     }
+
+    pub fn as_quat(&self) -> Quat {
+        match self {
+            Self::None => Quat::from_rotation_y(0.0),
+            Self::Once => Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            Self::Twice => Quat::from_rotation_y(std::f32::consts::PI),
+            Self::Thrice => Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+        }
+    }
 }
 
 /// Block config that is stored on file.
@@ -694,8 +705,10 @@ enum BlockConfig {
     Cube {
         /// Name of the block, must be unique
         name: String,
+        // TODO: Rename both field name and struct name.
+        //
         /// Convenient way to define a block as opposed to having to define it through the quads.
-        faces: Option<TextureNames>,
+        faces: Option<CubeMeshTextureNames>,
         /// List of quads that make up a mesh.
         quads: Option<Vec<QuadPrimitiveJson>>,
         /// The friction or drag.
@@ -705,27 +718,28 @@ enum BlockConfig {
         /// If the block should only cull quads from blocks of the same type.
         #[serde(default)]
         only_cull_self: bool,
-        /// If the block is interactable
+        /// Marking a block as interactable makes it so clicking it
         #[serde(default)]
         interactable: bool,
-        /// If the block can rotate around the y axis
-        #[serde(default)]
-        is_rotatable: bool,
         /// How many levels light should decrease when passing through this block.
         light_attenuation: Option<u8>,
+        /// Light emitted by the block
+        #[serde(default)]
+        light: u8,
         /// If fog should be rendered when the player camera is inside the block.
         fog: Option<FogJson>,
         /// Sounds played when walking on/in block
         #[serde(default)]
         sound: Vec<String>,
+        /// Block placement rules
+        #[serde(default)]
+        placement: BlockPlacement,
     },
     Model {
         /// Name of the block, must be unique
         name: String,
-        /// Name of model used when placed in the center of the block
-        center_model: Option<ModelConfig>,
-        /// Name of model used when placed on the side of the block
-        side_model: Option<ModelConfig>,
+        /// Name of the model file
+        model: String,
         /// The friction or drag.
         friction: Friction,
         /// If the block is interactable
@@ -734,6 +748,12 @@ enum BlockConfig {
         /// Sounds played when walking on/in block
         #[serde(default)]
         sound: Vec<String>,
+        /// Light emitted by the block
+        #[serde(default)]
+        light: u8,
+        /// Block placement rules
+        #[serde(default)]
+        placement: BlockPlacement,
     },
 }
 
@@ -770,6 +790,33 @@ impl BlockConfig {
         }
 
         return Ok(config);
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct BlockPlacement {
+    // Set if the block can be placed by clicking the top face of the block below
+    floor: bool,
+    // Set if the block can be placed by clicking the bottom face of the block above
+    ceiling: bool,
+    // Set if the block can be placed by clicking the sides of adjacent blocks
+    sides: bool,
+    // Set if the block should always be rotated when placed.
+    rotatable: bool,
+    // Set if a transform should be applied when placing on a sideways adjacent block. This will
+    // rotate the block even if 'rotatable' is not set, but only on sides.
+    side_transform: Option<Transform>,
+}
+
+impl Default for BlockPlacement {
+    fn default() -> Self {
+        Self {
+            floor: true,
+            ceiling: true,
+            sides: true,
+            rotatable: false,
+            side_transform: None,
+        }
     }
 }
 
@@ -826,7 +873,7 @@ struct FogJson {
 }
 
 #[derive(Deserialize)]
-struct TextureNames {
+struct CubeMeshTextureNames {
     top: String,
     bottom: String,
     left: String,
@@ -835,17 +882,8 @@ struct TextureNames {
     back: String,
 }
 
-#[derive(Deserialize)]
-struct ModelConfig {
-    name: String,
-    #[serde(default)]
-    position: Vec3,
-    #[serde(default)]
-    rotation: Quat,
-}
-
 // The different faces of a block
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockFace {
     // +X direction
@@ -860,6 +898,15 @@ pub enum BlockFace {
 }
 
 impl BlockFace {
+    pub fn to_rotation(&self) -> BlockRotation {
+        match self {
+            Self::Front => BlockRotation::None,
+            Self::Right => BlockRotation::Once,
+            Self::Back => BlockRotation::Twice,
+            Self::Left => BlockRotation::Thrice,
+            _ => unreachable!(),
+        }
+    }
     pub fn rotate(&self, rotation: BlockRotation) -> BlockFace {
         match self {
             BlockFace::Right => match rotation {
@@ -900,7 +947,7 @@ impl BlockFace {
         });
     }
 
-    pub fn invert(&self) -> Self {
+    pub fn opposite(&self) -> Self {
         match self {
             BlockFace::Right => BlockFace::Left,
             BlockFace::Left => BlockFace::Right,

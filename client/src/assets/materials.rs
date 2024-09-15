@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use bevy::{
-    prelude::*,
-    render::{color::Color, render_resource::Face},
-};
-use fmc_networking::NetworkClient;
+use bevy::{color::Color, prelude::*, render::render_resource::Face};
 use serde::Deserialize;
 
-use crate::{assets::BlockTextures, rendering::materials::BlockMaterial};
+use crate::{
+    assets::BlockTextures, networking::NetworkClient, rendering::materials::BlockMaterial,
+};
 
 /// Stores all the loaded material handles.
 /// They can be accessed by the filename the material was loaded from.
@@ -85,7 +83,7 @@ pub fn load_materials(
 ) {
     let mut materials = Materials::default();
 
-    let dir = std::path::PathBuf::from("server_assets/materials");
+    let dir = std::path::PathBuf::from("server_assets/active/materials");
     for dir_entry in std::fs::read_dir(&dir).unwrap() {
         let file_path = match dir_entry {
             Ok(p) => p.path(),
@@ -169,9 +167,9 @@ pub fn load_materials(
 
         let handle = if config.r#type == "block" {
             let material = BlockMaterial {
-                base_color: config.base_color,
+                base_color: config.base_color.into(),
                 base_color_texture,
-                emissive: config.emissive,
+                emissive: config.emissive.into(),
                 emissive_texture,
                 perceptual_roughness: config.perceptual_roughness,
                 metallic: config.metallic,
@@ -200,7 +198,7 @@ pub fn load_materials(
             let material = StandardMaterial {
                 base_color: config.base_color,
                 base_color_texture,
-                emissive: config.emissive,
+                emissive: config.emissive.into(),
                 emissive_texture,
                 perceptual_roughness: config.perceptual_roughness,
                 metallic: config.metallic,

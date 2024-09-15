@@ -1,15 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::{math::DVec3, prelude::*};
-use fmc_networking::{messages, ConnectionId, NetworkServer};
+use fmc_protocol::messages;
 use indexmap::IndexMap;
 
 use crate::{
-    bevy_extensions::f64_transform::{GlobalTransform, Transform},
+    bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystem},
     database::Database,
+    networking::Server,
     physics::{shapes::Aabb, PhysicsSystems, Velocity},
+    players::Player,
     utils,
-    world::chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions},
+    world::{ChunkSubscriptionEvent, ChunkSubscriptions},
 };
 
 // TODO:
@@ -26,24 +28,23 @@ impl Plugin for ModelPlugin {
         app.insert_resource(ModelMap::default())
             .add_systems(PreStartup, load_models)
             .add_systems(
-                Update,
+                PostUpdate,
                 (
-                    send_models_on_chunk_subscription,
-                    update_model_transform,
+                    // TODO: Maybe all of these systems should be PostUpdate. This way Update is the do
+                    // things place, and PostUpdate is the send to client place.
+                    //
+                    send_models_on_chunk_subscription.before(send_animations),
                     update_model_assets,
-                    update_visibility,
                     play_move_animation
                         .before(send_animations)
                         .after(PhysicsSystems),
                     send_animations,
+                    remove_models,
+                    update_model_transform,
+                    // Wait for propagation so GlobalTransform is updated
+                    update_visibility.after(TransformSystem::TransformPropagate),
                 ),
-            )
-            // TODO: Maybe all of these systems should be PostUpdate. This way Update is the do
-            // things place, and PostUpdate is the send to client place.
-            //
-            // XXX: PostUpdate because RemovedComponents is only available from the stage it was
-            // removed up to CoreStage::Last.
-            .add_systems(PostUpdate, remove_models);
+            );
     }
 }
 
@@ -52,14 +53,14 @@ impl Plugin for ModelPlugin {
 // but I think I experienced a problem computing the aabb's because there were accessors with
 // min/max values that didn't relate to meshes. Need to investigate if this is true (I might have
 // messed up some pivot points in Blockbench)
-fn load_models(mut commands: Commands, database: Res<Database>) {
+pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
     let directory = std::fs::read_dir(MODEL_PATH).expect(&format!(
         "Could not read files from model directory, make sure it is present at '{}'.",
         &MODEL_PATH
     ));
 
     // Instead of going 'load models from db -> read the files we need from directory' we go 'read
-    // all files to configurations -> match to loaded models'. This is because only the file stem
+    // all files to configurations -> match to db models'. This is because only the file stem
     // is stored .e.g. model_name.gltf -> model_name, which makes it hard to reconstruct as a path
     // since the extension can be any of gltf/glb/json.
     // As a side effect, this allows changing the file type after the model has been registered as
@@ -232,8 +233,16 @@ pub struct ModelConfig {
 pub struct Models(IndexMap<String, ModelConfig>);
 
 impl Models {
+    #[track_caller]
     pub fn get_by_name(&self, name: &str) -> &ModelConfig {
-        &self.0[name]
+        if let Some(model) = self.0.get(name) {
+            model
+        } else {
+            panic!(
+                "Missing model: '{}', make sure it is added to the assets.",
+                name
+            );
+        }
     }
 
     pub fn get_by_id(&self, id: ModelId) -> &ModelConfig {
@@ -295,7 +304,7 @@ impl ModelMap {
 }
 
 fn remove_models(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     mut model_map: ResMut<ModelMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut deleted_models: RemovedComponents<Model>,
@@ -323,7 +332,7 @@ fn remove_models(
 
 // TODO: Split position, rotation and scale into packets?
 fn update_model_transform(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut model_map: ResMut<ModelMap>,
     model_query: Query<
@@ -331,14 +340,14 @@ fn update_model_transform(
         Changed<GlobalTransform>,
     >,
 ) {
-    for (entity, global_transform, visibility, tracker) in model_query.iter() {
+    for (entity, global_transform, visibility, change_tracker) in model_query.iter() {
         let transform = global_transform.compute_transform();
         let chunk_position =
             utils::world_position_to_chunk_position(transform.translation.as_ivec3());
 
         model_map.insert_or_move(chunk_position, entity);
 
-        if !visibility.is_visible || tracker.is_added() {
+        if !visibility.is_visible || change_tracker.is_added() {
             continue;
         }
 
@@ -381,9 +390,9 @@ fn play_move_animation(
 }
 
 // TODO: I'm not entirely sure what the purpose of this was. Why not just replace the model?
-// Remember to make model.id private if changed.
+// Remember to make Model.id private if changed.
 fn update_model_assets(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<(Entity, Ref<Model>, &Transform, &ModelVisibility), Changed<Model>>,
 ) {
@@ -411,7 +420,7 @@ fn update_model_assets(
 
 // TODO: Animations must be sent
 fn update_visibility(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<
         (Entity, &Model, &ModelVisibility, &GlobalTransform),
@@ -447,9 +456,9 @@ fn update_visibility(
 }
 
 fn send_models_on_chunk_subscription(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     model_map: Res<ModelMap>,
-    player_query: Query<&ConnectionId>,
+    player_query: Query<Entity, With<Player>>,
     model_query: Query<(
         Option<&Parent>,
         &Model,
@@ -474,8 +483,8 @@ fn send_models_on_chunk_subscription(
 
                 // Don't send the player models to the players they belong to.
                 if let Some(parent) = maybe_player_parent {
-                    let connection_id = player_query.get(parent.get()).unwrap();
-                    if connection_id == &chunk_sub.connection_id {
+                    let player_entity = player_query.get(parent.get()).unwrap();
+                    if player_entity == chunk_sub.player_entity {
                         continue;
                     }
                 }
@@ -483,7 +492,7 @@ fn send_models_on_chunk_subscription(
                 let transform = transform.compute_transform();
 
                 net.send_one(
-                    chunk_sub.connection_id,
+                    chunk_sub.player_entity,
                     messages::NewModel {
                         id: entity.index(),
                         parent_id: None,
@@ -497,7 +506,7 @@ fn send_models_on_chunk_subscription(
                 if animations.playing_move_animation {
                     let animation_index = animations.move_animation.unwrap();
                     net.send_one(
-                        chunk_sub.connection_id,
+                        chunk_sub.player_entity,
                         messages::ModelPlayAnimation {
                             model_id: entity.index(),
                             animation_index,
@@ -508,7 +517,7 @@ fn send_models_on_chunk_subscription(
 
                 for animation_index in animations.repeating.iter().copied() {
                     net.send_one(
-                        chunk_sub.connection_id,
+                        chunk_sub.player_entity,
                         messages::ModelPlayAnimation {
                             model_id: entity.index(),
                             animation_index,
@@ -522,7 +531,7 @@ fn send_models_on_chunk_subscription(
 }
 
 fn send_animations(
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut animation_query: Query<
         (Entity, &mut ModelAnimations, &GlobalTransform),

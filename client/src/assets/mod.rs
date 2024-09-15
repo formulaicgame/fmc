@@ -1,8 +1,4 @@
-use sha1::Digest;
-use std::io::prelude::*;
-
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkClient, NetworkData};
 
 mod block_textures;
 mod materials;
@@ -11,23 +7,20 @@ pub mod models;
 pub use block_textures::BlockTextures;
 pub use materials::Materials;
 
-use crate::game_state::GameState;
-
-/// Assets are downloaded on connection to the server. It first waits for the server config. Then
-/// checks if server_config.asset_hash is the same as the hash of any stored assets. If not it asks
-/// for assets from the server. It then loads them.
+// Assets are downloaded at connection over in 'src/networking.rs'. It matches the asset hash from
+// the server config with the clients stored assets, and requests them if it doesn't have them.
+// AssetState::Loading is set from there.
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssetState {
     #[default]
     Inactive,
-    Downloading,
     Loading,
 }
 
-// TODO: Remove everything, call all functions from their modules, check for resource_added for
-// dependencies. Though when it comes to the stuff that depends Blocks since that is a global.
-// I want to clean this up so stuff doesn't have to be exposed, and it would be nice to have
-// asset reloading where things that dependron each other are automatically redone.
+// TODO: This doesn't actually work, if there's any error it will panic.
+// TODO: Loading will have to be async to not lag the client, need to show progress in the gui.
+// Would also be nice to make all the functions private to their own modules, it makes the global
+// namespace filthy.
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
@@ -35,15 +28,6 @@ impl Plugin for AssetPlugin {
             .add_plugins(models::ModelPlugin);
 
         app.add_systems(
-            Update,
-            (
-                begin_asset_loading.run_if(
-                    in_state(AssetState::Inactive).and_then(in_state(GameState::Connecting)),
-                ),
-                handle_assets_response.run_if(in_state(AssetState::Downloading)),
-            ),
-        )
-        .add_systems(
             OnEnter(AssetState::Loading),
             (
                 block_textures::load_block_textures,
@@ -56,74 +40,14 @@ impl Plugin for AssetPlugin {
                 apply_deferred,
                 crate::ui::server::items::load_items,
                 crate::ui::server::load_interfaces,
-                finish,
+                finish_loading,
             )
                 .chain(),
         );
     }
 }
 
-fn finish(
-    net: Res<NetworkClient>,
-    mut asset_state: ResMut<NextState<AssetState>>,
-    mut game_state: ResMut<NextState<GameState>>,
-) {
+fn finish_loading(mut asset_state: ResMut<NextState<AssetState>>) {
     info!("Finished loading assets");
-    net.send_message(messages::ClientReady);
     asset_state.set(AssetState::Inactive);
-    game_state.set(GameState::Playing);
-}
-
-fn begin_asset_loading(
-    net: Res<fmc_networking::NetworkClient>,
-    mut server_config_event: EventReader<NetworkData<messages::ServerConfig>>,
-    mut asset_state: ResMut<NextState<AssetState>>,
-) {
-    for config in server_config_event.read() {
-        if !has_assets(&config.assets_hash) {
-            info!("Downloading assets from the server...");
-            net.send_message(messages::AssetRequest);
-            asset_state.set(AssetState::Downloading)
-        } else {
-            asset_state.set(AssetState::Loading)
-        }
-    }
-}
-
-fn handle_assets_response(
-    mut asset_state: ResMut<NextState<AssetState>>,
-    mut asset_events: EventReader<NetworkData<messages::AssetResponse>>,
-) {
-    // TODO: Does this need an explicit timeout? Don't want to let the server be able to leave the
-    // client in limbo without the player being able to quit.
-    // TODO: Unpacking stores tarball in extraction directory, delete it.
-    for tarball in asset_events.read() {
-        info!("Loading assets...");
-        // Remove old assets if they exist.
-        std::fs::remove_dir_all("server_assets").ok();
-
-        let mut archive = tar::Archive::new(std::io::Cursor::new(&tarball.file));
-        archive.unpack("./server_assets").unwrap();
-
-        // Write the hash to file to check against the next time we connect.
-        let mut file = std::fs::File::create("server_assets/hash.txt").unwrap();
-        file.write_all(&sha1::Sha1::digest(&tarball.file)).unwrap();
-        file.flush().unwrap();
-
-        asset_state.set(AssetState::Loading);
-    }
-}
-
-fn has_assets(server_hash: &Vec<u8>) -> bool {
-    let mut file = match std::fs::File::open("server_assets/hash.txt") {
-        Ok(f) => f,
-        Err(_) => return false,
-    };
-    let mut hash: Vec<u8> = Vec::new();
-    file.read_to_end(&mut hash).unwrap();
-
-    if hash != *server_hash {
-        return false;
-    }
-    return true;
 }

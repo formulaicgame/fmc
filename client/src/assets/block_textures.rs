@@ -31,13 +31,13 @@ impl BlockTextures {
 pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     // size of 16*16 png 8 bit indexed png
     let mut image_buffer = Vec::with_capacity(256);
-    let path = "server_assets/textures/blocks";
+    let textures_path = "server_assets/active/textures/blocks";
 
     let mut texture_array_indices: HashMap<String, u32> = HashMap::new();
 
     let mut final_image_data = Vec::new();
     let mut id = 0;
-    for dir_entry in std::fs::read_dir(path).unwrap() {
+    for dir_entry in std::fs::read_dir(textures_path).unwrap() {
         let path = match dir_entry {
             Ok(d) => d.path(),
             Err(e) => panic!(

@@ -1,11 +1,13 @@
 use bevy::{math::DVec3, prelude::*, render::primitives::Aabb};
-use fmc_networking::{messages, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
     player::PlayerState,
     world::{blocks::Blocks, world_map::WorldMap, Origin},
 };
+
+const AUDIO_PATH: &str = "server_assets/active/audio/";
 
 pub struct AudioPlugin;
 impl Plugin for AudioPlugin {
@@ -28,7 +30,7 @@ fn play_sounds(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     origin: Res<Origin>,
-    mut sound_events: EventReader<NetworkData<messages::Sound>>,
+    mut sound_events: EventReader<messages::Sound>,
 ) {
     for sound in sound_events.read() {
         let position = sound.position.unwrap_or(DVec3::ZERO) - origin.0.as_dvec3();
@@ -37,7 +39,7 @@ fn play_sounds(
                 Transform::from_translation(position.as_vec3()),
             ))
             .insert(AudioBundle {
-                source: asset_server.load(&sound.sound),
+                source: asset_server.load(AUDIO_PATH.to_owned() + &sound.sound),
                 settings: PlaybackSettings::DESPAWN.with_spatial(sound.position.is_some()),
             });
     }
@@ -45,7 +47,7 @@ fn play_sounds(
 
 fn toggle_client_side_sound(
     mut client_side_audio: ResMut<ClientSideAudio>,
-    mut toggle_events: EventReader<NetworkData<messages::EnableClientAudio>>,
+    mut toggle_events: EventReader<messages::EnableClientAudio>,
 ) {
     for event in toggle_events.read() {
         client_side_audio.enabled = event.0;
@@ -120,7 +122,7 @@ fn play_walking_sound(
             Transform::from_translation(global_transform.translation() + Vec3::from(aabb.center)),
         ))
         .insert(AudioBundle {
-            source: asset_server.load(&walking_sounds[index]),
+            source: asset_server.load(AUDIO_PATH.to_owned() + &walking_sounds[index]),
             settings: PlaybackSettings::DESPAWN.with_spatial(false),
         });
 }

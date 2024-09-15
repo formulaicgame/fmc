@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::{math::DVec3, prelude::*};
+use serde::Deserialize;
 
 use crate::{
     bevy_extensions::f64_transform::{GlobalTransform, Transform},
@@ -29,6 +30,40 @@ impl Plugin for PhysicsPlugin {
                 trigger_update_on_block_change,
             ),
         );
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Collider {
+    Aabb(Aabb),
+    Compound(Vec<Aabb>),
+}
+
+impl Collider {
+    pub fn ray_intersection(
+        &self,
+        ray_origin: DVec3,
+        ray_direction: DVec3,
+        collider_transform: Transform,
+    ) -> Option<f64> {
+        match self {
+            Self::Aabb(aabb) => {
+                let aabb = aabb.transformed_by(collider_transform);
+                aabb.ray_intersection(ray_origin, ray_direction)
+            }
+            Self::Compound(aabbs) => {
+                let mut distance = None;
+                for aabb in aabbs {
+                    let aabb = aabb.transformed_by(collider_transform);
+                    if let Some(new_distance) = aabb.ray_intersection(ray_origin, ray_direction) {
+                        let distance = distance.get_or_insert(0.0f64);
+                        *distance = distance.min(new_distance);
+                    }
+                }
+                distance
+            }
+        }
     }
 }
 

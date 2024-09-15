@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use bevy::{
     animation::RepeatAnimation,
@@ -8,11 +8,12 @@ use bevy::{
     prelude::*,
     render::{mesh::Indices, primitives::Aabb, render_asset::RenderAssetUsages},
 };
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
-    assets::models::{GltfAnimationPlayers, Model, Models},
+    assets::models::{Model, Models},
     game_state::GameState,
+    networking::NetworkClient,
     world::{MovesWithOrigin, Origin},
 };
 
@@ -28,7 +29,6 @@ impl Plugin for ModelPlugin {
                 handle_transform_updates,
                 interpolate_to_new_transform,
                 play_animations.after(handle_model_add_delete),
-                play_queued_animations,
             )
                 .run_if(in_state(GameState::Playing)),
         );
@@ -40,41 +40,38 @@ impl Plugin for ModelPlugin {
 struct ModelEntities(HashMap<u32, Entity>);
 
 fn handle_model_add_delete(
+    net: Res<NetworkClient>,
     mut commands: Commands,
     origin: Res<Origin>,
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
     mut model_entities: ResMut<ModelEntities>,
-    mut deleted_models: EventReader<NetworkData<messages::DeleteModel>>,
-    mut new_models: EventReader<NetworkData<messages::NewModel>>,
+    mut deleted_models: EventReader<messages::DeleteModel>,
+    mut new_models: EventReader<messages::NewModel>,
 ) {
-    for model in deleted_models.read() {
-        if let Some(entity) = model_entities.remove(&model.id) {
-            // BUG: Every time the model's scene handle changes, a new child entity is attached to
-            // this entity. Presumably for the gltf meshes etc. These are not cleaned up when the
-            // scene changes. When we call despawn_recursive here it complains about the child
-            // entites not existing. Something to do with the hierarchy propagation probably? The
-            // gltf stuff is deleted, but a reference to the entity is left hanging in the
-            // children.
-            warn!("The following warnings (if any) are the result of a bug.");
+    for deleted_model in deleted_models.read() {
+        if let Some(entity) = model_entities.remove(&deleted_model.id) {
             commands.entity(entity).despawn_recursive();
         }
     }
 
     for new_model in new_models.read() {
-        let model = if let Some(model) = models.get(&new_model.asset) {
-            model
-        } else {
-            // Disconnect
-            todo!();
-        };
-
-        // Server may send same id with intent to replace without deleting first
+        // Server may send same id with intent to replace, in which case we delete and add anew
         if let Some(old_entity) = model_entities.remove(&new_model.id) {
             commands.entity(old_entity).despawn_recursive();
         }
 
-        let gltf = gltf_assets.get(&model.handle).unwrap();
+        let Some(model_config) = models.get_config(&new_model.asset) else {
+            net.disconnect(format!(
+                "Server sent model asset id that doesn't exist, id: {}",
+                new_model.asset,
+            ));
+            return;
+        };
+
+        let Some(gltf) = gltf_assets.get(&model_config.gltf_handle) else {
+            continue;
+        };
 
         let entity = commands
             .spawn(SceneBundle {
@@ -86,8 +83,9 @@ fn handle_model_add_delete(
                 },
                 ..default()
             })
-            .insert(model.clone())
-            .insert(QueuedAnimations::default())
+            .insert(Model::new(new_model.asset))
+            .insert(model_config.animation_graph.clone().unwrap())
+            .insert(AnimationPlayer::default())
             .insert(TransformInterpolation::default())
             .insert(MovesWithOrigin)
             .id();
@@ -97,22 +95,29 @@ fn handle_model_add_delete(
 }
 
 fn update_model_asset(
+    net: Res<NetworkClient>,
     model_entities: Res<ModelEntities>,
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
-    mut asset_updates: EventReader<NetworkData<messages::ModelUpdateAsset>>,
-    mut model_query: Query<&mut Handle<Scene>, With<Model>>,
+    mut model_query: Query<(&mut Handle<Scene>, &mut Handle<AnimationGraph>, &mut Model)>,
+    mut asset_updates: EventReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
         if let Some(entity) = model_entities.get(&asset_update.id) {
-            let mut scene_handle = model_query.get_mut(*entity).unwrap();
+            let (mut scene_handle, mut animation_graph, mut model) =
+                model_query.get_mut(*entity).unwrap();
 
-            *scene_handle = if let Some(model) = models.get(&asset_update.asset) {
-                gltf_assets.get(&model.handle).unwrap().scenes[0].clone()
-            } else {
-                // Disconnect?
-                todo!();
+            let Some(model_config) = models.get_config(&asset_update.asset) else {
+                net.disconnect(format!(
+                    "Server sent model asset id that doesn't exist, id: {}",
+                    asset_update.id
+                ));
+                return;
             };
+
+            *scene_handle = gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone();
+            model.asset_id = asset_update.asset;
+            *animation_graph = model_config.animation_graph.clone().unwrap();
         }
     }
 }
@@ -138,7 +143,7 @@ impl Default for TransformInterpolation {
 
 fn handle_transform_updates(
     model_entities: Res<ModelEntities>,
-    mut transform_updates: EventReader<NetworkData<messages::ModelUpdateTransform>>,
+    mut transform_updates: EventReader<messages::ModelUpdateTransform>,
     mut model_query: Query<&mut TransformInterpolation, With<Model>>,
 ) {
     for transform_update in transform_updates.read() {
@@ -192,97 +197,51 @@ fn interpolate_to_new_transform(
     }
 }
 
-// Animations will often arrive at the same tick as the model. It takes some time to load the
-// scene, so we have to store the animations until the model is ready.
-#[derive(Component, DerefMut, Deref, Default)]
-struct QueuedAnimations(Vec<messages::ModelPlayAnimation>);
-
 fn play_animations(
     net: Res<NetworkClient>,
-    gltf_assets: Res<Assets<Gltf>>,
+    models: Res<Models>,
     model_entities: Res<ModelEntities>,
-    mut model_query: Query<(&Model, Option<&GltfAnimationPlayers>, &mut QueuedAnimations)>,
-    mut animation_players: Query<&mut AnimationPlayer>,
-    mut animation_events: EventReader<NetworkData<messages::ModelPlayAnimation>>,
+    mut model_query: Query<(&mut Model, &mut AnimationPlayer), With<Handle<AnimationGraph>>>,
+    mut animation_events: EventReader<messages::ModelPlayAnimation>,
 ) {
     for animation in animation_events.read() {
         let Some(model_entity) = model_entities.get(&animation.model_id) else {
-            net.disconnect(
-                "The server tried to play an animation for an entity that doesn't exist.",
-            );
+            // net.disconnect(
+            //     "The server tried to play an animation for an entity that doesn't exist.",
+            // );
             return;
         };
 
-        let (model, maybe_animation_players, mut queued_animations) =
-            model_query.get_mut(*model_entity).unwrap();
+        let (model, mut animation_player) = model_query.get_mut(*model_entity).unwrap();
 
-        let Some(gltf_animation_players) = maybe_animation_players else {
-            queued_animations.push(animation.deref().clone());
-            continue;
-        };
+        let model_config = models.get_config(&model.asset_id).unwrap();
 
-        let gltf = gltf_assets.get(&model.handle).unwrap();
-
-        let Some(animation_handle) = gltf.animations.get(animation.animation_index as usize) else {
+        let Some(animation_index) = model_config
+            .animations
+            .get(animation.animation_index as usize)
+        else {
             // TODO: Need to print the name of the model in the error message for debugging.
-            net.disconnect(format!(
-                "The server sent an animation that doesn't exist. Animation index was '{}'",
-                animation.animation_index
-            ));
+            // net.disconnect(format!(
+            //     "The server sent an animation that doesn't exist. Animation index was '{}'",
+            //     animation.animation_index
+            // ));
             return;
         };
 
-        let mut animation_player = animation_players
-            .get_mut(gltf_animation_players.main.unwrap())
-            .unwrap();
-        animation_player.play(animation_handle.clone());
+        animation_player.stop_all();
+        animation_player.play(*animation_index);
+        let active_animation = animation_player.animation_mut(*animation_index).unwrap();
+        //dbg!(&active_animation);
 
         // When the server wants an animation to stop, it sends the same animation but with
         // repeat=false. Then we complete the current animation cycle and stop.
         if animation.repeat {
-            animation_player.set_repeat(RepeatAnimation::Forever);
+            active_animation.set_repeat(RepeatAnimation::Forever);
         } else {
             // TODO: It messes up the last frame
             // https://github.com/bevyengine/bevy/issues/10832
-            let count = animation_player.completions() + 1;
-            animation_player.set_repeat(RepeatAnimation::Count(count));
-        }
-    }
-}
-
-fn play_queued_animations(
-    net: Res<NetworkClient>,
-    gltf_assets: Res<Assets<Gltf>>,
-    mut model_query: Query<
-        (&Model, &GltfAnimationPlayers, &mut QueuedAnimations),
-        Added<GltfAnimationPlayers>,
-    >,
-    mut animation_players: Query<&mut AnimationPlayer>,
-) {
-    for (model, gltf_animation_players, mut queued_animations) in model_query.iter_mut() {
-        let gltf = gltf_assets.get(&model.handle).unwrap();
-
-        for animation in queued_animations.drain(..).rev() {
-            let Some(animation_handle) = gltf.animations.get(animation.animation_index as usize)
-            else {
-                // TODO: Need to print the name of the model in the error message for debugging.
-                net.disconnect(format!(
-                    "The server sent an animation that doesn't exist. Animation index was '{}'",
-                    animation.animation_index
-                ));
-                return;
-            };
-
-            let mut animation_player = animation_players
-                .get_mut(gltf_animation_players.main.unwrap())
-                .unwrap();
-            animation_player.play(animation_handle.clone());
-
-            if animation.repeat {
-                animation_player.set_repeat(RepeatAnimation::Forever);
-            } else {
-                animation_player.set_repeat(RepeatAnimation::Never);
-            }
+            let count = active_animation.completions() + 1;
+            active_animation.set_repeat(RepeatAnimation::Count(count));
         }
     }
 }

@@ -1,15 +1,17 @@
 use bevy::{
-    prelude::*,
+    math::DVec3,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
     utils::{HashMap, HashSet},
 };
-use fmc_networking::{messages, ConnectionId, NetworkData, NetworkServer, ServerNetworkEvent};
+use fmc_protocol::messages;
 
 use crate::{
-    bevy_extensions::f64_transform::GlobalTransform,
-    blocks::{BlockPosition, Blocks},
+    blocks::{BlockPosition, BlockState, Blocks},
     database::Database,
+    models::{Model, ModelAnimations, ModelBundle, ModelVisibility},
+    networking::{NetworkEvent, Server},
     players::Player,
+    prelude::*,
     utils,
     world::{
         chunk::{Chunk, ChunkFace},
@@ -24,10 +26,6 @@ impl Plugin for ChunkManagerPlugin {
         app.add_event::<ChunkUnloadEvent>()
             .add_event::<ChunkSubscriptionEvent>()
             .insert_resource(ChunkSubscriptions::default())
-            // This is postupdate so that when a disconnect event is sent, the other systems can
-            // assume that the connection is still registered as a subscriber.
-            // TODO: This can be changed to run on Update when I sort out the spaghetti in
-            // NetworkPlugin.
             .add_systems(PostUpdate, add_and_remove_subscribers)
             .add_systems(
                 Update,
@@ -76,7 +74,7 @@ fn update_player_chunk_origin(
 /// Sent when a player subscribes to a new chunk
 #[derive(Event)]
 pub struct ChunkSubscriptionEvent {
-    pub connection_id: ConnectionId,
+    pub player_entity: Entity,
     pub chunk_position: IVec3,
 }
 
@@ -88,35 +86,32 @@ pub struct ChunkUnloadEvent(pub IVec3);
 // everything that happens within a chunk it is subscribed to.
 #[derive(Resource, Default)]
 pub struct ChunkSubscriptions {
-    chunk_to_subscribers: HashMap<IVec3, HashSet<ConnectionId>>,
-    subscriber_to_chunks: HashMap<ConnectionId, HashSet<IVec3>>,
+    chunk_to_subscribers: HashMap<IVec3, HashSet<Entity>>,
+    subscriber_to_chunks: HashMap<Entity, HashSet<IVec3>>,
 }
 
 impl ChunkSubscriptions {
-    pub fn get_subscribers(&self, chunk_position: &IVec3) -> Option<&HashSet<ConnectionId>> {
+    pub fn get_subscribers(&self, chunk_position: &IVec3) -> Option<&HashSet<Entity>> {
         return self.chunk_to_subscribers.get(chunk_position);
     }
 }
 
 fn add_and_remove_subscribers(
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    connection_query: Query<&ConnectionId>,
-    mut network_events: EventReader<ServerNetworkEvent>,
+    mut network_events: EventReader<NetworkEvent>,
     mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
 ) {
     for event in network_events.read() {
         match event {
-            ServerNetworkEvent::Connected { entity } => {
-                let connection_id = connection_query.get(*entity).unwrap();
+            NetworkEvent::Connected { entity } => {
                 chunk_subscriptions
                     .subscriber_to_chunks
-                    .insert(*connection_id, HashSet::default());
+                    .insert(*entity, HashSet::default());
             }
-            ServerNetworkEvent::Disconnected { entity } => {
-                let connection_id = connection_query.get(*entity).unwrap();
+            NetworkEvent::Disconnected { entity } => {
                 let subscribed_chunks = chunk_subscriptions
                     .subscriber_to_chunks
-                    .remove(connection_id)
+                    .remove(entity)
                     .unwrap();
 
                 for chunk_position in subscribed_chunks {
@@ -124,7 +119,7 @@ fn add_and_remove_subscribers(
                         .chunk_to_subscribers
                         .get_mut(&chunk_position)
                         .unwrap();
-                    subscribers.remove(connection_id);
+                    subscribers.remove(entity);
 
                     if subscribers.len() == 0 {
                         chunk_subscriptions
@@ -134,14 +129,13 @@ fn add_and_remove_subscribers(
                     }
                 }
             }
-            _ => (),
         }
     }
 }
 
 fn handle_chunk_subscription_events(
     mut commands: Commands,
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     world_map: Res<WorldMap>,
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
@@ -152,7 +146,7 @@ fn handle_chunk_subscription_events(
     for event in subscription_events.read() {
         chunk_subscriptions
             .subscriber_to_chunks
-            .get_mut(&event.connection_id)
+            .get_mut(&event.player_entity)
             .unwrap()
             .insert(event.chunk_position);
 
@@ -160,10 +154,10 @@ fn handle_chunk_subscription_events(
             .chunk_to_subscribers
             .get_mut(&event.chunk_position)
         {
-            chunk_subscribers.insert(event.connection_id);
+            chunk_subscribers.insert(event.player_entity);
             if let Some(chunk) = world_map.get_chunk(&event.chunk_position) {
                 net.send_one(
-                    event.connection_id,
+                    event.player_entity,
                     messages::Chunk {
                         position: event.chunk_position,
                         blocks: chunk.blocks.clone(),
@@ -174,7 +168,7 @@ fn handle_chunk_subscription_events(
         } else {
             chunk_subscriptions
                 .chunk_to_subscribers
-                .insert(event.chunk_position, HashSet::from([event.connection_id]));
+                .insert(event.chunk_position, HashSet::from([event.player_entity]));
 
             let task = thread_pool.spawn(Chunk::load(
                 event.chunk_position,
@@ -191,16 +185,16 @@ fn unsubscribe_from_chunks(
     chunk_subscriptions: ResMut<ChunkSubscriptions>,
     mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
     player_origin_query: Query<
-        (&ConnectionId, &PlayerChunkOrigin, &RenderDistance),
+        (Entity, &PlayerChunkOrigin, &RenderDistance),
         Changed<PlayerChunkOrigin>,
     >,
 ) {
     // reborrow to make split borrowing work.
     let chunk_subscriptions = chunk_subscriptions.into_inner();
-    for (connection_id, origin, render_distance) in player_origin_query.iter() {
+    for (entity, origin, render_distance) in player_origin_query.iter() {
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
-            .get_mut(connection_id)
+            .get_mut(&entity)
             .unwrap();
         let removed = subscribed_chunks.extract_if(|chunk_position| {
             let distance = (*chunk_position - origin.0).abs() / Chunk::SIZE as i32;
@@ -219,7 +213,7 @@ fn unsubscribe_from_chunks(
                 .chunk_to_subscribers
                 .get_mut(&chunk_position)
                 .unwrap();
-            chunk_subscribers.remove(connection_id);
+            chunk_subscribers.remove(&entity);
 
             if chunk_subscribers.len() == 0 {
                 chunk_subscriptions
@@ -246,7 +240,7 @@ struct ChunkLoadingTask(Task<(IVec3, Chunk)>);
 // contention for the WorldMap. The locations that borrow it mutably will need all the time they
 // can get, and this system will hog it.
 //
-// TODO: Optimization idea. Instead of using events, use an mpsc. Removes the only need for
+// TODO: Optimization idea: Instead of using events, use an mpsc. Removes the only need for
 // mutability, and so the players can be handled in parallel. Con: Lots of allocation? Keep queues
 // for each player. Maybe the search can be done by recursion? How is stack memory even handled
 // when it is done in parallel.
@@ -259,25 +253,25 @@ fn subscribe_to_visible_chunks(
     // NOTE: It's not restricted to running only when the origin is changed. Every time a new chunk
     // is loaded for a player the origin is mutably accessed to trigger the change detection.
     changed_origin_query: Query<
-        (&ConnectionId, &PlayerChunkOrigin, &RenderDistance),
+        (Entity, &PlayerChunkOrigin, &RenderDistance),
         Changed<PlayerChunkOrigin>,
     >,
     mut subscription_events: EventWriter<ChunkSubscriptionEvent>,
     mut queue: Local<Vec<(IVec3, ChunkFace, ChunkFace)>>,
     mut already_visited: Local<HashSet<IVec3>>,
 ) {
-    for (connection_id, chunk_origin, render_distance) in changed_origin_query.iter() {
+    for (player_entity, chunk_origin, render_distance) in changed_origin_query.iter() {
         already_visited.clear();
         already_visited.insert(chunk_origin.0);
 
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
-            .get(connection_id)
+            .get(&player_entity)
             .unwrap();
 
         if !subscribed_chunks.contains(&chunk_origin.0) {
             subscription_events.send(ChunkSubscriptionEvent {
-                connection_id: *connection_id,
+                player_entity,
                 chunk_position: chunk_origin.0,
             });
         }
@@ -303,7 +297,7 @@ fn subscribe_to_visible_chunks(
         while let Some((chunk_position, from_face, main_face)) = queue.pop() {
             if !subscribed_chunks.contains(&chunk_position) {
                 subscription_events.send(ChunkSubscriptionEvent {
-                    connection_id: *connection_id,
+                    player_entity,
                     chunk_position,
                 });
             }
@@ -349,8 +343,6 @@ fn subscribe_to_visible_chunks(
                         to_face.opposite(),
                         main_face,
                     ));
-                } else if chunk_position == IVec3::new(16, 0, 16) {
-                    dbg!("not visible");
                 }
             }
         }
@@ -359,7 +351,7 @@ fn subscribe_to_visible_chunks(
 
 fn handle_chunk_loading_tasks(
     mut commands: Commands,
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     mut world_map: ResMut<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut origin_query: Query<&mut PlayerChunkOrigin>,
@@ -415,18 +407,47 @@ fn handle_chunk_loading_tasks(
             let blocks = Blocks::get();
             for (index, block_id) in chunk.blocks.iter().enumerate() {
                 let block_config = blocks.get_config(block_id);
-                if let Some(function) = block_config.spawn_entity_fn {
+                if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
                     let mut entity_commands = commands.spawn_empty();
-
-                    let block_data = chunk.block_data.remove(&index);
-                    (function)(&mut entity_commands, block_data.as_ref());
-
-                    if let Some(block_data) = block_data {
-                        entity_commands.insert(block_data);
-                    }
 
                     let block_position = chunk_position + utils::block_index_to_position(index);
                     entity_commands.insert(BlockPosition(block_position));
+
+                    if let Some(function) = block_config.spawn_entity_fn {
+                        let block_data = chunk.block_data.remove(&index);
+                        (function)(&mut entity_commands, block_data.as_ref());
+
+                        if let Some(block_data) = block_data {
+                            entity_commands.insert(block_data);
+                        }
+                    }
+
+                    if let Some(model_id) = block_config.model {
+                        let mut transform = Transform::from_translation(
+                            block_position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
+                        );
+                        if let Some(mut side_transform) = block_config.placement.side_transform {
+                            if let Some(block_state) =
+                                chunk.block_state.get(&index).cloned().map(BlockState)
+                            {
+                                if let Some(rotation) = block_state.rotation() {
+                                    side_transform.rotate_around(DVec3::ZERO, rotation.as_quat());
+                                }
+                            }
+
+                            transform.translation += side_transform.translation;
+                            transform.rotation *= side_transform.rotation;
+                            transform.scale *= side_transform.scale;
+                        }
+
+                        entity_commands.insert(ModelBundle {
+                            model: Model { id: model_id },
+                            animations: ModelAnimations::default(),
+                            visibility: ModelVisibility::default(),
+                            global_transform: GlobalTransform::default(),
+                            transform,
+                        });
+                    }
 
                     chunk.block_entities.insert(index, entity_commands.id());
                 }
@@ -438,11 +459,7 @@ fn handle_chunk_loading_tasks(
             {
                 // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
                 // where it last stopped.
-                let mut iter = origin_query.iter_many_mut(
-                    subscribers
-                        .iter()
-                        .map(|connection_id| connection_id.entity()),
-                );
+                let mut iter = origin_query.iter_many_mut(subscribers.iter());
                 while let Some(mut origin) = iter.fetch_next() {
                     origin.set_changed();
                 }

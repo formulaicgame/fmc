@@ -4,10 +4,11 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow},
 };
 
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
+    networking::NetworkClient,
     settings::Settings,
     world::{
         blocks::Blocks,
@@ -117,7 +118,7 @@ fn rotate_camera(
 
 // Forced camera rotation by the server.
 fn handle_camera_rotation_from_server(
-    mut camera_rotation_events: EventReader<NetworkData<messages::PlayerCameraRotation>>,
+    mut camera_rotation_events: EventReader<messages::PlayerCameraRotation>,
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
     for rotation_event in camera_rotation_events.read() {
@@ -128,7 +129,7 @@ fn handle_camera_rotation_from_server(
 
 // Forced camera position by the server
 fn handle_camera_position_from_server(
-    mut camera_position_events: EventReader<NetworkData<messages::PlayerCameraPosition>>,
+    mut camera_position_events: EventReader<messages::PlayerCameraPosition>,
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
     for position_event in camera_position_events.read() {

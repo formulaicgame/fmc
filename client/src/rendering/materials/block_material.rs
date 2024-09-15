@@ -1,11 +1,14 @@
 use bevy::{
     asset::{load_internal_asset, Handle},
-    pbr::{AlphaMode, MaterialPipeline, MaterialPipelineKey},
+    pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
     render::{
-        color::Color, mesh::MeshVertexBufferLayout, render_asset::RenderAssets, render_resource::*,
-        texture::Image,
+        alpha::AlphaMode,
+        mesh::MeshVertexBufferLayoutRef,
+        render_asset::RenderAssets,
+        render_resource::*,
+        texture::{GpuImage, Image},
     },
 };
 
@@ -17,7 +20,11 @@ const BLOCK_FRAGMENT_SHADER: Handle<Shader> = Handle::weak_from_u128(23498230498
 pub struct BlockMaterialPlugin;
 impl Plugin for BlockMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<BlockMaterial>::default());
+        app.add_plugins(MaterialPlugin::<BlockMaterial> {
+            shadows_enabled: false,
+            prepass_enabled: false,
+            ..default()
+        });
 
         load_internal_asset!(
             app,
@@ -54,7 +61,7 @@ pub struct BlockMaterial {
     /// base color as `base_color * base_color_texture_value`
     ///
     /// Defaults to [`Color::WHITE`].
-    pub base_color: Color,
+    pub base_color: LinearRgba,
 
     /// The texture component of the material's color before lighting.
     /// The actual pre-lighting color is `base_color * this_texture`.
@@ -88,7 +95,7 @@ pub struct BlockMaterial {
     ///
     /// Note that **an emissive material won't light up surrounding areas like a light source**,
     /// it just adds a value to the color seen on screen.
-    pub emissive: Color,
+    pub emissive: LinearRgba,
 
     /// The emissive map, multiplies pixels with [`emissive`]
     /// to get the final "emitting" color of a surface.
@@ -286,6 +293,7 @@ bitflags::bitflags! {
         const ALPHA_MODE_PREMULTIPLIED   = (3 << Self::ALPHA_MODE_SHIFT_BITS);                          //
         const ALPHA_MODE_ADD             = (4 << Self::ALPHA_MODE_SHIFT_BITS);                          //   Right now only values 0–5 are used, which still gives
         const ALPHA_MODE_MULTIPLY        = (5 << Self::ALPHA_MODE_SHIFT_BITS);                          // ← us "room" for two more modes without adding more bits
+        const ALPHA_MODE_ALPHA_TO_COVERAGE = 6 << Self::ALPHA_MODE_SHIFT_BITS;
         const NONE                       = 0;
         const UNINITIALIZED              = 0xFFFF;
     }
@@ -342,10 +350,10 @@ impl Material for BlockMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        layout: &MeshVertexBufferLayout,
+        layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        let vertex_layout = layout.get_layout(&[
+        let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
             ATTRIBUTE_PACKED_BITS_0.at_shader_location(1),
             Mesh::ATTRIBUTE_NORMAL.at_shader_location(2),
@@ -400,7 +408,7 @@ impl Material for BlockMaterial {
 }
 
 impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
-    fn as_bind_group_shader_type(&self, images: &RenderAssets<Image>) -> BlockMaterialUniform {
+    fn as_bind_group_shader_type(&self, images: &RenderAssets<GpuImage>) -> BlockMaterialUniform {
         let mut flags = BlockMaterialFlags::NONE;
         if self.base_color_texture.is_some() {
             flags |= BlockMaterialFlags::BASE_COLOR_TEXTURE;
@@ -453,11 +461,12 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
             AlphaMode::Premultiplied => flags |= BlockMaterialFlags::ALPHA_MODE_PREMULTIPLIED,
             AlphaMode::Add => flags |= BlockMaterialFlags::ALPHA_MODE_ADD,
             AlphaMode::Multiply => flags |= BlockMaterialFlags::ALPHA_MODE_MULTIPLY,
+            AlphaMode::AlphaToCoverage => flags |= BlockMaterialFlags::ALPHA_MODE_ALPHA_TO_COVERAGE,
         };
 
         BlockMaterialUniform {
-            base_color: self.base_color.as_linear_rgba_f32().into(),
-            emissive: self.emissive.as_linear_rgba_f32().into(),
+            base_color: LinearRgba::from(self.base_color).to_vec4(),
+            emissive: LinearRgba::from(self.emissive).to_vec4(),
             roughness: self.perceptual_roughness,
             metallic: self.metallic,
             reflectance: self.reflectance,

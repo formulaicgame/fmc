@@ -1,11 +1,12 @@
 use bevy::prelude::*;
-use fmc_networking::ClientNetworkEvent;
+
+use crate::assets::AssetState;
 
 pub struct GameStatePlugin;
 impl Plugin for GameStatePlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<GameState>();
-        app.add_systems(Update, on_disconnect);
+        app.init_state::<GameState>()
+            .add_systems(OnExit(AssetState::Loading), start_playing);
     }
 }
 
@@ -18,19 +19,6 @@ pub enum GameState {
     Playing,
 }
 
-fn on_disconnect(
-    mut network_events: EventReader<ClientNetworkEvent>,
-    game_state: Res<State<GameState>>,
-    mut next_game_state: ResMut<NextState<GameState>>,
-) {
-    for event in network_events.read() {
-        match event {
-            ClientNetworkEvent::Disconnected(_) | ClientNetworkEvent::Error(_) => {
-                if *game_state.get() != GameState::Connecting {
-                    next_game_state.set(GameState::Launcher);
-                }
-            }
-            _ => (),
-        }
-    }
+fn start_playing(mut game_state: ResMut<NextState<GameState>>) {
+    game_state.set(GameState::Playing);
 }

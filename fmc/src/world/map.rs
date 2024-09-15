@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     bevy_extensions::f64_transform::Transform,
-    blocks::{BlockFace, BlockId, BlockState, Blocks},
+    blocks::{BlockFace, BlockId, BlockRotation, BlockState, Blocks},
     utils,
     world::{chunk::Chunk, terrain_generation::TerrainGenerator},
 };
@@ -12,18 +12,13 @@ use crate::{
 pub struct WorldMap {
     chunks: HashMap<IVec3, Chunk>,
     pub terrain_generator: Arc<dyn TerrainGenerator>,
-    pub max_render_distance: u32,
 }
 
 impl WorldMap {
-    pub fn new(
-        terrain_generator: impl TerrainGenerator + 'static,
-        max_render_distance: u32,
-    ) -> Self {
+    pub fn new(terrain_generator: impl TerrainGenerator + 'static) -> Self {
         Self {
             chunks: HashMap::new(),
             terrain_generator: Arc::new(terrain_generator),
-            max_render_distance,
         }
     }
 
@@ -71,7 +66,8 @@ impl WorldMap {
     pub fn raycast_to_block(
         &self,
         transform: &Transform,
-        distance: f64,
+        max_distance: f64,
+        // (position, block id, block face, distance to hit)
     ) -> Option<(IVec3, BlockId, BlockFace, f64)> {
         let blocks = Blocks::get();
         let forward = transform.forward();
@@ -80,11 +76,14 @@ impl WorldMap {
         // How far along the forward vector you need to go to hit the next block in each direction.
         // This makes more sense if you mentally align it with the block grid.
         //
+        // TODO: This fract stuff can probably be simplified now, they made fract() correct.
+        // Using fract_gl instead, as that is now the old functionality.
+        //
         // This relies on some peculiar behaviour where normally f32.fract() would retain the
         // sign of the number, Vec3.fract() instead does self - self.floor(). This results in
         // having the correct value for the negative direction, but it has to be flipped for the
         // positive direction, which is the vec3::select.
-        let mut distance_next = transform.translation.fract();
+        let mut distance_next = transform.translation.fract_gl();
         distance_next = DVec3::select(
             direction.cmpeq(DVec3::ONE),
             1.0 - distance_next,
@@ -100,58 +99,77 @@ impl WorldMap {
         // The origin block of the ray.
         let mut block_pos = transform.translation.floor().as_ivec3();
 
-        while (distance_next.min_element() * forward).length_squared() < distance.powi(2) {
-            if distance_next.x < distance_next.y && distance_next.x < distance_next.z {
+        let mut block_face;
+        let mut ray_length;
+        let mut next = distance_next.min_element();
+        while (next * forward).length_squared() < max_distance.powi(2) {
+            if distance_next.x == next {
                 block_pos.x += step.x;
                 distance_next.x += t_block.x;
 
-                // TODO: Have to do this for each branch, too noisy.
-                if let Some(block_id) = self.get_block(block_pos) {
-                    if blocks.get_config(&block_id).hardness.is_none() {
-                        continue;
-                    }
+                block_face = if direction.x == 1.0 {
+                    BlockFace::Left
+                } else {
+                    BlockFace::Right
+                };
 
-                    let block_side = if direction.x == 1.0 {
-                        BlockFace::Left
-                    } else {
-                        BlockFace::Right
-                    };
-
-                    return Some((block_pos, block_id, block_side, distance_next.x - t_block.x));
-                }
-            } else if distance_next.z < distance_next.x && distance_next.z < distance_next.y {
+                ray_length = distance_next.x - t_block.x;
+            } else if distance_next.z == next {
                 block_pos.z += step.z;
                 distance_next.z += t_block.z;
 
-                if let Some(block_id) = self.get_block(block_pos) {
-                    if blocks.get_config(&block_id).hardness.is_none() {
-                        continue;
-                    }
+                block_face = if direction.z == 1.0 {
+                    BlockFace::Back
+                } else {
+                    BlockFace::Front
+                };
 
-                    let block_side = if direction.z == 1.0 {
-                        BlockFace::Back
-                    } else {
-                        BlockFace::Front
-                    };
-                    return Some((block_pos, block_id, block_side, distance_next.z - t_block.z));
-                }
+                ray_length = distance_next.z - t_block.z;
             } else {
                 block_pos.y += step.y;
                 distance_next.y += t_block.y;
 
-                if let Some(block_id) = self.get_block(block_pos) {
-                    if blocks.get_config(&block_id).hardness.is_none() {
+                block_face = if direction.y == 1.0 {
+                    BlockFace::Bottom
+                } else {
+                    BlockFace::Top
+                };
+
+                ray_length = distance_next.y - t_block.y;
+            }
+
+            next = distance_next.min_element();
+
+            if let Some(block_id) = self.get_block(block_pos) {
+                let block_config = blocks.get_config(&block_id);
+                if block_config.hardness.is_none() || block_config.model.is_some() {
+                    continue;
+                }
+
+                let rotation = self
+                    .get_block_state(block_pos)
+                    .map(BlockState::rotation)
+                    .flatten()
+                    .map(BlockRotation::as_quat)
+                    .unwrap_or_default();
+
+                let block_transform = Transform {
+                    translation: block_pos.as_dvec3(),
+                    rotation,
+                    ..default()
+                };
+
+                if let Some(hitbox) = &block_config.hitbox {
+                    if let Some(length) =
+                        hitbox.ray_intersection(transform.translation, forward, block_transform)
+                    {
+                        ray_length += length;
+                    } else {
                         continue;
                     }
-
-                    let block_side = if direction.y == 1.0 {
-                        BlockFace::Bottom
-                    } else {
-                        BlockFace::Top
-                    };
-
-                    return Some((block_pos, block_id, block_side, distance_next.y - t_block.y));
                 }
+
+                return Some((block_pos, block_id, block_face, ray_length));
             }
         }
         return None;

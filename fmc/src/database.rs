@@ -4,9 +4,8 @@ use bevy::prelude::*;
 use indexmap::IndexSet;
 
 use crate::{
-    blocks::{BlockData, BlockId, BlockState, Blocks},
+    blocks::{BlockData, BlockId, BlockState},
     items::ItemId,
-    models::Model,
     world::chunk::Chunk,
 };
 
@@ -44,7 +43,7 @@ pub struct Database(Arc<DatabaseInner>);
 
 // TODO: Two modes, one where it saves only changes to disk and one where it saves all chunk data.
 //       Changes are best for single instances that don't care about the cpu load of re-generating
-//       chunks. For large servers it would be less expensive to save all of it.
+//       chunks. For large servers it is preferable to save cpu at the cost of storage.
 // TODO: Implement connection pool
 pub struct DatabaseInner {
     path: String,

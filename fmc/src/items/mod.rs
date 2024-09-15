@@ -101,7 +101,7 @@ pub struct ItemConfig {
 }
 
 #[derive(Deserialize)]
-pub struct ItemConfigJson {
+struct ItemConfigJson {
     name: String,
     /// Block name of the block this item can place.
     block: Option<String>,

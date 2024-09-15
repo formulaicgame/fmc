@@ -11,25 +11,37 @@ pub mod players;
 pub mod utils;
 pub mod world;
 
-pub use bevy;
-pub use noise;
+pub use fmc_noise as noise;
+
+mod bevy_extensions;
+pub mod bevy {
+    pub use bevy::*;
+
+    // We want f64 transforms so we shadow bevy's transforms
+    pub mod transform {
+        pub use crate::bevy_extensions::f64_transform::GlobalTransform;
+        pub use crate::bevy_extensions::f64_transform::Transform;
+        pub use crate::bevy_extensions::f64_transform::TransformBundle;
+        pub use crate::bevy_extensions::f64_transform::TransformPlugin;
+    }
+
+    pub mod prelude {
+        pub use crate::bevy_extensions::f64_transform::GlobalTransform;
+        pub use crate::bevy_extensions::f64_transform::Transform;
+        pub use crate::bevy_extensions::f64_transform::TransformBundle;
+        pub use crate::bevy_extensions::f64_transform::TransformPlugin;
+        pub use bevy::prelude::*;
+    }
+}
 
 pub mod prelude {
     // XXX: https://github.com/bevyengine/bevy/issues/9831
     pub use bevy::ecs as bevy_ecs;
 
     pub use bevy::prelude::*;
-    // Shadow bevy's inbuilt transforms
-    pub use crate::bevy_extensions::f64_transform::GlobalTransform;
-    pub use crate::bevy_extensions::f64_transform::Transform;
-}
 
-mod bevy_extensions;
-pub mod transform {
     pub use crate::bevy_extensions::f64_transform::GlobalTransform;
     pub use crate::bevy_extensions::f64_transform::Transform;
-    pub use crate::bevy_extensions::f64_transform::TransformBundle;
-    pub use crate::bevy_extensions::f64_transform::TransformPlugin;
 }
 
 use bevy::app::{PluginGroup, PluginGroupBuilder};
@@ -50,13 +62,14 @@ impl PluginGroup for DefaultPlugins {
         let group = PluginGroupBuilder::start::<Self>();
         group
             .add(bevy::app::ScheduleRunnerPlugin::run_loop(
+                // ~60 ticks a second
                 std::time::Duration::from_millis(16),
             ))
             .add(bevy::core::TaskPoolPlugin::default())
             .add(bevy::time::TimePlugin::default())
             .add(bevy::hierarchy::HierarchyPlugin::default())
             .add(bevy::log::LogPlugin::default())
-            .add(transform::TransformPlugin)
+            .add(bevy::transform::TransformPlugin)
             .add(assets::AssetPlugin)
             .add(database::DatabasePlugin::default())
             .add(networking::ServerPlugin)

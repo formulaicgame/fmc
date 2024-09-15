@@ -21,6 +21,7 @@ use crate::{
 
 use super::{
     lighting::{Light, LightChunk, LightMap},
+    materials::BlockMaterial,
     RenderSet,
 };
 
@@ -51,10 +52,7 @@ pub struct ChunkMeshEvent {
 #[derive(Component)]
 pub struct ChunkMeshTask {
     position: IVec3,
-    task: Task<(
-        Vec<(Handle<materials::BlockMaterial>, Mesh)>,
-        Vec<(Handle<Scene>, Transform)>,
-    )>,
+    task: Task<Vec<(Handle<materials::BlockMaterial>, Mesh)>>,
 }
 
 /// Launches new mesh tasks when chunks change.
@@ -84,6 +82,8 @@ fn mesh_system(
                         .cmple(IVec3::splat(Chunk::SIZE as i32))
                         .all()
                     {
+                        // Chunks that are close get meshed on main thread to minimize visual latency. A
+                        // task can take several frames to execute in scheduling alone.
                         let result =
                             future::block_on(build_mesh(expanded_chunk, expanded_light_chunk));
                         thread_pool.spawn(async { result })
@@ -99,7 +99,7 @@ fn mesh_system(
                 }
             }
             None => {
-                //panic!("Tried to mesh a non-existing chunk.");
+                //panic!("Tried to mesh a nonexistent chunk.");
             }
         }
     }
@@ -127,18 +127,18 @@ fn handle_mesh_tasks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut chunk_meshes: Query<(Entity, &mut ChunkMeshTask)>,
     mut count: Local<HashMap<IVec3, u32>>,
-    mut target: Local<u32>,
+    mut target: Local<usize>,
 ) {
     for (entity, mut task) in chunk_meshes.iter_mut() {
-        if let Some((block_meshes, block_models)) =
-            future::block_on(future::poll_once(&mut task.task))
-        {
-            //*target += 1;
+        if let Some(block_meshes) = future::block_on(future::poll_once(&mut task.task)) {
+            // *target += 1;
             //let c = count.entry(task.position).or_insert(0);
             //*c += 1;
 
-            let mut children = Vec::with_capacity(block_meshes.len() + block_models.len());
+            let mut children = Vec::with_capacity(block_meshes.len());
 
+            // *target += block_meshes.len();
+            // dbg!(*target);
             for (material_handle, mesh) in block_meshes.into_iter() {
                 children.push(
                     commands
@@ -151,23 +151,10 @@ fn handle_mesh_tasks(
                 );
             }
 
-            for (handle, transform) in block_models.into_iter() {
-                children.push(
-                    commands
-                        .spawn(SceneBundle {
-                            scene: handle,
-                            transform,
-                            ..default()
-                        })
-                        .insert(NoFrustumCulling)
-                        .id(),
-                );
-            }
-
-            // Remove the previous meshes of the chunk
-            commands.entity(entity).despawn_descendants();
             commands
                 .entity(entity)
+                // Removes previous meshes
+                .despawn_descendants()
                 .remove::<ChunkMeshTask>()
                 .push_children(&children);
         }
@@ -223,7 +210,6 @@ impl MeshBuilder {
         block_state: BlockState,
         cull_delimiter: Option<(f32, f32)>,
     ) {
-        let rotation = block_state.rotation();
         let mut vertices = quad.vertices.clone();
 
         if let Some((top_left, top_right)) = cull_delimiter {
@@ -235,9 +221,8 @@ impl MeshBuilder {
         }
 
         for (i, mut vertex) in vertices.into_iter().enumerate() {
-            if rotation != BlockRotation::None {
-                rotation.rotate_vertex(&mut vertex);
-            }
+            // TODO: Upside down
+            block_state.rotation().rotate_vertex(&mut vertex);
 
             vertex[0] += position[0];
             vertex[1] += position[1];
@@ -255,8 +240,8 @@ impl MeshBuilder {
                 quad.texture_array_id
                     | (i as u32) << 19
                     | (quad.rotate_texture as u32) << 21
-                    | (light.0 as u32) << 22
-                    | (rotation as u32) << 27,
+                    | (light.0 as u32) << 22,
+                // | (maybe_rotation as u32) << 27,
             )
         }
         self.triangles
@@ -268,14 +253,8 @@ impl MeshBuilder {
 async fn build_mesh(
     chunk: ExpandedChunk,
     light_chunk: ExpandedLightChunk,
-) -> (
-    // Blocks that use material to render
-    Vec<(Handle<materials::BlockMaterial>, Mesh)>,
-    // Blocks that use Model to render
-    Vec<(Handle<Scene>, Transform)>,
-) {
+) -> Vec<(Handle<materials::BlockMaterial>, Mesh)> {
     let mut mesh_builders = HashMap::new();
-    let mut scene_bundles = Vec::new();
 
     let blocks = Blocks::get();
 
@@ -306,8 +285,8 @@ async fn build_mesh(
                             };
 
                         for quad in &cube.quads {
-                            let cull_delimiter = if let Some(cull_face) = quad.cull_face {
-                                let cull_face = cull_face.rotate(block_state.rotation());
+                            let cull_delimiter = if let Some(mut cull_face) = quad.cull_face {
+                                cull_face = cull_face.rotate(block_state.rotation());
 
                                 let (x, y, z) = match cull_face {
                                     BlockFace::Back => (x, y, z - 1),
@@ -336,7 +315,7 @@ async fn build_mesh(
 
                                     match adjacent_block_config.cull_delimiter(
                                         cull_face
-                                            .invert()
+                                            .opposite()
                                             .reverse_rotate(adjacent_block_state.rotation()),
                                     ) {
                                         Some(deli) => Some(deli),
@@ -371,37 +350,7 @@ async fn build_mesh(
                         }
                     }
                     Block::Model(model) => {
-                        let (handle, mut transform) = if block_state.uses_side_model() {
-                            match &model.side {
-                                Some((handle, transform)) => {
-                                    (handle.clone(), transform.clone())
-                                }
-                                None => panic!("Block state should have been validated at reception of the chunk.")
-                            }
-                        } else {
-                            match &model.center {
-                                Some((handle, transform)) => {
-                                    (handle.clone(), transform.clone())
-                                }
-                                None => panic!("Block state should have been validated at reception of the chunk.")
-                            }
-                        };
-
-                        let mut rotation = match block_state.rotation() {
-                            BlockRotation::None => Quat::from_rotation_y(0.0),
-                            BlockRotation::Once => Quat::from_rotation_y(90.0),
-                            BlockRotation::Twice => Quat::from_rotation_y(180.0),
-                            BlockRotation::Thrice => Quat::from_rotation_y(270.0),
-                        };
-
-                        if block_state.is_upside_down() {
-                            rotation *= Quat::from_rotation_x(180.0);
-                        }
-
-                        transform.rotate_around(Vec3::splat(0.5), rotation);
-                        transform.translation += Vec3::new(x as f32, y as f32, z as f32) - 1.0;
-
-                        scene_bundles.push((handle, transform));
+                        continue;
                     }
                 }
             }
@@ -419,7 +368,7 @@ async fn build_mesh(
         })
         .collect();
 
-    return (meshes, scene_bundles);
+    return meshes;
 }
 
 // TODO: This used to used to store 2d arrays for the surrounding chunks, but changed to Chunk's to

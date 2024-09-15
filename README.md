@@ -5,18 +5,19 @@
 ```
 cd client && cargo run --release
 ```
+
+Singleplayer takes a little while to work as it must download the server(10mb).
+
 # Controls
-| keys             | description                                                                 |
-| ---------        | -----------                                                                 |
-| `escape`           | Pause                                                                       |
-| `WASD`             | Move                                                                        |
-| `spacebar`         | Jump/Fly, double tap to toggle flight                                       |
-| `shift`            | Fly down                                                                    |
-| `control`          | Speed up horizontal flight                                                  |
-| `e`                | inventory                                                                   |
+| keys               | description                          |
+| ----               | -----------                          |
+| `escape`           | Pause                                |
+| `WASD`             | Move                                 |
+| `spacebar`         | Jump/Fly, double tap to toggle flight|
+| `shift`            | Fly down                             |
+| `control`          | Speed up horizontal flight           |
+| `e`                | inventory                            |
 
 # Licensing
-You can find the licenses in the directories with the same names
-
-client - AGPLv3\
-fmc    - LGPLv3
+[client](./client/) - AGPLv3  
+[fmc](./fmc/)    - MIT or Apache-2.0

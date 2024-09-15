@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 
 use bevy::{
-    ecs::{entity, system::EntityCommands},
+    ecs::system::EntityCommands,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         texture::{CompressedImageFormats, ImageSampler},
     },
 };
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 use serde::Deserialize;
 
 use crate::{
     game_state::GameState,
+    networking::NetworkClient,
     ui::{
         widgets::{TextBox, TextShadow},
         DEFAULT_FONT_HANDLE,
@@ -27,8 +28,8 @@ pub mod items;
 pub mod key_bindings;
 mod text;
 
-const INTERFACE_CONFIG_PATH: &str = "server_assets/interfaces/";
-const INTERFACE_TEXTURE_PATH: &str = "server_assets/textures/interfaces/";
+const INTERFACE_CONFIG_PATH: &str = "server_assets/active/interfaces/";
+const INTERFACE_TEXTURE_PATH: &str = "server_assets/active/textures/interfaces/";
 
 pub struct ServerInterfacesPlugin;
 impl Plugin for ServerInterfacesPlugin {
@@ -51,7 +52,8 @@ impl Plugin for ServerInterfacesPlugin {
                     handle_toggle_events,
                 )
                     .run_if(in_state(GameState::Playing)),
-            );
+            )
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
 }
 
@@ -86,7 +88,7 @@ pub fn load_interfaces(
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(
-                "Misconfigured resource pack: Failed to read interface configuration directory '{}'\n\
+                "Misconfigured assets: Failed to read interface configuration directory '{}'\n\
                 Error: {}",
                 INTERFACE_CONFIG_PATH, e
             ));
@@ -122,11 +124,11 @@ pub fn load_interfaces(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                "Misconfigured resource pack: Failed to read interface configuration at: '{}'\n\
+                    "Misconfigured assets: Failed to read interface configuration at: '{}'\n\
                 Error: {}",
-                &file_path.display(),
-                e
-            ));
+                    &file_path.display(),
+                    e
+                ));
                 return;
             }
         };
@@ -199,18 +201,10 @@ pub fn load_interfaces(
                 config.style.clone().into()
             };
 
-            let background_color = if let Some(background_color) = config.background_color {
-                background_color
-            } else if config.image.is_some() {
-                Color::WHITE
-            } else {
-                Color::NONE
-            };
-
             entity_commands.insert((
                 NodeBundle {
                     style: style.clone(),
-                    background_color: background_color.into(),
+                    background_color: config.background_color.unwrap_or(Color::NONE).into(),
                     border_color: config.border_color.unwrap_or(Color::NONE).into(),
                     ..default()
                 },
@@ -369,6 +363,12 @@ pub fn load_interfaces(
                 ..default()
             });
         });
+}
+
+fn cleanup(mut commands: Commands, cursor_item_box: Query<Entity, With<CursorItemBox>>) {
+    if let Ok(entity) = cursor_item_box.get_single() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 /// Event used by keybindings to toggle an interface open or closed.
@@ -637,7 +637,7 @@ fn handle_node_visibility_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     mut interface_query: Query<&mut Visibility, With<InterfaceNode>>,
-    mut visibility_update_events: EventReader<NetworkData<messages::InterfaceNodeVisibilityUpdate>>,
+    mut visibility_update_events: EventReader<messages::InterfaceNodeVisibilityUpdate>,
 ) {
     for visibility_updates in visibility_update_events.read() {
         for (interface_path, should_be_visible) in visibility_updates.updates.iter() {
@@ -669,7 +669,7 @@ fn handle_interface_visibility_updates(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
     interface_query: Query<&Visibility, With<InterfaceConfig>>,
-    mut interface_open_events: EventReader<NetworkData<messages::InterfaceVisibilityUpdate>>,
+    mut interface_open_events: EventReader<messages::InterfaceVisibilityUpdate>,
     mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for event in interface_open_events.read() {

@@ -1,20 +1,16 @@
-use std::time::Duration;
-
 use bevy::{
-    gltf::{Gltf, GltfMesh},
-    math::Vec3A,
+    animation::AnimationTarget,
+    gltf::Gltf,
     prelude::*,
-    render::{mesh::VertexAttributeValues, primitives::Aabb},
     window::{CursorGrabMode, PrimaryWindow},
 };
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
-    assets::models::Models,
+    assets::models::{ModelAssetId, Models},
     game_state::GameState,
-    player::{PlayerCameraMarker, PlayerState},
-    utils,
-    world::{blocks::BlockFace, world_map::WorldMap, Origin},
+    networking::NetworkClient,
+    player::PlayerCameraMarker,
 };
 
 use super::server::{
@@ -25,69 +21,62 @@ use super::server::{
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SwitchAnimation::default())
-            .add_systems(PostStartup, setup)
-            .add_systems(
-                Update,
-                (
-                    equip_item,
-                    play_switch_animation,
-                    play_use_animation,
-                    place_block,
-                    send_clicks,
-                )
-                    .run_if(in_state(GameState::Playing)),
-            );
+        app.add_systems(PostStartup, setup).add_systems(
+            Update,
+            (
+                equip_item,
+                play_equip_animation,
+                play_use_animation,
+                //place_block,
+                send_clicks,
+                // workarounds for https://github.com/bevyengine/bevy/issues/10832
+                mark_animated_entity,
+                set_correct_transform_after_animation_finished,
+                remove_finished_animations
+                    .after(set_correct_transform_after_animation_finished)
+                    .after(play_equip_animation)
+                    .after(play_use_animation)
+                    .after(equip_item),
+            )
+                .run_if(in_state(GameState::Playing)),
+        );
     }
 }
 
 fn setup(mut commands: Commands, player_camera: Query<Entity, Added<PlayerCameraMarker>>) {
-    if let Ok(entity) = player_camera.get_single() {
-        commands.entity(entity).with_children(|parent| {
-            parent.spawn(HandBundle::default());
-        });
-    }
+    let camera_entity = player_camera.single();
+    commands.entity(camera_entity).with_children(|parent| {
+        parent.spawn(HandBundle::default());
+    });
 }
 
 #[derive(Bundle, Default)]
 struct HandBundle {
     scene: SceneBundle,
+    hand_marker: Hand,
+    // This is linked to animation targets by the same system that does it for models. The
+    // animation graph must be added manually.
     animation_player: AnimationPlayer,
-    marker: HandMarker,
+    animation_transitions: AnimationTransitions,
+    animation_graph: Handle<AnimationGraph>,
+}
+
+#[derive(Component, Default)]
+struct Hand {
+    equipping: bool,
+    // If an item is equipped, it's model is stored here so we know to unequip it.
+    equipped: Option<ModelAssetId>,
+    being_unequipped: Option<ModelAssetId>,
 }
 
 #[derive(Component)]
 struct EquippedItem;
 
-#[derive(Component, Default)]
-struct HandMarker;
-
-#[derive(Resource, Default)]
-struct SwitchAnimation {
-    elapsed: f32,
-    // Transform we are going from
-    old_transform: Transform,
-    // How far down the old transform must be shifted down to not be visible anymore.
-    old_offset: f32,
-    // Transform we are going to
-    new_transform: Transform,
-    // Same but reverse
-    new_offset: f32,
-    // New scene that should be shown after old item has been hidden
-    scene_handle: Handle<Scene>,
-}
-// Equips the item that is selected in any visible interface where equipment=true in the config.
-// There should only ever be one such interface visible, if there are more, it will equip one at
-// random.
 fn equip_item(
     mut commands: Commands,
     net: Res<NetworkClient>,
     items: Res<Items>,
-    gltf_assets: Res<Assets<Gltf>>,
-    gltf_meshes: Res<Assets<GltfMesh>>,
-    meshes: Res<Assets<Mesh>>,
-    animation_clips: Res<Assets<AnimationClip>>,
-    mut switch_animation: ResMut<SwitchAnimation>,
+    models: Res<Models>,
     changed_interface_query: Query<
         (&InterfaceNode, &ItemBoxSection, &SelectedItemBox),
         Changed<SelectedItemBox>,
@@ -101,7 +90,7 @@ fn equip_item(
             With<EquippedItem>,
         ),
     >,
-    hand_scene_query: Query<(Entity, &Handle<Scene>), With<HandMarker>>,
+    mut hand_query: Query<(&mut Hand, &mut AnimationPlayer)>,
 ) {
     // equip and unequip when the equipment interface is hidden/shown or the selected box changes
     for (interface_node, item_box_section, selected) in changed_interface_query.iter() {
@@ -124,194 +113,279 @@ fn equip_item(
 
     // equip new item when the selected item changes.
     for item_box in changed_equipped_item_query.iter() {
-        let (hand_entity, hand_scene) = hand_scene_query.single();
-
-        switch_animation.old_transform = switch_animation.new_transform;
-        switch_animation.old_offset = switch_animation.new_offset;
-
-        let mut new_transform = Transform::default();
+        let (mut hand, mut animation_player) = hand_query.single_mut();
 
         if let Some(item_id) = item_box.item_stack.item {
             let item = items.get(&item_id);
-            let gltf = gltf_assets.get(&item.model_handle).unwrap();
 
-            // This prevents triggering the switch animation when switching
-            // between the same items. The server also sends a full interface update anytime an item is
-            // picked up that is caught by this.
-            if gltf.scenes[0] == *hand_scene {
+            // This prevents triggering the switch animation when switching between the same items.
+            // The server also sends a full interface update anytime an item is picked up that is
+            // caught by this.
+            if hand.equipped == Some(item.equip_model) {
+                // If switching between two stacks of the same item it should do nothing.
                 continue;
-            }
-
-            // In order for animation players to work, the entity it is part of needs to share
-            // name with the AnimationClip paths. There is an animation player inserted deep in
-            // the hierarchy below the hand entity. It is too cumbersome to get to. This is a hack.
-            let name = Name::new(
-                gltf.named_nodes
-                    .keys()
-                    .next()
-                    .unwrap_or(&"model".to_owned())
-                    .to_owned(),
-            );
-            commands
-                .entity(hand_entity)
-                .insert((name, AnimationPlayer::default()));
-
-            let gltf_mesh = gltf_meshes.get(&gltf.meshes[0]).unwrap();
-            // Extract aabb height from gltf in an error prone way. I don't know how
-            // to do it through the scenes.
-            let mut min: f32 = 0.0;
-            let mut max: f32 = 0.0;
-            for primitive in gltf_mesh.primitives.iter() {
-                let mesh = meshes.get(&primitive.mesh).unwrap();
-                let Some(VertexAttributeValues::Float32x3(vertices)) =
-                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-                else {
-                    continue;
-                };
-                for vertex in vertices.iter() {
-                    min = min.min(vertex[1]);
-                    max = max.max(vertex[1]);
-                }
-            }
-            let height = max - min;
-
-            let animation_handle = gltf.named_animations.get("left_click").unwrap().clone();
-            let animation_clip = animation_clips.get(&animation_handle).unwrap();
-
-            for curve in &animation_clip.curves()[0] {
-                match &curve.keyframes {
-                    Keyframes::Scale(frames) => {
-                        new_transform.scale = *frames.last().unwrap();
-                    }
-                    Keyframes::Translation(frames) => {
-                        new_transform.translation = *frames.last().unwrap();
-                    }
-                    Keyframes::Rotation(frames) => {
-                        new_transform.rotation = *frames.last().unwrap();
-                    }
-                    _ => continue,
+            } else if hand.being_unequipped == Some(item.equip_model) {
+                // If the item that was just equipped is the same as the one being unequipped, just
+                // revert the animation.
+                let model = models.get_config(&item.equip_model).unwrap();
+                animation_player
+                    .play(model.named_animations["equip"])
+                    .set_speed(1.0);
+                hand.being_unequipped = None;
+            } else if hand.being_unequipped.is_none() {
+                // If a model is already being unequipped it should continue until finished, else
+                // start unequipping the currently equipped model.
+                if let Some(equipped) = hand.equipped.take() {
+                    // Start the unequip animation
+                    let model = models.get_config(&equipped).unwrap();
+                    animation_player
+                        .play(model.named_animations["equip"])
+                        .set_speed(-1.0)
+                        // XXX: Bug, reverse animations instantly complete because of wrong conditinon
+                        // check
+                        .set_repeat(bevy::animation::RepeatAnimation::Count(2));
+                    hand.being_unequipped = Some(equipped);
                 }
             }
 
-            switch_animation.new_transform = new_transform;
-            switch_animation.new_offset = height;
-            switch_animation.scene_handle = gltf.scenes[0].clone();
-            switch_animation.elapsed = 0.0;
+            hand.equipping = true;
+
+            let model = models.get_config(&item.equip_model).unwrap();
+            if !model.named_animations.contains_key("equip") {
+                warn!("Missing equip animation, can't equip item");
+                continue;
+            };
+
+            hand.equipped = Some(item.equip_model);
         } else {
-            switch_animation.scene_handle = Handle::default();
-            switch_animation.elapsed = 0.0;
+            if hand.being_unequipped.is_none() {
+                if let Some(equipped) = hand.equipped.take() {
+                    let model = models.get_config(&equipped).unwrap();
+                    animation_player
+                        .play(model.named_animations["equip"])
+                        .set_speed(-1.0)
+                        // XXX: Bug, reverse animations instantly complete because of wrong conditinon
+                        // check
+                        .set_repeat(bevy::animation::RepeatAnimation::Count(2));
+                    hand.equipped = None;
+                    hand.being_unequipped = Some(equipped);
+                    hand.equipping = true;
+                }
+            }
         }
     }
 }
 
-// TODO: See how bevy does animation and find how to remove this 'finished' variable.
-fn play_switch_animation(
-    time: Res<Time>,
-    mut switch_animation: ResMut<SwitchAnimation>,
-    mut hand_query: Query<(&mut Transform, &mut Handle<Scene>), With<HandMarker>>,
-    mut finished: Local<bool>,
+fn play_equip_animation(
+    models: Res<Models>,
+    gltfs: Res<Assets<Gltf>>,
+    mut hand_query: Query<(
+        &mut AnimationPlayer,
+        &mut Handle<Scene>,
+        &mut Hand,
+        &mut Handle<AnimationGraph>,
+    )>,
 ) {
-    const DURATION: f32 = 0.3;
+    let (mut animation_player, mut scene_handle, mut hand, mut animation_graph) =
+        hand_query.single_mut();
 
-    let (mut transform, mut scene) = hand_query.single_mut();
-
-    if switch_animation.elapsed < DURATION / 2.0 {
-        if switch_animation.elapsed + time.delta_seconds() > DURATION / 2.0 {
-            let mut new_transform = switch_animation.new_transform;
-            new_transform.translation.y -=
-                (DURATION - switch_animation.elapsed) * switch_animation.new_offset;
-            *transform = new_transform;
-            *scene = switch_animation.scene_handle.clone();
-        } else {
-            // Lower equipped item below view, and switch scene handle
-            let mut new_transform = switch_animation.old_transform;
-            new_transform.translation.y -= switch_animation.elapsed * switch_animation.old_offset;
-            *transform = new_transform;
-        }
-
-        *finished = false;
-    } else if switch_animation.elapsed <= DURATION {
-        let mut new_transform = switch_animation.new_transform;
-        new_transform.translation.y -=
-            (DURATION - switch_animation.elapsed) * switch_animation.new_offset;
-        *transform = new_transform;
-
-        *finished = false;
-    } else if !*finished && switch_animation.new_transform != *transform {
-        // elapsed is almost never exactly equal DURATION, so set it manually
-        *transform = switch_animation.new_transform;
-        *finished = true;
+    if !hand.equipping {
+        return;
     }
 
-    switch_animation.elapsed += time.delta_seconds();
+    for (_index, active_animation) in animation_player.playing_animations() {
+        if active_animation.speed() == -1.0 {
+            if !active_animation.is_finished() {
+                return;
+            } else {
+                // If there is no new model, we set it to nothing here so that the model is
+                // despawned.
+                *scene_handle = Handle::default();
+            }
+        }
+    }
+
+    if hand.being_unequipped.take().is_some() {
+        animation_player.stop_all();
+    }
+
+    if let Some(model_id) = &hand.equipped {
+        let model = models.get_config(model_id).unwrap();
+        let animation_index = model.named_animations["equip"];
+
+        if !animation_player.animation_is_playing(animation_index) {
+            // Need to remove unequip animation or it will linger. Bevy doesn't remove finished
+            // animations.
+            animation_player.stop_all();
+
+            let gltf = gltfs.get(&model.gltf_handle).unwrap();
+            *scene_handle = gltf.scenes[0].clone();
+            *animation_graph = model.animation_graph.clone().unwrap();
+        }
+
+        let animation = animation_player.play(animation_index);
+
+        if !animation.is_finished() {
+            return;
+        }
+    }
+
+    hand.equipping = false;
 }
 
-fn play_use_animation(
-    items: Res<Items>,
-    gltf_assets: Res<Assets<Gltf>>,
+#[derive(Component)]
+struct AnimatedMarker;
+
+fn mark_animated_entity(
+    mut commands: Commands,
+    models: Res<Models>,
+    animation_graphs: Res<Assets<AnimationGraph>>,
     animation_clips: Res<Assets<AnimationClip>>,
-    window: Query<&Window, With<PrimaryWindow>>,
-    mouse_button_input: Res<ButtonInput<MouseButton>>,
-    mut hand_animation_query: Query<(&mut Transform, &mut AnimationPlayer), With<HandMarker>>,
-    equipped_item_query: Query<&ItemBox, With<EquippedItem>>,
+    hand_entity: Query<(&Hand, &Handle<AnimationGraph>), Added<Children>>,
+    animation_targets: Query<(Entity, &AnimationTarget)>,
 ) {
-    let Ok(equipped_item) = equipped_item_query.get_single() else {
+    let Ok((hand, animation_graph)) = hand_entity.get_single() else {
         return;
     };
 
+    let Some(model_config) = hand
+        .equipped
+        .and_then(|model_id| models.get_config(&model_id))
+    else {
+        return;
+    };
+
+    let Some(left_click_index) = model_config.named_animations.get("left_click") else {
+        return;
+    };
+
+    let animation_graph = animation_graphs.get(animation_graph).unwrap();
+    let left_click_node = animation_graph.get(*left_click_index).unwrap();
+    let left_click_handle = left_click_node.clip.clone().unwrap();
+    let left_click = animation_clips.get(&left_click_handle).unwrap();
+
+    let Some(target_id) = left_click
+        .curves()
+        .iter()
+        .next()
+        .map(|(target, _curve)| target.clone())
+    else {
+        return;
+    };
+
+    for (entity, animation_target) in animation_targets.iter() {
+        if animation_target.id == target_id {
+            commands.entity(entity).insert(AnimatedMarker);
+            return;
+        }
+    }
+}
+
+fn set_correct_transform_after_animation_finished(
+    animation_graphs: Res<Assets<AnimationGraph>>,
+    animation_clips: Res<Assets<AnimationClip>>,
+    hand_query: Query<(&AnimationPlayer, &Handle<AnimationGraph>), With<Hand>>,
+    mut animated: Query<(&mut Transform, &AnimationTarget), With<AnimatedMarker>>,
+) {
+    let Ok((mut transform, target)) = animated.get_single_mut() else {
+        return;
+    };
+
+    let (animation_player, graph_handle) = hand_query.single();
+    for (node_index, animation) in animation_player.playing_animations() {
+        if !animation.is_finished() || animation.speed() < 0.0 {
+            continue;
+        }
+        let animation_graph = animation_graphs.get(graph_handle).unwrap();
+        let animation_clip_handle = animation_graph
+            .get(*node_index)
+            .unwrap()
+            .clip
+            .clone()
+            .unwrap();
+
+        let animation_clip = animation_clips.get(&animation_clip_handle).unwrap();
+        let Some(curves) = animation_clip.curves_for_target(target.id) else {
+            continue;
+        };
+
+        for curve in curves {
+            match &curve.keyframes {
+                Keyframes::Rotation(rotations) => {
+                    transform.rotation = rotations.last().cloned().unwrap();
+                }
+                Keyframes::Translation(translations) => {
+                    transform.translation = translations.last().cloned().unwrap();
+                }
+                Keyframes::Scale(scales) => {
+                    transform.scale = scales.last().cloned().unwrap();
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
+fn remove_finished_animations(mut animation_player: Query<&mut AnimationPlayer, With<Hand>>) {
+    let mut animation_player = animation_player.single_mut();
+    let mut to_stop = Vec::new();
+    for (index, animation) in animation_player.playing_animations() {
+        if animation.is_finished() {
+            to_stop.push(*index);
+        }
+    }
+
+    for index in to_stop {
+        animation_player.stop(index);
+    }
+}
+
+fn play_use_animation(
+    models: Res<Models>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut hand_query: Query<(&mut AnimationPlayer, &Hand)>,
+) {
     // TODO: Needs a robust way to see if interface is open
+    //
     // Only play if not in interface
     if window.single().cursor.visible {
         return;
     }
 
-    let item = if let Some(item_id) = &equipped_item.item_stack.item {
-        items.get(item_id)
-    } else {
+    let (mut animation_player, hand) = hand_query.single_mut();
+
+    let Some(model) = &hand.equipped else {
         return;
     };
 
-    let gltf = gltf_assets.get(&item.model_handle).unwrap();
-    let (mut transform, mut animation_player) = hand_animation_query.single_mut();
+    let model_config = models.get_config(model).unwrap();
 
-    let animation_handle = gltf.named_animations.get("left_click").unwrap();
-    let animation_clip = animation_clips.get(animation_handle).unwrap();
+    let Some(left_click) = model_config.named_animations.get("left_click").cloned() else {
+        return;
+    };
 
-    if mouse_button_input.pressed(MouseButton::Left) {
-        if mouse_button_input.just_pressed(MouseButton::Left)
-            || animation_player.elapsed() >= animation_clip.duration()
-        {
-            animation_player.start(animation_handle.clone());
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        // TODO: Transition
+        // Play from beginning even if in the middle of an animation.
+        animation_player.stop(left_click);
+        animation_player.start(left_click);
+    } else if mouse_button_input.pressed(MouseButton::Left) {
+        // Keep playing from current position if the mouse buttton is held
+        let animation = animation_player.play(left_click);
+        if animation.is_finished() {
+            animation.replay();
         }
     } else if mouse_button_input.just_pressed(MouseButton::Right) {
-        animation_player.start_with_transition(animation_handle.clone(), Duration::from_millis(10));
-    } else if animation_player.is_finished() {
-        // TODO: It messes up the last frame
-        // https://github.com/bevyengine/bevy/issues/10832
-        let mut new_transform = Transform::default();
-        for curve in &animation_clip.curves()[0] {
-            match &curve.keyframes {
-                Keyframes::Scale(frames) => {
-                    new_transform.scale = *frames.last().unwrap();
-                }
-                Keyframes::Translation(frames) => {
-                    new_transform.translation = *frames.last().unwrap();
-                }
-                Keyframes::Rotation(frames) => {
-                    new_transform.rotation = *frames.last().unwrap();
-                }
-                _ => continue,
-            }
-        }
-
-        transform.set_if_neq(new_transform);
+        animation_player.stop(left_click);
+        animation_player.start(left_click);
     }
 }
 
 fn send_clicks(
+    net: Res<NetworkClient>,
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    net: Res<NetworkClient>,
 ) {
     if window.single().cursor.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
@@ -322,82 +396,93 @@ fn send_clicks(
     }
 }
 
+// TODO: This no longer works as intended. I can't decide on a way to make it recognize when it
+// should replace.
 // TODO: Needs repetition if button held down. Test to where it feels reasonably comfortable so
 // that you can fly and place without having to pace yourself.
 //
 // Fakes a local block update to make it feel more responsive. The server will NOT know if it is
 // a valid placement, so it will not correct it.
-fn place_block(
-    net: Res<NetworkClient>,
-    world_map: Res<WorldMap>,
-    items: Res<Items>,
-    origin: Res<Origin>,
-    mouse_button_input: Res<ButtonInput<MouseButton>>,
-    mut equipped_query: Query<&mut ItemBox, With<EquippedItem>>,
-    player_query: Query<(&Aabb, &GlobalTransform), With<PlayerState>>,
-    camera_transform: Query<&GlobalTransform, With<PlayerCameraMarker>>,
-    // We pretend the block update came from the server so it instantly updates without having to
-    // rebound of the server.
-    mut block_updates_events: EventWriter<NetworkData<messages::BlockUpdates>>,
-) {
-    if mouse_button_input.just_pressed(MouseButton::Right) {
-        let (player_aabb, player_position) = player_query.single();
-        let camera_transform = camera_transform.single();
-        let Ok(mut equipped_item) = equipped_query.get_single_mut() else {
-            return;
-        };
-
-        let (mut block_position, _block_id, block_face) = match world_map.raycast_to_block(
-            &camera_transform.compute_transform(),
-            origin.0,
-            5.0,
-        ) {
-            Some(i) => i,
-            None => return,
-        };
-
-        match block_face {
-            BlockFace::Top => block_position.y += 1,
-            BlockFace::Bottom => block_position.y -= 1,
-            BlockFace::Front => block_position.z += 1,
-            BlockFace::Back => block_position.z -= 1,
-            BlockFace::Right => block_position.x += 1,
-            BlockFace::Left => block_position.x -= 1,
-        }
-
-        let block_aabb = Aabb::from_min_max(
-            (block_position - origin.0).as_vec3(),
-            (block_position + 1 - origin.0).as_vec3(),
-        );
-
-        // TODO: This is too strict, you can't place blocks directly beneath / adjacently when
-        // standing on an edge.
-        let overlap = player_aabb.half_extents + block_aabb.half_extents
-            - (player_aabb.center + player_position.translation_vec3a() - block_aabb.center).abs();
-
-        if overlap.cmpgt(Vec3A::ZERO).all() {
-            return;
-        }
-
-        let block_id = match equipped_item.item_stack.item {
-            Some(item_id) => match &items.get(&item_id).block {
-                Some(block_id) => *block_id,
-                None => return,
-            },
-            None => return,
-        };
-
-        equipped_item.item_stack.subtract(1);
-
-        let (chunk_position, block_index) =
-            utils::world_position_to_chunk_position_and_block_index(block_position);
-        let message = messages::BlockUpdates {
-            chunk_position,
-            blocks: vec![(block_index, block_id, None)],
-        };
-
-        // Pretend we get the block from the server so it gets the update immediately for mesh
-        // generation. Makes it more responsive.
-        block_updates_events.send(NetworkData::new(net.connection_id(), message));
-    }
-}
+// fn place_block(
+//     world_map: Res<WorldMap>,
+//     items: Res<Items>,
+//     origin: Res<Origin>,
+//     mouse_button_input: Res<ButtonInput<MouseButton>>,
+//     mut equipped_query: Query<&mut ItemBox, With<EquippedItem>>,
+//     player_query: Query<(&Aabb, &GlobalTransform), With<PlayerState>>,
+//     camera_transform: Query<&GlobalTransform, With<PlayerCameraMarker>>,
+//     // We pretend the block update came from the server so it instantly updates without having to
+//     // rebound of the server.
+//     mut block_updates_events: EventWriter<messages::BlockUpdates>,
+// ) {
+//     if mouse_button_input.just_pressed(MouseButton::Right) {
+//         let (player_aabb, player_position) = player_query.single();
+//         let camera_transform = camera_transform.single();
+//         let Ok(mut equipped_item) = equipped_query.get_single_mut() else {
+//             return;
+//         };
+//
+//         let (mut block_position, _block_id, block_face) = match world_map.raycast_to_block(
+//             &camera_transform.compute_transform(),
+//             origin.0,
+//             5.0,
+//         ) {
+//             Some(i) => i,
+//             None => return,
+//         };
+//
+//         match block_face {
+//             BlockFace::Top => block_position.y += 1,
+//             BlockFace::Bottom => block_position.y -= 1,
+//             BlockFace::Front => block_position.z += 1,
+//             BlockFace::Back => block_position.z -= 1,
+//             BlockFace::Right => block_position.x += 1,
+//             BlockFace::Left => block_position.x -= 1,
+//         }
+//
+//         let block_aabb = Aabb::from_min_max(
+//             (block_position - origin.0).as_vec3(),
+//             (block_position + 1 - origin.0).as_vec3(),
+//         );
+//
+//         // TODO: This is too strict, you can't place blocks directly beneath / adjacently when
+//         // standing on an edge.
+//         let player_overlap = player_aabb.half_extents + block_aabb.half_extents
+//             - (player_aabb.center + player_position.translation_vec3a() - block_aabb.center).abs();
+//
+//         if player_overlap.cmpgt(Vec3A::ZERO).all() {
+//             return;
+//         }
+//
+//         let block_id = match equipped_item.item_stack.item {
+//             Some(item_id) => match &items.get(&item_id).block {
+//                 Some(block_id) => *block_id,
+//                 None => return,
+//             },
+//             None => return,
+//         };
+//
+//         let block_state = if Blocks::get().get_config(block_id).can_have_block_state() {
+//             if block_face != BlockFace::Bottom && block_face != BlockFace::Top {
+//                 Some(BlockState::new(block_face.to_rotation()))
+//             } else {
+//                 None
+//             }
+//         } else {
+//             None
+//         };
+//
+//         equipped_item.item_stack.subtract(1);
+//
+//         let (chunk_position, block_index) =
+//             utils::world_position_to_chunk_position_and_block_index(block_position);
+//         let message = messages::BlockUpdates {
+//             chunk_position,
+//             blocks: vec![(block_index, block_id, block_state.map(|s| s.0))],
+//         };
+//
+//         // Pretend we get the block from the server so it gets the update immediately for mesh
+//         // generation. Makes it more responsive.
+//         block_updates_events.send(message);
+//     }
+// }

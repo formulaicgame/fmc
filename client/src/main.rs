@@ -1,8 +1,8 @@
 use bevy::{
-    //diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     audio::{AudioPlugin, Volume},
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    tasks::IoTaskPool,
+    tasks::AsyncComputeTaskPool,
     window::WindowFocused,
 };
 
@@ -36,8 +36,8 @@ fn main() {
                     ..default()
                 }),
         )
-        //.add_plugins(LogDiagnosticsPlugin::default())
-        //.add_plugins(FrameTimeDiagnosticsPlugin::default())
+        // .add_plugins(LogDiagnosticsPlugin::default())
+        // .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(networking::ClientPlugin)
         .add_plugins(assets::AssetPlugin)
         .add_plugins(audio::AudioPlugin)
@@ -73,7 +73,7 @@ fn download_game() {
         return;
     }
 
-    IoTaskPool::get().spawn(async {
+    AsyncComputeTaskPool::get().spawn(async {
         let url = match (std::env::consts::OS, std::env::consts::ARCH) {
             ("linux", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-unknown-linux-gnu",
             ("windows", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-pc-windows-msvc.exe",
@@ -93,6 +93,7 @@ fn download_game() {
         std::fs::create_dir("fmc_server").ok();
         let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
         std::fs::write(&path, bytes).ok();
+
         if std::env::consts::FAMILY == "unix" {
             std::process::Command::new("chmod").arg("+x").arg(&path).output().ok();
         }

@@ -1,5 +1,5 @@
 use bevy::{prelude::*, render::primitives::Aabb};
-use fmc_networking::{messages, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{game_state::GameState, settings::Settings, world::MovesWithOrigin};
 
@@ -53,7 +53,7 @@ impl PlayerState {
 
 fn setup_player(mut commands: Commands, settings: Res<Settings>) {
     let player = PlayerState::new();
-    // XXX: This is replaced by the server, serves as a default
+    // This is replaced by the server, serves as a default
     let aabb = Aabb::from_min_max(
         Vec3::new(
             -DEFAULT_PLAYER_WIDTH / 2.0,
@@ -87,7 +87,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
 }
 
 fn handle_aabb_update(
-    mut aabb_events: EventReader<NetworkData<messages::PlayerAabb>>,
+    mut aabb_events: EventReader<messages::PlayerAabb>,
     mut aabb_query: Query<&mut Aabb, With<PlayerState>>,
 ) {
     for aabb_event in aabb_events.read() {

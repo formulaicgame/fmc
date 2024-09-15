@@ -2,8 +2,6 @@ use std::collections::HashMap;
 
 use bevy::{asset::embedded_asset, prelude::*, ui::FocusPolicy};
 
-use crate::{game_state::GameState, networking::Identity};
-
 mod connecting;
 mod login;
 mod main_menu;
@@ -23,11 +21,7 @@ impl Plugin for GuiPlugin {
                 pause_menu::PauseMenuPlugin,
             ))
             .add_systems(Startup, setup)
-            .add_systems(Update, change_interface.run_if(state_changed::<GuiState>))
-            .add_systems(
-                Update,
-                change_with_game_state.run_if(state_changed::<GameState>),
-            );
+            .add_systems(Update, change_interface.run_if(state_changed::<GuiState>));
 
         embedded_asset!(app, "assets/background.png");
     }
@@ -134,16 +128,5 @@ fn change_interface(
         } else {
             *visibility = Visibility::Hidden;
         }
-    }
-}
-
-fn change_with_game_state(
-    game_state: Res<State<GameState>>,
-    mut gui_state: ResMut<NextState<GuiState>>,
-) {
-    match game_state.get() {
-        GameState::Launcher => gui_state.set(GuiState::MainMenu),
-        GameState::Connecting => gui_state.set(GuiState::Connecting),
-        GameState::Playing => gui_state.set(GuiState::None),
     }
 }

@@ -4,7 +4,7 @@
 //use std::sync::Arc;
 //
 //use bevy::{time::FixedTimestep, math::Vec3A, prelude::*, render::primitives::Aabb};
-//use fmc_networking::messages::ServerConfig;
+//use fmc_protocol::messages::ServerConfig;
 //
 //use crate::{
 //    game_state::GameState,

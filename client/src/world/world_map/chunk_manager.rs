@@ -2,10 +2,11 @@ use bevy::prelude::*;
 
 use std::collections::HashSet;
 
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
+    networking::NetworkClient,
     rendering::RenderSet,
     settings::Settings,
     world::{
@@ -287,7 +288,7 @@ fn handle_new_chunks(
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     mut new_chunk_events: EventWriter<NewChunkEvent>,
-    mut received_chunks: EventReader<NetworkData<messages::Chunk>>,
+    mut received_chunks: EventReader<messages::Chunk>,
 ) {
     for chunk in received_chunks.read() {
         let blocks = Blocks::get();
@@ -359,7 +360,7 @@ pub fn handle_block_updates(
     net: Res<NetworkClient>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
-    mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
+    mut block_updates_events: EventReader<messages::BlockUpdates>,
 ) {
     for event in block_updates_events.read() {
         if event.blocks.len() == 0 {

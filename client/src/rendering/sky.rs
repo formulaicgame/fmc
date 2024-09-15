@@ -2,14 +2,13 @@
 // updates for celestial objects.
 
 use bevy::{
+    math::{primitives::Sphere, Vec3A},
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
 };
-use fmc_networking::{messages, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{game_state::GameState, player::PlayerState, rendering::materials};
-
-const BRIGHTNESS: f32 = 1.0;
 
 pub struct SkyPlugin;
 impl Plugin for SkyPlugin {
@@ -34,13 +33,7 @@ fn setup(
 
     let sky_entity = commands
         .spawn(MaterialMeshBundle {
-            mesh: meshes.add(
-                Mesh::try_from(shape::Icosphere {
-                    radius: 4900.0,
-                    subdivisions: 5,
-                })
-                .unwrap(),
-            ),
+            mesh: meshes.add(Sphere::new(4900.0).mesh().ico(5).unwrap()),
             material: sky_materials.add(materials::SkyMaterial::default()),
             ..Default::default()
         })
@@ -50,7 +43,7 @@ fn setup(
 
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: BRIGHTNESS,
+        brightness: 1.0,
     });
 
     commands.entity(player_id).push_children(&[sky_entity]);
@@ -60,7 +53,7 @@ fn pass_time(
     sky_material_query: Query<&Handle<materials::SkyMaterial>>,
     mut ambient_light: ResMut<AmbientLight>,
     mut materials: ResMut<Assets<materials::SkyMaterial>>,
-    mut server_time_events: EventReader<NetworkData<messages::Time>>,
+    mut server_time_events: EventReader<messages::Time>,
 ) {
     let angle = if let Some(t) = server_time_events.read().last() {
         t.angle
@@ -68,7 +61,18 @@ fn pass_time(
         return;
     };
 
-    ambient_light.brightness = angle.sin() * BRIGHTNESS;
+    const MAX_ANGLE: f32 = std::f32::consts::PI * 1.0 / 20.0;
+    ambient_light.brightness = if angle > 0.0 && angle < std::f32::consts::PI {
+        if angle < MAX_ANGLE {
+            angle / MAX_ANGLE
+        } else if angle > std::f32::consts::PI - MAX_ANGLE {
+            (std::f32::consts::PI - angle) / MAX_ANGLE
+        } else {
+            1.0
+        }
+    } else {
+        0.0
+    };
 
     let position = Vec3::new(angle.cos(), angle.sin(), 0.0);
     let handle = sky_material_query.single();

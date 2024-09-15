@@ -7,11 +7,21 @@ use std::{
     path::Path,
 };
 
-use bevy::{ecs::system::EntityCommands, math::DVec3, prelude::*};
+use bevy::{
+    ecs::system::EntityCommands,
+    math::{DQuat, DVec3},
+};
 use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::Deserialize;
 
-use crate::{database::Database, items::ItemId};
+use crate::{
+    database::Database,
+    items::ItemId,
+    models::{ModelId, Models},
+    physics::{shapes::Aabb, Collider},
+    prelude::*,
+    world::chunk::Chunk,
+};
 
 pub type BlockId = u16;
 
@@ -30,12 +40,15 @@ static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::ne
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_blocks_to_resource)
-            .add_systems(PostStartup, move_blocks_resource_to_static);
+        app.add_systems(
+            PreStartup,
+            load_blocks_to_resource.after(crate::models::load_models),
+        )
+        .add_systems(PostStartup, move_blocks_resource_to_static);
     }
 }
 
-fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>) {
+fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, models: Res<Models>) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
 
@@ -72,7 +85,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>) {
 
     let block_materials = load_block_materials();
 
-    for file_path in walk_dir(&crate::blocks::BLOCK_CONFIG_PATH) {
+    for file_path in walk_dir(&BLOCK_CONFIG_PATH) {
         let block_config_json = match BlockConfigJson::from_file(&file_path) {
             Some(b) => b,
             None => continue,
@@ -114,15 +127,48 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>) {
             true
         };
 
+        let model_id = if let Some(model_name) = &block_config_json.model {
+            Some(models.get_by_name(&model_name).id)
+        } else {
+            None
+        };
+
+        let hitbox = if block_config_json.hitbox.is_some() {
+            block_config_json.hitbox
+        } else if let Some(model_name) = block_config_json.model {
+            let model_config = models.get_by_name(&model_name);
+            let aabb = model_config.aabb.clone();
+            Some(Collider::Aabb(aabb))
+        } else if block_config_json.faces.is_some() {
+            let aabb = Aabb::from_min_max(DVec3::ZERO, DVec3::ONE);
+            Some(Collider::Aabb(aabb))
+        } else if let Some(quads) = block_config_json.quads {
+            let mut min = Vec3::MAX;
+            let mut max = Vec3::MIN;
+            for quad in quads {
+                for vertex in quad.vertices.map(Vec3::from) {
+                    min = min.min(vertex);
+                    max = max.max(vertex);
+                }
+            }
+            let aabb = Aabb::from_min_max(min.as_dvec3(), max.as_dvec3());
+            Some(Collider::Aabb(aabb))
+        } else {
+            None
+        };
+
         if let Some(block_id) = block_ids.remove(&block_config_json.name) {
             let block_config = BlockConfig {
                 name: block_config_json.name,
+                model: model_id,
                 friction: block_config_json.friction,
                 hardness: block_config_json.hardness,
+                replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
                 drop,
-                is_rotatable: block_config_json.is_rotatable,
                 is_transparent,
+                placement: block_config_json.placement,
+                hitbox,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -142,10 +188,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>) {
 }
 
 fn move_blocks_resource_to_static(mut commands: Commands, mut blocks: ResMut<Blocks>) {
-    let blocks = std::mem::replace(
-        &mut *blocks,
-        Blocks::default()
-    );
+    let blocks = std::mem::replace(&mut *blocks, Blocks::default());
     BLOCKS.set(blocks).ok();
     commands.remove_resource::<Blocks>();
 }
@@ -372,17 +415,33 @@ struct BlockConfigJson {
     friction: Friction,
     // How long it takes to break the block without a tool
     hardness: Option<f32>,
+    #[serde(default)]
+    replaceable: bool,
     // Which tool categories will break this block faster.
     #[serde(default)]
     tools: HashSet<String>,
     // Which item(s) the block drops
     drop: Option<BlockDropJson>,
-    #[serde(default)]
-    is_rotatable: bool,
     // Renderding material, used to deduce transparency.
     // None if it's a model block, the transparency is set to true.
     // If the string is not "opaque", the transparency is set to true.
     material: Option<String>,
+    // Collider used for physics/hit detection.
+    hitbox: Option<Collider>,
+    // These are the three ways you can define a block. We use them to generate the hitbox when it
+    // is not explicitly defined. 'model' is a gltf model, 'quads' is a set vertices and 'faces' is
+    // a convenient way to define a cube.
+    model: Option<String>,
+    quads: Option<Vec<BlockVerticesJson>>,
+    faces: Option<serde_json::Value>,
+    // Rules for how the block can be placed by the player.
+    #[serde(default)]
+    placement: BlockPlacement,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockVerticesJson {
+    vertices: [[f32; 3]; 4],
 }
 
 impl BlockConfigJson {
@@ -441,19 +500,26 @@ impl BlockConfigJson {
 pub struct BlockConfig {
     /// Name of the block
     pub name: String,
+    /// If a model is used to represent this block, this contains its model id
+    pub model: Option<ModelId>,
     /// The friction or drag.
     pub friction: Friction,
     /// How long it takes to break the block without a tool, None if the block should not be
     /// breakable. e.g. water, air
     pub hardness: Option<f32>,
+    /// Makes it possible to replace the block by placing another in its position.
+    pub replaceable: bool,
     // Which tool categories will break this block faster.
     tools: HashSet<String>,
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
-    /// If the block is rotatable around the y axis
-    pub is_rotatable: bool,
-    /// If the block can be seen through
+    /// Used for chunk loading to decide which blocks can be seen through. Derived from the
+    /// transparency of the block's material or assumed to be transparent if it's a model.
     pub is_transparent: bool,
+    // Aabb used for physics and hit detection. If None, assumed to be the size of a block.
+    pub hitbox: Option<Collider>,
+    // Rules for how the block can be placed by the player.
+    pub placement: BlockPlacement,
 }
 
 impl BlockConfig {
@@ -472,6 +538,33 @@ impl BlockConfig {
         match self.friction {
             Friction::Static { .. } => true,
             Friction::Drag(_) => false,
+        }
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct BlockPlacement {
+    // Set if the block can be placed by clicking the top face of the block below
+    pub floor: bool,
+    // Set if the block can be placed by clicking the bottom face of the block above
+    pub ceiling: bool,
+    // Set if the block can be placed by clicking the sides of adjacent blocks
+    pub sides: bool,
+    // Set if the block is always rotated when placed.
+    pub rotatable: bool,
+    // Set if a transform should be applied when placing on a sideways adjacent block. This will
+    // rotate the block even if 'rotatable' is not set, but only on sides.
+    pub side_transform: Option<Transform>,
+}
+
+impl Default for BlockPlacement {
+    fn default() -> Self {
+        Self {
+            floor: true,
+            ceiling: true,
+            sides: true,
+            rotatable: false,
+            side_transform: None,
         }
     }
 }
@@ -529,20 +622,30 @@ pub enum Friction {
 #[derive(Component, Deref, DerefMut)]
 pub struct BlockData(pub Vec<u8>);
 
+// bits:
+//     0000 0000 0000 unused
+//     0000
+//       ^^-north/south/east/west
+//      ^---centered, overrides rotation, 1 = centered
+//     ^----upside down
 #[derive(Default, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct BlockState(pub u16);
 
 impl BlockState {
     pub fn new(rotation: BlockRotation) -> Self {
-        return BlockState(rotation as u16);
+        return Self(rotation as u16);
     }
 
-    pub fn as_u16(&self) -> u16 {
+    pub fn as_u16(self) -> u16 {
         return self.0;
     }
 
-    pub fn rotation(&self) -> BlockRotation {
-        return BlockRotation::from(self.0);
+    pub fn rotation(self) -> Option<BlockRotation> {
+        if self.0 & 0b100 == 0 {
+            return Some(BlockRotation::from(self.0));
+        } else {
+            None
+        }
     }
 
     pub fn set_rotation(&mut self, rotation: BlockRotation) {
@@ -550,8 +653,18 @@ impl BlockState {
     }
 }
 
+// TODO: Replace all occurences of IVec3 with this
 #[derive(Component, Deref, DerefMut)]
 pub struct BlockPosition(pub IVec3);
+
+impl BlockPosition {
+    pub fn to_index(&self) -> usize {
+        // Getting the last 4 bits will output 0->Chunk::SIZE for both positive and negative numbers
+        // because of two's complement.
+        let position = self.0 & (Chunk::SIZE - 1) as i32;
+        return (position.x << 8 | position.z << 4 | position.y) as usize;
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u16)]
@@ -566,6 +679,17 @@ impl From<u16> for BlockRotation {
     #[track_caller]
     fn from(value: u16) -> Self {
         return unsafe { std::mem::transmute(value & 0b11) };
+    }
+}
+
+impl BlockRotation {
+    pub fn as_quat(self) -> DQuat {
+        match self {
+            Self::None => DQuat::from_rotation_y(0.0),
+            Self::Once => DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2),
+            Self::Twice => DQuat::from_rotation_y(std::f64::consts::PI),
+            Self::Thrice => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
+        }
     }
 }
 

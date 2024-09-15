@@ -2,10 +2,11 @@ use bevy::{
     prelude::*,
     text::{BreakLineOn, TextLayoutInfo},
 };
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
+    networking::NetworkClient,
     ui::{
         widgets::{FocusedTextBox, TextBox, TextShadow},
         DEFAULT_FONT_HANDLE,
@@ -47,7 +48,7 @@ fn handle_text_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     text_container_query: Query<(Option<&Children>, &TextContainer, Has<FadeLines>)>,
-    mut text_update_events: EventReader<NetworkData<messages::InterfaceTextUpdate>>,
+    mut text_update_events: EventReader<messages::InterfaceTextUpdate>,
 ) {
     for text_update in text_update_events.read() {
         let interface_entities = match interface_paths.get(&text_update.interface_path) {
@@ -78,8 +79,8 @@ fn handle_text_updates(
             for new_line in &text_update.lines {
                 let mut sections = Vec::with_capacity(new_line.sections.len());
                 for section in &new_line.sections {
-                    let color = match Color::hex(&section.color) {
-                        Ok(c) => c,
+                    let color = match Srgba::hex(&section.color) {
+                        Ok(c) => c.into(),
                         Err(_) => {
                             net.disconnect(&format!(
                                     "Server sent malformed text box update for interface with name: {}. The text contained a malformed color property. '{}', is not a valid hex color.",

@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkData, NetworkServer};
+use fmc_protocol::messages;
 
-use crate::{items::ItemStack, players::Player};
+use crate::{
+    items::ItemStack,
+    networking::{NetworkMessage, Server},
+    players::Player,
+};
 
 pub struct InterfacePlugin;
 impl Plugin for InterfacePlugin {
@@ -43,12 +47,12 @@ pub struct RegisterInterfaceProvider {
 }
 
 #[derive(Component)]
-pub struct InterfaceInteractionEvents(pub Vec<NetworkData<messages::InterfaceInteraction>>);
+pub struct InterfaceInteractionEvents(pub Vec<NetworkMessage<messages::InterfaceInteraction>>);
 
 impl InterfaceInteractionEvents {
     pub fn read(
         &mut self,
-    ) -> impl Iterator<Item = NetworkData<messages::InterfaceInteraction>> + '_ {
+    ) -> impl Iterator<Item = NetworkMessage<messages::InterfaceInteraction>> + '_ {
         self.0.drain(..)
     }
 }
@@ -65,10 +69,10 @@ fn register_item_interfaces(
 
 fn sort_item_updates(
     mut commands: Commands,
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     active_nodes: Query<&InterfaceNodes>,
     mut interface_events: Query<&mut InterfaceInteractionEvents>,
-    mut move_events: ResMut<Events<NetworkData<messages::InterfaceInteraction>>>,
+    mut move_events: ResMut<Events<NetworkMessage<messages::InterfaceInteraction>>>,
 ) {
     for move_event in move_events.drain() {
         let interface_path = match &*move_event {
@@ -78,15 +82,15 @@ fn sort_item_updates(
         };
 
         let Some(item_node_entity) = active_nodes
-            .get(move_event.source.entity())
+            .get(move_event.player_entity)
             .map_or(None, |active| active.get(interface_path))
         else {
             // TODO: This error message presents to the player, but means nothing to someone who
             // donsn't know.
-            net.send_one(move_event.source, messages::Disconnect {
+            net.send_one(move_event.player_entity, messages::Disconnect {
                 message: format!("The client tried to move an item in the '{}' interface, but the server hasn't registered that interface to the client.", interface_path)
             });
-            net.disconnect(move_event.source);
+            net.disconnect(move_event.player_entity);
             continue;
         };
 

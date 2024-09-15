@@ -2,9 +2,11 @@
 // added.
 
 use bevy::ecs::{component::Component, reflect::ReflectComponent};
-use bevy::math::DVec3;
+use bevy::math::{DMat3, DVec3};
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::Transform;
 
 /// An Axis-Aligned Bounding Box
 #[derive(Component, Clone, Debug, Default, Reflect, Serialize, Deserialize)]
@@ -16,11 +18,11 @@ pub struct Aabb {
 
 impl Aabb {
     #[inline]
-    pub fn from_min_max(minimum: DVec3, maximum: DVec3) -> Self {
-        let minimum = DVec3::from(minimum);
-        let maximum = DVec3::from(maximum);
-        let center = 0.5 * (maximum + minimum);
-        let half_extents = 0.5 * (maximum - minimum);
+    pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
+        let min = DVec3::from(min);
+        let max = DVec3::from(max);
+        let center = 0.5 * (max + min);
+        let half_extents = 0.5 * (max - min);
         Self {
             center,
             half_extents,
@@ -51,6 +53,23 @@ impl Aabb {
         self.center + self.half_extents
     }
 
+    pub fn transformed_by(&self, transform: Transform) -> Self {
+        let rot_mat = DMat3::from_quat(transform.rotation);
+        let abs_rot_mat = DMat3::from_cols(
+            rot_mat.x_axis.abs(),
+            rot_mat.y_axis.abs(),
+            rot_mat.z_axis.abs(),
+        );
+        let half_extents = abs_rot_mat * self.half_extents;
+
+        Self {
+            center: rot_mat * self.center + transform.translation,
+            half_extents,
+        }
+    }
+
+    // TODO: This needs to return the blockface intersected
+    //
     // "Slab method" ray intersection test
     pub fn ray_intersection(&self, origin: DVec3, direction: DVec3) -> Option<f64> {
         // let mut t_min = f64::NEG_INFINITY;

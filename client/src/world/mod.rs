@@ -1,9 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{
-    game_state::GameState,
-    player::{PlayerCameraMarker, PlayerState},
-};
+use crate::{game_state::GameState, player::PlayerCameraMarker};
 
 pub mod blocks;
 pub mod world_map;

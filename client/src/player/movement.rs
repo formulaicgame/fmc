@@ -7,10 +7,11 @@ use bevy::{
     render::primitives::Aabb,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use fmc_networking::{messages, NetworkClient, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
+    networking::NetworkClient,
     player::PlayerState,
     world::{
         blocks::{Blocks, Friction},
@@ -69,7 +70,7 @@ impl Default for Timer {
 
 fn handle_position_updates_from_server(
     origin: Res<Origin>,
-    mut position_events: EventReader<NetworkData<messages::PlayerPosition>>,
+    mut position_events: EventReader<messages::PlayerPosition>,
     mut player_query: Query<&mut Transform, With<PlayerState>>,
 ) {
     for event in position_events.read() {

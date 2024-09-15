@@ -1,17 +1,24 @@
 use std::{collections::HashMap, ops::Index};
 
-use bevy::{app::AppExit, tasks::futures_lite::future, tasks::IoTaskPool};
-use fmc_networking::{messages, NetworkServer};
+use bevy::{
+    app::AppExit,
+    math::DVec3,
+    tasks::{futures_lite::future, IoTaskPool},
+};
+use fmc_protocol::messages;
 
 use crate::{
+    bevy_extensions::f64_transform::TransformSystem,
     blocks::{BlockFace, BlockId, BlockPosition, BlockState, Blocks},
     database::Database,
+    models::{Model, ModelAnimations, ModelBundle, ModelVisibility},
+    networking::{NetworkMessage, Server},
     prelude::*,
     utils,
 };
 
 pub mod chunk;
-pub mod chunk_manager;
+mod chunk_manager;
 mod map;
 mod terrain_generation;
 
@@ -27,14 +34,19 @@ impl Plugin for WorldPlugin {
             5.0,
             TimerMode::Repeating,
         )))
-        .insert_resource(RenderDistance::default())
+        .insert_resource(RenderDistance { chunks: 16 })
         .add_plugins(chunk_manager::ChunkManagerPlugin)
         .add_event::<BlockUpdate>()
         .add_event::<ChangedBlockEvent>()
+        .add_systems(Update, change_player_render_distance)
         .add_systems(
             PostUpdate,
             (
-                handle_block_updates.run_if(on_event::<BlockUpdate>()),
+                handle_block_updates
+                    .run_if(on_event::<BlockUpdate>())
+                    // We want block models to be sent as fast as they are spawned, so it goes:
+                    // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
+                    .before(TransformSystem::TransformPropagate),
                 send_changed_block_event.after(handle_block_updates),
                 save_block_updates_to_database,
             ),
@@ -42,27 +54,47 @@ impl Plugin for WorldPlugin {
     }
 }
 
-/// Sets the preferred render distance of a player
+/// As a resource this is the max render distance the server allows. As a component it is the
+/// render distance for a player (always <= the server's).
 #[derive(Resource, Component)]
 pub struct RenderDistance {
     pub chunks: u32,
 }
 
-impl Default for RenderDistance {
-    fn default() -> Self {
-        Self { chunks: 16 }
+// The player may send a render distance than is less than the max to restrict the amount of chunks
+// rendered.
+fn change_player_render_distance(
+    net: Res<Server>,
+    max_render_distance: Res<RenderDistance>,
+    mut player_render_distance_query: Query<&mut RenderDistance>,
+    mut render_distance_events: EventReader<NetworkMessage<messages::RenderDistance>>,
+) {
+    for render_distance_update in render_distance_events.read() {
+        let mut render_distance = player_render_distance_query
+            .get_mut(render_distance_update.player_entity)
+            .unwrap();
+
+        if render_distance.chunks > max_render_distance.chunks {
+            error!(
+                "Player tried to set their render distance to {}, but the max allowed is {}, disconnecting.",
+                render_distance_update.chunks, max_render_distance.chunks
+            );
+            net.disconnect(render_distance_update.player_entity);
+        }
+
+        render_distance.chunks = render_distance_update.chunks;
     }
 }
 
 // TODO: Move block update stuff to own module
 // TODO: Convert tuples to local struct "Block" to make access pretty?
 // TODO: It might be better to remove the back_* front_* blocks. They are only used for water at
-// time of writing. Adds 66% lookup time.
+// time of writing. Adds 66% of lookup time.
 //
-// Some types of block need to know whenever a block adjacent to it changes (for example water
+// Some types of block need to know whenever a block adjacent to them changes (for example water
 // needs to know when it should spread). Instead of sending out the position of the changed block,
 // this struct is constructed to save on lookup time as each system that reacts to it would need
-// to query all the adjacent blocks individually.
+// to query all the adjacent blocks separately.
 //
 /// Event sent in response to a block update.
 #[derive(Event)]
@@ -127,7 +159,7 @@ pub enum BlockUpdate {
 // Applies block updates to the world and sends them to the players.
 fn handle_block_updates(
     mut commands: Commands,
-    net: Res<NetworkServer>,
+    net: Res<Server>,
     chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
     mut world_map: ResMut<WorldMap>,
     mut block_events: EventReader<BlockUpdate>,
@@ -157,19 +189,46 @@ fn handle_block_updates(
                 }
 
                 let block_config = Blocks::get().get_config(block_id);
-                if let Some(spawn_fn) = block_config.spawn_entity_fn {
+                if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
                     let mut entity_commands = commands.spawn(BlockPosition(*position));
 
-                    (spawn_fn)(&mut entity_commands, None);
+                    if let Some(spawn_fn) = block_config.spawn_entity_fn {
+                        (spawn_fn)(&mut entity_commands, None);
+                    }
+
+                    if let Some(model_id) = block_config.model {
+                        let mut transform = Transform::from_translation(
+                            position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
+                        );
+                        if let Some(mut side_transform) = block_config.placement.side_transform {
+                            if let Some(block_state) = block_state {
+                                if let Some(rotation) = block_state.rotation() {
+                                    side_transform.rotate_around(DVec3::ZERO, rotation.as_quat());
+                                    transform.translation += side_transform.translation;
+                                    transform.rotation *= side_transform.rotation;
+                                    transform.scale *= side_transform.scale;
+                                }
+                            }
+                        }
+
+                        entity_commands.insert(ModelBundle {
+                            model: Model { id: model_id },
+                            animations: ModelAnimations::default(),
+                            visibility: ModelVisibility::default(),
+                            global_transform: GlobalTransform::default(),
+                            transform,
+                        });
+                    }
 
                     chunk
                         .block_entities
                         .insert(block_index, entity_commands.id());
                 }
 
-                // XXX: This is slow, see function defintion. Put here to cause problems.
+                // TODO: This is slow, see function defintion.
                 chunk.check_visible_faces();
 
+                // TODO: Need to remove entries when chunks unload
                 let chunked_block_updates =
                     chunked_updates.entry(chunk_pos).or_insert(Vec::default());
 

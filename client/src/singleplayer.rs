@@ -1,9 +1,9 @@
 use std::process::{Child, Stdio};
 
 use bevy::prelude::*;
-use fmc_networking::ClientNetworkEvent;
+use fmc_protocol::messages;
 
-use crate::game_state::GameState;
+use crate::{game_state::GameState, networking::NetworkClient};
 
 pub struct SinglePlayerPlugin;
 impl Plugin for SinglePlayerPlugin {
@@ -12,7 +12,10 @@ impl Plugin for SinglePlayerPlugin {
             .insert_resource(ServerProcess(None))
             .add_systems(
                 Update,
-                (launch_singleplayer_server, kill_server_on_disconnect),
+                (
+                    launch_singleplayer_server,
+                    kill_server_on_disconnect.run_if(on_event::<messages::Disconnect>()),
+                ),
             );
     }
 }
@@ -33,7 +36,7 @@ impl Drop for ServerProcess {
 }
 
 fn launch_singleplayer_server(
-    mut net: ResMut<fmc_networking::NetworkClient>,
+    mut net: ResMut<NetworkClient>,
     mut game_state: ResMut<NextState<GameState>>,
     mut server_process: ResMut<ServerProcess>,
     mut launch_events: EventReader<LaunchSinglePlayer>,
@@ -58,20 +61,13 @@ fn launch_singleplayer_server(
             Ok(c) => *server_process = ServerProcess(Some(c)),
         };
 
-        net.connect("127.0.0.1:42069");
+        net.connect("127.0.0.1:42069".parse().unwrap());
         game_state.set(GameState::Connecting);
     }
 }
 
-fn kill_server_on_disconnect(
-    mut network_events: EventReader<ClientNetworkEvent>,
-    mut server_process: ResMut<ServerProcess>,
-) {
-    for event in network_events.read() {
-        if let ClientNetworkEvent::Disconnected(_) = event {
-            if let Some(mut process) = server_process.0.take() {
-                process.kill().ok();
-            }
-        }
+fn kill_server_on_disconnect(mut server_process: ResMut<ServerProcess>) {
+    if let Some(mut process) = server_process.0.take() {
+        process.kill().ok();
     }
 }

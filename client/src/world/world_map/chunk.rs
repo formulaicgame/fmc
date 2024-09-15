@@ -80,6 +80,10 @@ impl Chunk {
         let index = x << 8 | z << 4 | y;
         return self.block_state.get(&index).copied();
     }
+
+    pub fn iter_blocks(&self) -> std::iter::Enumerate<std::slice::Iter<BlockId>> {
+        self.blocks.iter().enumerate()
+    }
 }
 
 impl Index<usize> for Chunk {

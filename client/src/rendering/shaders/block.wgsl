@@ -4,9 +4,9 @@
 #import bevy_pbr::pbr_types
 #import bevy_core_pipeline::tonemapping::{
     screen_space_dither,
-    powsafe,
     tone_mapping
 } 
+#import bevy_render::maths::powsafe
 #import bevy_pbr::mesh_view_bindings::{
     globals,
     lights,
@@ -153,18 +153,16 @@ fn fragment(
 
     // TODO: For some reason this refuses to take a u32 as the index
     let fps = 10.0;
-    let texture_index_anim_offset: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
-    output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index_anim_offset);
+    let texture_index_animation_offset: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
+    output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index_animation_offset);
 
-    let sunlight = (light_packed >> 4u) & 0xFu;
-    let artificial_light = light_packed & 0xFu;
-    let light = pow(0.8, f32(15u - max(sunlight, artificial_light)));
+    let artificial = pow(0.8, f32(15u - light_packed & 0xFu));
+    var sunlight = pow(0.8, f32(15u - (light_packed >> 4u) & 0xFu));
+    sunlight = clamp(sunlight * lights.ambient_color.a, 0.03, 1.0);
+    let light = max(sunlight, artificial);
+    //let light = artificial;
     //let light = get_light(sunlight);
-    if sunlight >= artificial_light {
-        output_color = vec4(output_color.rgb * clamp(light * lights.ambient_color.a, 0.03, 1.0), output_color.a);
-    } else {
-        output_color = vec4(output_color.rgb * light, output_color.a);
-    }
+    output_color = vec4(output_color.rgb * light, output_color.a);
 
     if abs(world_normal.z) == 1.0 {
         output_color = vec4(output_color.rgb * 0.8, output_color.a);

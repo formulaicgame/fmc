@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use fmc_networking::{messages, NetworkData};
+use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
@@ -198,8 +198,17 @@ impl LightMap {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Light(pub u8);
+
+impl std::fmt::Debug for Light {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("light")
+            .field("sunlight", &self.sunlight())
+            .field("artificial", &self.artificial())
+            .finish()
+    }
+}
 
 impl Light {
     const SUNLIGHT_MASK: u8 = 0b1111_0000;
@@ -213,8 +222,8 @@ impl Light {
         self.0 >> 4
     }
 
-    pub fn set_sunlight(&mut self, light: Light) {
-        self.0 = self.0 & Self::ARTIFICIAL_MASK | (light.sunlight() << 4);
+    pub fn set_sunlight(&mut self, light: u8) {
+        self.0 = self.0 & Self::ARTIFICIAL_MASK | (light << 4);
     }
 
     pub fn artificial(&self) -> u8 {
@@ -229,21 +238,21 @@ impl Light {
         self.sunlight() > 1 || self.artificial() > 1
     }
 
-    #[track_caller]
-    fn decrement(mut self, attenuation: u8) -> Self {
-        self.decrement_sun(attenuation);
-        self.decrement_artificial(attenuation.max(1));
+    fn decrement(self, attenuation: u8) -> Self {
+        self.decrement_sun(attenuation)
+            .decrement_artificial(attenuation)
+    }
+
+    fn decrement_artificial(mut self, attenuation: u8) -> Self {
+        let artificial = (self.0 & Self::ARTIFICIAL_MASK).saturating_sub(attenuation);
+        self.0 = (self.0 & !Self::ARTIFICIAL_MASK) | artificial;
         self
     }
 
-    fn decrement_artificial(&mut self, attenuation: u8) {
-        let artificial = (self.0 & Self::ARTIFICIAL_MASK).saturating_sub(attenuation);
-        self.0 = (self.0 & !Self::ARTIFICIAL_MASK) | artificial;
-    }
-
-    fn decrement_sun(&mut self, attenuation: u8) {
+    fn decrement_sun(mut self, attenuation: u8) -> Self {
         let sunlight = (self.0 >> 4).saturating_sub(attenuation);
         self.0 = (self.0 & !Self::SUNLIGHT_MASK) | (sunlight << 4);
+        self
     }
 }
 
@@ -295,16 +304,6 @@ impl LightChunk {
 
     fn is_uniform_shadow(&self) -> bool {
         matches!(self.light, LightStorage::Uniform(light) if light.sunlight() == 0)
-    }
-
-    fn try_propagate(&mut self, index: usize, light: Light) -> bool {
-        if light.sunlight() > self[index].sunlight() {
-            self.convert_to_normal();
-            self[index].set_sunlight(light);
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -373,7 +372,7 @@ struct LightUpdateQueue {
     // This is a ring buffer to allow for prioritization of propagations. Direct sunlight for
     // example will be put at the end of the queue to have it processed first.
     propagation: VecDeque<LightUpdate>,
-    removal: Vec<LightUpdate>,
+    removal: VecDeque<LightUpdate>,
 }
 
 impl LightUpdateQueue {
@@ -382,7 +381,7 @@ impl LightUpdateQueue {
             sunlit: false,
             timer: std::time::Instant::now().checked_sub(QUEUE_DELAY).unwrap(),
             propagation: VecDeque::with_capacity(Chunk::SIZE.pow(2) * 6),
-            removal: Vec::new(),
+            removal: VecDeque::new(),
         }
     }
 
@@ -421,6 +420,17 @@ fn handle_new_chunks(
         } else {
             let mut light_chunk = LightChunk::new_uniform_shadow();
             let mut light_update_queue = LightUpdateQueue::new();
+
+            for (index, block_id) in chunk.iter_blocks() {
+                let block_config = blocks.get_config(*block_id);
+                let light = block_config.light_level();
+                if light > 1 {
+                    light_update_queue.propagation.push_back(LightUpdate {
+                        index,
+                        light: Light::new(0, light),
+                    });
+                }
+            }
 
             for chunk_face in [
                 ChunkFace::Top,
@@ -529,21 +539,99 @@ fn handle_new_chunks(
 }
 
 fn handle_block_updates(
+    mut light_map: ResMut<LightMap>,
     mut light_update_queues: ResMut<Queues>,
-    mut block_updates_events: EventReader<NetworkData<messages::BlockUpdates>>,
+    mut block_updates_events: EventReader<messages::BlockUpdates>,
 ) {
+    let blocks = Blocks::get();
+
     for block_updates in block_updates_events.read() {
-        let chunk_position = block_updates.chunk_position;
-        let queue = light_update_queues
-            .entry(chunk_position)
-            .or_insert(LightUpdateQueue::new());
-        for (index, _, _) in block_updates.blocks.iter() {
-            const REMOVE_SUNLIGHT: Light = Light::new(15, 0);
-            queue.removal.push(LightUpdate {
+        let Some(mut light_chunk) = light_map.chunks.remove(&block_updates.chunk_position) else {
+            continue;
+        };
+        for (index, block_id, _) in block_updates.blocks.iter() {
+            let light = match &mut light_chunk.light {
+                LightStorage::Uniform(uniform_light) => {
+                    if uniform_light.sunlight() != 0 {
+                        light_chunk.light =
+                            LightStorage::Normal(vec![*uniform_light; Chunk::SIZE.pow(3)]);
+                        &mut light_chunk[*index]
+                    } else {
+                        continue;
+                    }
+                }
+                LightStorage::Normal(light_chunk) => &mut light_chunk[*index],
+            };
+
+            if !blocks.contains(*block_id) {
+                // Non-existent blocks are handled when changing the blocks in the chunk, so we ignore.
+                continue;
+            }
+
+            let queue = light_update_queues
+                .entry(block_updates.chunk_position)
+                .or_insert(LightUpdateQueue::new());
+
+            let block_config = blocks.get_config(*block_id);
+            if block_config.light_level() > 0 {
+                queue.propagation.push_front(LightUpdate {
+                    index: *index,
+                    light: Light::new(0, block_config.light_level()),
+                });
+            }
+
+            // In the event that the light is sunlight = 0, artificial = 0, the removal would
+            // do nothing, so we substitute a false light level.
+            if *light == Light::new(0, 0) {
+                *light = Light::new(1, 1);
+            }
+
+            queue.removal.push_front(LightUpdate {
                 index: *index,
-                light: REMOVE_SUNLIGHT,
+                light: *light,
             });
+
+            // for block_offset in [
+            //     IVec3::X,
+            //     IVec3::NEG_X,
+            //     IVec3::Z,
+            //     IVec3::NEG_Z,
+            //     IVec3::Y,
+            //     IVec3::NEG_Y,
+            // ] {
+            //     let (chunk_offset, index) = utils::world_position_to_chunk_position_and_block_index(
+            //         utils::block_index_to_position(*index) + block_offset,
+            //     );
+            //     let chunk_position = block_updates.chunk_position + chunk_offset;
+            //
+            //     let update_queue = if let Some(adj) = light_update_queues.get_mut(&chunk_position) {
+            //         adj
+            //     } else if light_map.chunks.contains_key(&chunk_position)
+            //         || chunk_position == block_updates.chunk_position
+            //     {
+            //         light_update_queues
+            //             .entry(chunk_position)
+            //             .or_insert(LightUpdateQueue::new())
+            //     } else {
+            //         continue;
+            //     };
+            //
+            //     update_queue.removal.push_back(LightUpdate {
+            //         index,
+            //         light: light
+            //             .decrement_sun(
+            //                 (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
+            //             )
+            //             .decrement_artificial(1),
+            //     });
+            // }
+            //
+            // *light = Light::new(0, 0);
         }
+
+        light_map
+            .chunks
+            .insert(block_updates.chunk_position, light_chunk);
     }
 }
 
@@ -575,7 +663,15 @@ fn propagate_light(
             continue;
         };
 
-        while let Some(removal) = update_queue.removal.pop() {
+        // if update_queue.removal.len() > 10 && chunk_position.y == 16 {
+        //     dbg!(&update_queue
+        //         .removal
+        //         .iter()
+        //         .map(|u| u.light)
+        //         .collect::<Vec<_>>());
+        // }
+
+        while let Some(removal) = update_queue.removal.pop_back() {
             let light = match &mut light_chunk.light {
                 LightStorage::Uniform(uniform_light) => {
                     if uniform_light.sunlight() != 0 {
@@ -589,7 +685,21 @@ fn propagate_light(
                 LightStorage::Normal(light_chunk) => &mut light_chunk[removal.index],
             };
 
-            if light.sunlight() <= removal.light.sunlight() && removal.light.sunlight() != 0 {
+            let block_config = blocks.get_config(chunk[removal.index]);
+
+            let mut removed_light = Light::new(0, 0);
+
+            if light.sunlight() != 0 && light.sunlight() <= removal.light.sunlight() {
+                removed_light.set_sunlight(light.sunlight());
+                light.set_sunlight(0);
+            }
+
+            if light.artificial() != 0 && light.artificial() <= removal.light.artificial() {
+                removed_light.set_artificial(light.artificial());
+                light.set_artificial(0);
+            }
+
+            if removed_light != Light::new(0, 0) {
                 for block_offset in [
                     IVec3::X,
                     IVec3::NEG_X,
@@ -618,15 +728,16 @@ fn propagate_light(
                         &mut update_queue
                     };
 
-                    update_queue.removal.push(LightUpdate {
+                    update_queue.removal.push_front(LightUpdate {
                         index,
-                        light: light.decrement(
-                            (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
-                        ),
+                        light: removed_light
+                            .decrement_sun(
+                                (removed_light.sunlight() != 15 || block_offset != IVec3::NEG_Y)
+                                    as u8,
+                            )
+                            .decrement_artificial(1),
                     });
                 }
-
-                *light = Light::new(0, 0);
             } else if light.can_propagate() {
                 for block_offset in [
                     IVec3::NEG_Y,
@@ -658,9 +769,11 @@ fn propagate_light(
 
                     update_queue.propagation.push_front(LightUpdate {
                         index,
-                        light: light.decrement(
-                            (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
-                        ),
+                        light: light
+                            .decrement_sun(
+                                (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
+                            )
+                            .decrement_artificial(1),
                     });
                 }
             }
@@ -682,10 +795,10 @@ fn propagate_light(
 
             light_chunk.convert_to_normal();
 
-            const SUNLIGHT: Light = Light::new(15, 0);
             while let Some(propagation) = update_queue.propagation.pop_back() {
-                if propagation.light != SUNLIGHT {
+                if propagation.light.sunlight() != 15 {
                     update_queue.propagation.push_back(propagation);
+
                     break;
                 }
 
@@ -696,7 +809,8 @@ fn propagate_light(
                     index = propagation.index - y;
                     let attenuation = blocks.get_config(chunk[index]).light_attenuation();
 
-                    light_chunk[index] = propagation.light.decrement(attenuation);
+                    light_chunk[index]
+                        .set_sunlight(propagation.light.decrement_sun(attenuation).sunlight());
 
                     if attenuation != 0 {
                         break;
@@ -773,8 +887,8 @@ fn propagate_light(
 
             if propagation.light.sunlight() != 15 {
                 // All light is always pre-attenuated by 1 when propagated unless it is direct
-                // sunlight(15 moving down). This is to to differentiate direct sunlight from the
-                // rest. Subtract 1 to compensate.
+                // sunlight(15 moving down). This is to differentiate direct sunlight from the
+                // rest. Subtract 1 from the attenuation to compensate.
                 attenuation = attenuation.saturating_sub(1);
             }
 
@@ -783,7 +897,7 @@ fn propagate_light(
             let mut changed = false;
 
             if new_light.sunlight() > light.sunlight() {
-                light.set_sunlight(new_light);
+                light.set_sunlight(new_light.sunlight());
                 changed = true;
             }
 
@@ -830,7 +944,10 @@ fn propagate_light(
                 update_queue.propagation.push_front(LightUpdate {
                     index,
                     light: light
-                        .decrement((light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8),
+                        .decrement_sun(
+                            (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
+                        )
+                        .decrement_artificial(1),
                 });
             }
         }

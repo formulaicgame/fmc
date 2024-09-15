@@ -3,7 +3,7 @@ use bevy::{
     ui::{widget::UiImageSize, ContentSize},
 };
 
-use crate::{game_state::GameState, ui::widgets::*};
+use crate::{game_state::GameState, networking::NetworkClient, ui::widgets::*};
 
 use super::{GuiState, InterfaceBundle, Interfaces};
 
@@ -30,7 +30,6 @@ fn setup(
 ) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::ANTIQUE_WHITE.into(),
             style: Style {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
@@ -64,7 +63,7 @@ fn setup(
 }
 
 fn press_play_button(
-    mut net: ResMut<fmc_networking::NetworkClient>,
+    mut net: ResMut<NetworkClient>,
     keys: Res<ButtonInput<KeyCode>>,
     server_ip: Query<&TextBox, With<ServerIp>>,
     play_button: Query<&Interaction, (Changed<Interaction>, With<PlayButton>)>,
@@ -81,7 +80,12 @@ fn press_play_button(
             ip.push_str(":42069");
         }
 
-        net.connect(ip);
+        let addr = match ip.parse() {
+            Ok(addr) => addr,
+            Err(_) => return,
+        };
+
+        net.connect(addr);
         game_state.set(GameState::Connecting);
     }
 }

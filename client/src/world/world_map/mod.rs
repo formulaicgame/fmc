@@ -126,7 +126,7 @@ impl WorldMap {
         // sign of the number, Vec3.fract() instead does self - self.floor(). This results in
         // having the correct value for the negative direction, but it has to be flipped for the
         // positive direction, which is the vec3::select.
-        let mut distance_next = transform.translation.fract();
+        let mut distance_next = transform.translation.fract_gl();
         distance_next = Vec3::select(
             direction.cmpeq(Vec3::ONE),
             1.0 - distance_next,

@@ -3,7 +3,10 @@ use bevy::{
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
-    render::{mesh::MeshVertexBufferLayout, render_resource::*},
+    render::{
+        mesh::{MeshVertexBufferLayout, MeshVertexBufferLayoutRef},
+        render_resource::*,
+    },
 };
 
 const SKY_SHADER: Handle<Shader> = Handle::weak_from_u128(1708015959337029744);
@@ -11,7 +14,11 @@ const SKY_SHADER: Handle<Shader> = Handle::weak_from_u128(1708015959337029744);
 pub struct SkyMaterialPlugin;
 impl Plugin for SkyMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<SkyMaterial>::default());
+        app.add_plugins(MaterialPlugin::<SkyMaterial> {
+            shadows_enabled: false,
+            prepass_enabled: false,
+            ..default()
+        });
 
         load_internal_asset!(
             app,
@@ -264,7 +271,7 @@ impl Material for SkyMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayout,
+        _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         // Flip to see the inside of the sphere

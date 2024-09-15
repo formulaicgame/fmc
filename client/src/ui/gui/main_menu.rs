@@ -29,7 +29,6 @@ fn setup(
 ) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::ANTIQUE_WHITE.into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -91,7 +90,6 @@ fn press_multiplayer(
 
 fn goto_login(identity: Res<Identity>, mut gui_state: ResMut<NextState<GuiState>>) {
     if !identity.is_valid() {
-        dbg!(&identity.username);
         gui_state.set(GuiState::Login);
     }
 }

@@ -1,4 +1,5 @@
 use bevy::{
+    color::palettes::css::ANTIQUE_WHITE,
     prelude::*,
     ui::{widget::UiImageSize, ContentSize},
 };
@@ -27,7 +28,7 @@ fn interface_setup(
 ) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::ANTIQUE_WHITE.into(),
+            background_color: ANTIQUE_WHITE.into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -94,7 +95,6 @@ fn press_play(
 
         std::fs::write("./identity.txt", &identity.username).ok();
 
-        dbg!("jalla");
         ui_state.set(GuiState::MainMenu);
     }
 }

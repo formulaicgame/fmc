@@ -1,8 +1,7 @@
-use bevy::{prelude::*, window::WindowFocused};
-use fmc_networking::NetworkClient;
+use bevy::{color::palettes::css::DARK_GRAY, prelude::*, window::WindowFocused};
 
 use super::{GuiState, InterfaceBundle, Interfaces};
-use crate::{game_state::GameState, ui::widgets::*};
+use crate::{game_state::GameState, networking::NetworkClient, ui::widgets::*};
 
 pub struct PauseMenuPlugin;
 impl Plugin for PauseMenuPlugin {
@@ -26,7 +25,7 @@ struct QuitButton;
 fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::DARK_GRAY.with_a(0.5).into(),
+            background_color: DARK_GRAY.with_alpha(0.5).into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -49,10 +48,12 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
 
 fn quit_button(
     net: Res<NetworkClient>,
+    mut gui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
+            gui_state.set(GuiState::MainMenu);
             net.disconnect("");
         }
     }

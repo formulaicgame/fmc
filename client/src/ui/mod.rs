@@ -76,12 +76,8 @@ fn scaling_setup(
 ) {
     let entity = windows.single();
     let id = winit_windows.entity_to_winit.get(&entity).unwrap();
-    let monitor = winit_windows
-        .windows
-        .get(id)
-        .unwrap()
-        .current_monitor()
-        .unwrap();
+    let monitor = winit_windows.windows.get(id).unwrap();
+    let monitor = monitor.available_monitors().next().unwrap();
     let resolution = monitor.size().to_logical(monitor.scale_factor());
     commands.insert_resource(LogicalMonitorWidth {
         width: resolution.width,
@@ -99,20 +95,6 @@ fn scale_ui(
     let window = window.single();
     let scale = window.resolution.width() / resolution.width;
     ui_scale.0 = UI_SCALE * scale;
-}
-
-fn escape_key(
-    input: Res<ButtonInput<KeyCode>>,
-    gui_state: Res<State<gui::GuiState>>,
-    mut next_gui_state: ResMut<NextState<gui::GuiState>>,
-) {
-    if input.just_pressed(KeyCode::Escape) {
-        if *gui_state.get() == gui::GuiState::None {
-            next_gui_state.set(gui::GuiState::PauseMenu);
-        } else {
-            next_gui_state.set(gui::GuiState::None);
-        }
-    }
 }
 
 fn change_ui_state(

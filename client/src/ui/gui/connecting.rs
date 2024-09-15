@@ -2,10 +2,10 @@ use bevy::{
     prelude::*,
     ui::{widget::UiImageSize, ContentSize},
 };
-use fmc_networking::NetworkClient;
+use fmc_protocol::messages;
 
 use super::{GuiState, InterfaceBundle, Interfaces};
-use crate::{assets::AssetState, game_state::GameState, ui::widgets::*};
+use crate::{assets::AssetState, game_state::GameState, networking::NetworkClient, ui::widgets::*};
 
 // TODO: I think this looks better as an event architecture. You have something you want to
 // show in the connection ui -> you send an event with the string you want shown -> the ui is
@@ -15,8 +15,17 @@ pub struct ConnectingPlugin;
 impl Plugin for ConnectingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, press_cancel.run_if(in_state(GuiState::Connecting)))
-            .add_systems(OnEnter(AssetState::Downloading), downloading_assets_text)
+            .add_systems(
+                Update,
+                (
+                    press_cancel.run_if(in_state(GuiState::Connecting)),
+                    downloading_assets_text.run_if(resource_added::<messages::ServerConfig>),
+                    (disconnect_text, show_when_disconnected_for_reason)
+                        .run_if(on_event::<messages::Disconnect>()),
+                ),
+            )
+            .add_systems(OnEnter(GameState::Connecting), show_when_connecting)
+            .add_systems(OnEnter(GameState::Playing), hide_on_game_start)
             .add_systems(OnEnter(AssetState::Loading), loading_assets_text);
     }
 }
@@ -34,7 +43,6 @@ fn setup(
 ) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: Color::ANTIQUE_WHITE.into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -83,17 +91,19 @@ fn setup(
 
 fn press_cancel(
     net: Res<NetworkClient>,
-    mut game_state: ResMut<NextState<GameState>>,
+    mut game_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<CancelButton>)>,
 ) {
     if let Ok(interaction) = button_query.get_single() {
         if *interaction == Interaction::Pressed {
             net.disconnect("");
-            game_state.set(GameState::Launcher);
+            game_state.set(GuiState::MainMenu);
         }
     }
 }
 
+// TODO: Needs to display progress, but there's no visibility into it at the moment it's a Local
+// over in 'src/networking.rs'.
 fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut();
     text.sections[0].value = "Downloading assets...".to_owned();
@@ -102,4 +112,36 @@ fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) 
 fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut();
     text.sections[0].value = "Loading assets...".to_owned();
+}
+
+fn disconnect_text(
+    mut status_text: Query<&mut Text, With<StatusText>>,
+    mut disconnect_events: EventReader<messages::Disconnect>,
+) {
+    for disconnect_event in disconnect_events.read() {
+        let mut text = status_text.single_mut();
+        text.sections[0].value = disconnect_event.message.to_owned();
+    }
+}
+
+fn show_when_disconnected_for_reason(
+    gui_state: Res<State<GuiState>>,
+    mut next_gui_state: ResMut<NextState<GuiState>>,
+    mut disconnect_events: EventReader<messages::Disconnect>,
+) {
+    for event in disconnect_events.read() {
+        if event.message.is_empty() || *gui_state.get() != GuiState::None {
+            continue;
+        }
+
+        next_gui_state.set(GuiState::Connecting);
+    }
+}
+
+fn show_when_connecting(mut gui_state: ResMut<NextState<GuiState>>) {
+    gui_state.set(GuiState::Connecting);
+}
+
+fn hide_on_game_start(mut gui_state: ResMut<NextState<GuiState>>) {
+    gui_state.set(GuiState::None);
 }

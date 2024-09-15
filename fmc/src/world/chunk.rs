@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
-use crate::blocks::{BlockData, BlockPosition};
+use crate::blocks::BlockData;
 use crate::{
     blocks::{BlockId, BlockState, Blocks},
     database::Database,
@@ -12,8 +12,6 @@ use crate::{
 
 use super::terrain_generation::{TerrainFeature, TerrainGenerator};
 
-// TODO: Block state is a small state covering universal things like block rotation. Another
-// storage type should be available for storing larger states required by specific blocks.
 // XXX: block_state is used by the database to mark uniform chunks by setting it to
 // u16::MAX(an otherwise invalid state).
 #[derive(Default)]
@@ -26,9 +24,11 @@ pub struct Chunk {
     // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
     // (zero indexed) the formula x * Chunk::SIZE^2 + z * Chunk::SIZE + y is used.
     pub blocks: Vec<BlockId>,
-    // Block state containing optional information, see `BlockState` for bit layout.
+    // Block state containing optional information, see `BlockState` for bit layout. Saved as u16
+    // because it is sent to the players.
     pub block_state: HashMap<usize, u16>,
-    // Entities that belong to the blocks of the chunk.
+    // Entities that belong to the blocks of the chunk. An entity is spawned for any block that
+    // has a spawning function in its block config or if the block is represented by a model.
     pub block_entities: HashMap<usize, Entity>,
     // TODO: I don't like storing temporary stuff in a permanent structure
     //
@@ -53,7 +53,7 @@ impl Chunk {
             chunk.changed_blocks.insert(index);
             chunk[index] = block_id;
             if let Some(block_state) = maybe_block_state {
-                chunk.block_state.insert(index, block_state.0);
+                chunk.block_state.insert(index, block_state.as_u16());
             }
             if let Some(block_data) = maybe_block_data {
                 chunk.block_data.insert(index, block_data);
@@ -84,7 +84,7 @@ impl Chunk {
 
     pub fn set_block_state(&mut self, block_index: usize, block_state: Option<BlockState>) {
         if let Some(block_state) = block_state {
-            self.block_state.insert(block_index, block_state.0);
+            self.block_state.insert(block_index, block_state.as_u16());
         } else {
             self.block_state.remove(&block_index);
         }
