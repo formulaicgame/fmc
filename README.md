@@ -1,5 +1,5 @@
 # Fmc 
-![picture](.github/picture.png)
+![image](https://github.com/user-attachments/assets/f72ae725-2492-4677-8913-c12d23a5fd27)
 
 # How to run
 ```
