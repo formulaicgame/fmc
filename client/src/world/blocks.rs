@@ -14,7 +14,6 @@ pub type BlockId = u16;
 pub static mut BLOCKS: std::sync::OnceLock<Blocks> = std::sync::OnceLock::new();
 
 const MODEL_PATH: &str = "server_assets/active/textures/models/";
-
 const BLOCK_CONFIG_PATH: &str = "server_assets/active/blocks/";
 
 const FACE_VERTICES: [[[f32; 3]; 4]; 6] = [

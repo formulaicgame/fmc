@@ -313,8 +313,6 @@ struct AssetDownload {
     downloaded: usize,
     // Buffer for downloaded data
     data: Option<Vec<u8>>,
-    // Final path to unpack assets into
-    path: Option<PathBuf>,
 }
 
 // After the client identifies itself, the server will send a server config. If we already have the
@@ -357,13 +355,11 @@ fn initialize_connection(
             let decoder = zstd::Decoder::new(&data[..]).unwrap();
             let mut archive = tar::Archive::new(decoder);
 
-            let path = asset_download.path.take().unwrap();
-            if let Err(e) = archive.unpack(&path) {
+            if let Err(e) = archive.unpack("./server_assets/active") {
                 net.disconnect(e.to_string());
                 return;
             }
 
-            set_active_asset_folder(&path);
             asset_state.set(AssetState::Loading);
         } else if asset_download.size < asset_download.downloaded {
             net.disconnect(format!(
@@ -384,45 +380,44 @@ fn initialize_connection(
             net.read_bytes = 0;
             net.read_cursor = 0;
 
-            // Absolute path because symlinks are parsed as relative to the symlink path instead of
-            // relative to the execution path. Symlink would point "./server_config/active" ->
-            // "./server_config/active/server_config/hash" if kept relative.
-            let path = PathBuf::from("server_assets")
-                .canonicalize()
-                .unwrap()
-                .join(&format!("{:x}", server_config.assets_hash));
+            // Convert u64 hash to hex so it's more manageable as a file path
+            let asset_hash_hex = format!("{:x}", server_config.assets_hash);
+            let path = PathBuf::from("./server_assets").join(&asset_hash_hex);
+
             if path.exists() {
-                set_active_asset_folder(&path);
                 asset_state.set(AssetState::Loading);
             } else {
                 asset_download.data = Some(Vec::new());
-                asset_download.path = Some(path);
                 net.send_message(messages::AssetRequest);
             }
+
+            // Create directories, silently fails if they already exist
+            std::fs::create_dir("./server_assets").ok();
+            std::fs::create_dir(&path).ok();
+
+            // We symlink the wanted asset path to "server_assets/active" so that all other parts
+            // of the program can assume the assets are located at a static location, even though
+            // they are switched out for each server we connect to. As opposed to registering the
+            // path as a variable and having to pass it around.
+            const LINK_PATH: &str = "./server_assets/active";
+            std::fs::remove_dir_all(LINK_PATH).ok();
+
+            #[cfg(target_family = "windows")]
+            {
+                std::os::windows::fs::symlink_dir(&asset_hash_hex, LINK_PATH);
+            }
+            #[cfg(target_family = "unix")]
+            {
+                std::os::unix::fs::symlink(&asset_hash_hex, LINK_PATH).unwrap();
+            }
+            #[cfg(target_family = "wasm")]
+            {
+                // This is available as a nightly api under std::os::wasi
+                compile_error!("Not implemented for wasm yet");
+            }
+
             commands.insert_resource(server_config);
         }
-    }
-}
-
-// It's unwieldy to register the asset path everywhere, much easier to just always load from the
-// same place. So we create a symlink "server_assets/some-hash" -> "server_assets/active"
-fn set_active_asset_folder(path: &Path) {
-    const LINK_PATH: &str = "./server_assets/active";
-
-    std::fs::remove_dir_all(LINK_PATH).ok();
-
-    #[cfg(target_family = "windows")]
-    {
-        std::os::windows::fs::symlink_dir(&path, LINK_PATH);
-    }
-    #[cfg(target_family = "unix")]
-    {
-        std::os::unix::fs::symlink(&path, LINK_PATH).unwrap();
-    }
-    #[cfg(target_family = "wasm")]
-    {
-        // This is available as a nightly api under std::os::wasi
-        compile_error!("Not implemented for wasm yet");
     }
 }
 
