@@ -47,7 +47,7 @@ fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 .with_children(|parent| {
                     parent.spawn_text("Enter username:");
                 });
-            parent.spawn_textbox(41.5, "").insert(Username);
+            parent.spawn_textbox(200.0, "").insert(Username);
             parent.spawn_button(200.0, "Play").insert(LoginButton);
         })
         .id();

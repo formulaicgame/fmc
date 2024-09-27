@@ -127,7 +127,6 @@ impl NetworkClient {
         }
     }
 
-    #[track_caller]
     pub fn disconnect<T: AsRef<str>>(&self, message: T) {
         if self.connection.is_none() && self.connection_task.is_none() {
             return;

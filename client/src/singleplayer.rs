@@ -45,6 +45,7 @@ fn launch_singleplayer_server(
         let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
 
         if !std::path::Path::new(&path).exists() {
+            info!("Still downloading server executable");
             return;
         }
 
@@ -60,6 +61,11 @@ fn launch_singleplayer_server(
             }
             Ok(c) => *server_process = ServerProcess(Some(c)),
         };
+
+        // TODO: Despite the connect function having a timeout it will still instantly return
+        // "connection refused" while the server is starting up. How do you go about waiting for it
+        // to finish startup?
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         net.connect("127.0.0.1:42069".parse().unwrap());
         game_state.set(GameState::Connecting);
