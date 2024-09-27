@@ -36,7 +36,6 @@ impl Plugin for ServerInterfacesPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<InterfaceToggleEvent>()
             .insert_resource(InterfaceStack::default())
-            .insert_resource(KeyboardFocus::default())
             .add_plugins((
                 items::ItemPlugin,
                 text::TextPlugin,
@@ -75,7 +74,6 @@ pub struct InterfacePaths(HashMap<String, Vec<Entity>>);
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct Interfaces(HashMap<String, Entity>);
 
-// Called when loading assets.
 pub fn load_interfaces(
     mut commands: Commands,
     net: Res<NetworkClient>,
@@ -404,8 +402,8 @@ struct InterfaceConfig {
     keyboard_focus: KeyboardFocus,
 }
 
-// TODO: This is not implemented. Should allow you to move around when some interfaces are open
-#[derive(Resource, Deserialize, Default, PartialEq, Clone, Copy)]
+// TODO: This is not fully implemented. Should allow you to move around when some interfaces are open
+#[derive(Deserialize, Default, PartialEq, Clone, Copy, Debug)]
 enum KeyboardFocus {
     // Keyboard focus is not taken
     #[default]
@@ -704,7 +702,6 @@ fn handle_interface_visibility_updates(
 fn handle_toggle_events(
     ui_state: Res<State<UiState>>,
     mut cursor_visibility: ResMut<CursorVisibility>,
-    mut keyboard_focus: ResMut<KeyboardFocus>,
     mut interface_stack: ResMut<InterfaceStack>,
     mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
     mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
@@ -720,10 +717,8 @@ fn handle_toggle_events(
             interface_query.get_mut(event.interface_entity).unwrap();
 
         if *visibility == Visibility::Inherited {
-            *keyboard_focus = KeyboardFocus::None;
             *visibility = Visibility::Hidden;
         } else {
-            *keyboard_focus = toggled_config.keyboard_focus;
             *visibility = Visibility::Inherited;
         }
 

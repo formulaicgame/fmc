@@ -441,7 +441,7 @@ fn handle_chunk_loading_tasks(
                         }
 
                         entity_commands.insert(ModelBundle {
-                            model: Model { id: model_id },
+                            model: Model::Asset(model_id),
                             animations: ModelAnimations::default(),
                             visibility: ModelVisibility::default(),
                             global_transform: GlobalTransform::default(),

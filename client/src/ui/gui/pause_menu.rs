@@ -10,7 +10,7 @@ impl Plugin for PauseMenuPlugin {
             Update,
             (
                 (resume_button, quit_button, escape_key).run_if(in_state(GuiState::PauseMenu)),
-                (pause_when_unfocused, escape_key).run_if(in_state(GameState::Playing)),
+                (pause_when_unfocused).run_if(in_state(GameState::Playing)),
             ),
         );
     }
@@ -75,12 +75,8 @@ fn escape_key(
     mut next_gui_state: ResMut<NextState<GuiState>>,
     input: Res<ButtonInput<KeyCode>>,
 ) {
-    if input.just_pressed(KeyCode::Escape) {
-        if *gui_state.get() == GuiState::PauseMenu {
-            next_gui_state.set(GuiState::None);
-        } else {
-            next_gui_state.set(GuiState::PauseMenu);
-        }
+    if input.just_pressed(KeyCode::Escape) && *gui_state.get() == GuiState::PauseMenu {
+        next_gui_state.set(GuiState::None);
     }
 }
 

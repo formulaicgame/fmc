@@ -233,15 +233,11 @@ impl MeshBuilder {
             // 19 bits, texture index
             // 3 bits, uv, 1 bit for if it should be diagonal, 2 for coordinate index
             // 5 bits, light, 1 bit bool true if sunlight, 4 bits intensity
-            // TODO: Maybe better to rotate the vertices in mesh instead of shader? Possible way of
-            // reclaiming bits if needed.
-            // 3 bits, rotation, 1 bit upside down, 2 bit rotation around y axis
             self.packed_bits.push(
                 quad.texture_array_id
                     | (i as u32) << 19
                     | (quad.rotate_texture as u32) << 21
                     | (light.0 as u32) << 22,
-                // | (maybe_rotation as u32) << 27,
             )
         }
         self.triangles

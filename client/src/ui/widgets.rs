@@ -35,9 +35,8 @@ pub trait Widgets {
 
 impl Widgets for ChildBuilder<'_> {
     fn spawn_button<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'a> {
-        let mut entity_commands = self.spawn((ButtonBundle {
-            background_color: Color::rgb_u8(110, 110, 110).into(),
-            border_color: Color::BLACK.into(),
+        let mut entity_commands = self.spawn(ButtonBundle {
+            background_color: Color::srgb_u8(66, 66, 66).into(),
             style: Style {
                 aspect_ratio: Some(width / 20.0),
                 width: Val::Px(width),
@@ -46,51 +45,32 @@ impl Widgets for ChildBuilder<'_> {
                 justify_content: JustifyContent::Center,
                 ..default()
             },
+            border_color: Color::BLACK.into(),
             ..default()
-        },));
+        });
         entity_commands.with_children(|parent| {
             parent
-                // Need to spawn a parent here because the borders mess up, expanding into the
-                // parent border when their position type is Absolute.
                 .spawn(NodeBundle {
                     style: Style {
                         width: Val::Percent(100.0),
                         height: Val::Percent(100.0),
+                        border: UiRect::all(Val::Px(BORDER_SIZE)),
                         ..default()
                     },
+                    border_color: Color::srgb_u8(128, 128, 128).into(),
                     ..default()
                 })
-                .with_children(|parent| {
-                    parent.spawn((NodeBundle {
+                .with_children(|first_border| {
+                    first_border.spawn(NodeBundle {
                         style: Style {
-                            position_type: PositionType::Absolute,
                             width: Val::Percent(100.0),
                             height: Val::Percent(100.0),
-                            border: UiRect {
-                                top: Val::Px(BORDER_SIZE),
-                                left: Val::Px(BORDER_SIZE),
-                                ..default()
-                            },
+                            border: UiRect::all(Val::Px(BORDER_SIZE)),
                             ..default()
                         },
-                        border_color: Color::rgb_u8(170, 170, 170).into(),
+                        border_color: Color::BLACK.into(),
                         ..default()
-                    },));
-                    parent.spawn((NodeBundle {
-                        style: Style {
-                            position_type: PositionType::Absolute,
-                            width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            border: UiRect {
-                                bottom: Val::Px(BORDER_SIZE),
-                                right: Val::Px(BORDER_SIZE),
-                                ..default()
-                            },
-                            ..default()
-                        },
-                        border_color: Color::rgba_u8(62, 62, 62, 150).into(),
-                        ..default()
-                    },));
+                    });
                 });
             parent.spawn_text(text);
         });
@@ -100,11 +80,11 @@ impl Widgets for ChildBuilder<'_> {
     fn spawn_textbox<'a>(&'a mut self, width: f32, placeholder_text: &str) -> EntityCommands<'a> {
         let entity_commands = self.spawn((
             ButtonBundle {
-                background_color: Color::BLACK.into(),
-                border_color: Color::WHITE.into(),
+                background_color: Color::srgb_u8(66, 66, 66).into(),
+                border_color: Color::BLACK.into(),
                 style: Style {
-                    width: Val::Percent(width),
-                    aspect_ratio: Some(width / 4.2),
+                    width: Val::Px(width),
+                    aspect_ratio: Some(width / 20.0),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     border: UiRect::all(Val::Px(BORDER_SIZE)),

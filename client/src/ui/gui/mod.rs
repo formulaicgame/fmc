@@ -16,7 +16,6 @@ impl Plugin for GuiPlugin {
             .add_plugins((
                 login::LoginPlugin,
                 main_menu::MainMenuPlugin,
-                multiplayer::MultiPlayerPlugin,
                 connecting::ConnectingPlugin,
                 pause_menu::PauseMenuPlugin,
             ))
@@ -55,7 +54,6 @@ pub(super) enum GuiState {
     Login,
     #[default]
     MainMenu,
-    MultiPlayer,
     Connecting,
     PauseMenu,
 }

@@ -34,7 +34,7 @@ impl Plugin for ModelPlugin {
                     // things place, and PostUpdate is the send to client place.
                     //
                     send_models_on_chunk_subscription.before(send_animations),
-                    update_model_assets,
+                    //update_model_assets,
                     play_move_animation
                         .before(send_animations)
                         .after(PhysicsSystems),
@@ -168,8 +168,30 @@ pub struct ModelBundle {
 }
 
 #[derive(Component)]
-pub struct Model {
-    pub id: ModelId,
+pub enum Model {
+    Asset(ModelId),
+    Custom {
+        /// Mesh Indices
+        mesh_indices: Vec<u32>,
+        /// Mesh vertices
+        mesh_vertices: Vec<[f32; 3]>,
+        /// Mesh normals
+        mesh_normals: Vec<[f32; 3]>,
+        /// Texture uvs
+        mesh_uvs: Option<Vec<[f32; 2]>>,
+        /// Base color, hex encoded srgb
+        material_base_color: String,
+        /// Color texture of the mesh, pre-light color is material_base_color * this texture
+        material_color_texture: Option<String>,
+        /// Texture used for parallax mapping
+        material_parallax_texture: Option<String>,
+        /// Alpha blend mode, 0 = Opaque, 1 = mask, 2 = blend
+        material_alpha_mode: u8,
+        /// Alpha channel cutoff if the blend mode is Mask
+        material_alpha_cutoff: f32,
+        /// Render mesh from both sides
+        material_double_sided: bool,
+    },
 }
 
 #[derive(Component)]
@@ -390,7 +412,6 @@ fn play_move_animation(
 }
 
 // TODO: I'm not entirely sure what the purpose of this was. Why not just replace the model?
-// Remember to make Model.id private if changed.
 fn update_model_assets(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
@@ -400,6 +421,10 @@ fn update_model_assets(
         if !visibility.is_visible || model.is_added() {
             continue;
         }
+
+        let Model::Asset(model_id) = *model else {
+            continue;
+        };
 
         let chunk_pos = utils::world_position_to_chunk_position(transform.translation.as_ivec3());
 
@@ -412,7 +437,7 @@ fn update_model_assets(
             subs,
             messages::ModelUpdateAsset {
                 id: entity.index(),
-                asset: model.id,
+                asset: model_id,
             },
         );
     }
@@ -424,7 +449,7 @@ fn update_visibility(
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<
         (Entity, &Model, &ModelVisibility, &GlobalTransform),
-        Or<(Changed<ModelVisibility>, Added<Model>)>,
+        Or<(Changed<ModelVisibility>, Changed<Model>)>,
     >,
 ) {
     for (entity, model, visibility, transform) in model_query.iter() {
@@ -438,17 +463,52 @@ fn update_visibility(
         };
 
         if visibility.is_visible {
-            net.send_many(
-                subs,
-                messages::NewModel {
-                    parent_id: None,
-                    id: entity.index(),
-                    asset: model.id,
-                    position: transform.translation,
-                    rotation: transform.rotation.as_quat(),
-                    scale: transform.scale.as_vec3(),
-                },
-            );
+            match model {
+                Model::Asset(model_id) => {
+                    net.send_many(
+                        subs,
+                        messages::NewModel {
+                            parent_id: None,
+                            id: entity.index(),
+                            asset: *model_id,
+                            position: transform.translation,
+                            rotation: transform.rotation.as_quat(),
+                            scale: transform.scale.as_vec3(),
+                        },
+                    );
+                }
+                Model::Custom {
+                    mesh_indices,
+                    mesh_vertices,
+                    mesh_normals,
+                    material_base_color,
+                    material_color_texture,
+                    mesh_uvs,
+                    material_parallax_texture,
+                    material_alpha_mode,
+                    material_alpha_cutoff,
+                    material_double_sided,
+                } => net.send_many(
+                    subs,
+                    messages::SpawnCustomModel {
+                        id: entity.index(),
+                        parent_id: None,
+                        position: transform.translation,
+                        rotation: transform.rotation.as_quat(),
+                        scale: transform.scale.as_vec3(),
+                        mesh_indices: mesh_indices.clone(),
+                        mesh_vertices: mesh_vertices.clone(),
+                        mesh_normals: mesh_normals.clone(),
+                        mesh_uvs: mesh_uvs.clone(),
+                        material_base_color: material_base_color.clone(),
+                        material_color_texture: material_color_texture.clone(),
+                        material_parallax_texture: material_parallax_texture.clone(),
+                        material_alpha_mode: *material_alpha_mode,
+                        material_alpha_cutoff: *material_alpha_cutoff,
+                        material_double_sided: *material_double_sided,
+                    },
+                ),
+            }
         } else {
             net.send_many(subs, messages::DeleteModel { id: entity.index() });
         }
@@ -491,17 +551,52 @@ fn send_models_on_chunk_subscription(
 
                 let transform = transform.compute_transform();
 
-                net.send_one(
-                    chunk_sub.player_entity,
-                    messages::NewModel {
-                        id: entity.index(),
-                        parent_id: None,
-                        position: transform.translation,
-                        rotation: transform.rotation.as_quat(),
-                        scale: transform.scale.as_vec3(),
-                        asset: model.id,
-                    },
-                );
+                match model {
+                    Model::Asset(model_id) => {
+                        net.send_one(
+                            chunk_sub.player_entity,
+                            messages::NewModel {
+                                parent_id: None,
+                                id: entity.index(),
+                                asset: *model_id,
+                                position: transform.translation,
+                                rotation: transform.rotation.as_quat(),
+                                scale: transform.scale.as_vec3(),
+                            },
+                        );
+                    }
+                    Model::Custom {
+                        mesh_indices,
+                        mesh_vertices,
+                        mesh_normals,
+                        material_base_color,
+                        material_color_texture,
+                        mesh_uvs,
+                        material_parallax_texture,
+                        material_alpha_mode,
+                        material_alpha_cutoff,
+                        material_double_sided,
+                    } => net.send_one(
+                        chunk_sub.player_entity,
+                        messages::SpawnCustomModel {
+                            id: entity.index(),
+                            parent_id: None,
+                            position: transform.translation,
+                            rotation: transform.rotation.as_quat(),
+                            scale: transform.scale.as_vec3(),
+                            mesh_indices: mesh_indices.clone(),
+                            mesh_vertices: mesh_vertices.clone(),
+                            mesh_normals: mesh_normals.clone(),
+                            mesh_uvs: mesh_uvs.clone(),
+                            material_base_color: material_base_color.clone(),
+                            material_color_texture: material_color_texture.clone(),
+                            material_parallax_texture: material_parallax_texture.clone(),
+                            material_alpha_mode: *material_alpha_mode,
+                            material_alpha_cutoff: *material_alpha_cutoff,
+                            material_double_sided: *material_double_sided,
+                        },
+                    ),
+                }
 
                 if animations.playing_move_animation {
                     let animation_index = animations.move_animation.unwrap();

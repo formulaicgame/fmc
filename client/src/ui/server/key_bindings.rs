@@ -7,12 +7,13 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
+        gui::GuiState,
         server::{InterfaceToggleEvent, Interfaces},
         UiState,
     },
 };
 
-use super::InterfaceConfig;
+use super::{InterfaceConfig, KeyboardFocus};
 
 pub struct KeyBindingsPlugin;
 impl Plugin for KeyBindingsPlugin {
@@ -106,54 +107,6 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
     commands.insert_resource(key_bindings);
 }
 
-//fn handle_key_presses(
-//    net: Res<NetworkClient>,
-//    input: Res<Input<KeyCode>>,
-//    key_bindings: Res<KeyBindings>,
-//    interface_entities: Res<Interfaces>,
-//    mut interface_query: Query<(Entity, &mut Style), With<Interface>>,
-//) {
-//    for pressed_key in input.get_just_pressed() {
-//        if let Some(command) = key_bindings.get(pressed_key) {
-//            if let Some(interface_name) = command.strip_prefix("/interface ") {
-//                // TODO: This should be pre parsed so it fails on connection
-//                let entity = match interface_entities.get(interface_name) {
-//                    Some(e) => e,
-//                    None => {
-//                        net.disconnect(&format!(
-//                            "Misconfigured assets: Improperly configured keybindings, \
-//                                command: '{}', mapped to '{:?}' could not be parsed.",
-//                            &command, pressed_key
-//                        ));
-//                        return;
-//                    }
-//                };
-//
-//                // Only one interface can be visible. Since the root node has Position::Relative.
-//                // Otherwise they mess with each other's layout.
-//                for (e, mut style) in interface_query.iter_mut() {
-//                    if *entity != e {
-//                        style.display = Display::None
-//                    }
-//                }
-//
-//                let (_, mut style) = interface_query.get_mut(*entity).unwrap();
-//                match style.display {
-//                    Display::Flex => style.display = Display::None,
-//                    Display::None => style.display = Display::Flex,
-//                }
-//
-//                //interface_query.get_mut(*entity).unwrap().is_visible ^= true;
-//            } else {
-//                net.send_message(messages::ChatMessage {
-//                    username: "".to_owned(),
-//                    message: command.to_owned(),
-//                })
-//            }
-//        }
-//    }
-//}
-
 // TODO: Pre-parse key bindings to make sure they are valid. This way we fail at connection, and
 // can drop validation when using them.
 fn handle_key_presses(
@@ -162,16 +115,32 @@ fn handle_key_presses(
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
+    mut next_gui_state: ResMut<NextState<GuiState>>,
     mut interface_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for pressed_key in input.get_just_pressed() {
-        if *pressed_key == KeyCode::KeyE {
-            for (interface_entity, visibility, interface_config) in interface_query.iter() {
-                if visibility == Visibility::Visible && interface_config.is_exclusive {
+        // Any open interface can be closed by pressing "e" or "escape". "e" will only close it if
+        // the interface doesn't take keyboard focus.
+        for (interface_entity, visibility, interface_config) in interface_query.iter() {
+            if visibility != Visibility::Hidden && interface_config.is_exclusive {
+                if *pressed_key == KeyCode::KeyE
+                    && interface_config.keyboard_focus != KeyboardFocus::Full
+                {
                     interface_events.send(InterfaceToggleEvent { interface_entity });
+                    return;
+                } else if *pressed_key == KeyCode::Escape {
+                    interface_events.send(InterfaceToggleEvent { interface_entity });
+                    return;
+                } else if interface_config.keyboard_focus == KeyboardFocus::Full {
+                    // If the keyboard is taken, input should be ignored unless it is to close it.
                     return;
                 }
             }
+        }
+
+        if *pressed_key == KeyCode::Escape {
+            next_gui_state.set(GuiState::PauseMenu);
+            return;
         }
 
         if let Some(command) = key_bindings.get(pressed_key) {
@@ -192,6 +161,7 @@ fn handle_key_presses(
                     interface_entity: *entity,
                 });
             } else {
+                // If it's not an interface, the server handles it.
                 net.send_message(messages::InterfaceTextInput {
                     interface_path: "key".to_owned(),
                     text: command.clone(),

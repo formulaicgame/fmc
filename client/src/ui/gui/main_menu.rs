@@ -1,17 +1,19 @@
-use bevy::{
-    prelude::*,
-    ui::{widget::UiImageSize, ContentSize},
-};
+use bevy::prelude::*;
 
 use super::{GuiState, InterfaceBundle, Interfaces};
-use crate::{networking::Identity, singleplayer::LaunchSinglePlayer, ui::widgets::*};
+use crate::{
+    game_state::GameState,
+    networking::{Identity, NetworkClient},
+    singleplayer::LaunchSinglePlayer,
+    ui::widgets::*,
+};
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup).add_systems(
             Update,
-            (press_singleplayer, press_multiplayer, goto_login)
+            (press_singleplayer_button, press_join_button, goto_login)
                 .run_if(in_state(GuiState::MainMenu)),
         );
     }
@@ -19,14 +21,14 @@ impl Plugin for MainMenuPlugin {
 
 #[derive(Component)]
 struct SinglePlayerButton;
-#[derive(Component)]
-struct MultiPlayerButton;
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut interfaces: ResMut<Interfaces>,
-) {
+#[derive(Component)]
+struct ServerIp;
+
+#[derive(Component)]
+struct JoinButton;
+
+fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
         .spawn(InterfaceBundle {
             style: Style {
@@ -39,34 +41,23 @@ fn setup(
                 align_items: AlignItems::Center,
                 ..default()
             },
+            background_color: Color::srgb_u8(33, 33, 33).into(),
             ..default()
         })
-        .insert((
-            ContentSize::default(),
-            UiImageSize::default(),
-            UiImage::from(
-                asset_server.load::<Image>("embedded://client/ui/gui/assets/background.png"),
-            ),
-            ImageScaleMode::Tiled {
-                tile_x: true,
-                tile_y: true,
-                stretch_value: 2.0,
-            },
-        ))
         .with_children(|parent| {
             parent
                 .spawn_button(200.0, "Singleplayer")
                 .insert(SinglePlayerButton);
-            parent
-                .spawn_button(200.0, "Multiplayer")
-                .insert(MultiPlayerButton);
+
+            parent.spawn_textbox(200.0, "127.0.0.1").insert(ServerIp);
+            parent.spawn_button(200.0, "Connect").insert(JoinButton);
         })
         .id();
     interfaces.insert(GuiState::MainMenu, entity);
 }
 
 // TODO: The button should lead to its own screen where you select game and save file
-fn press_singleplayer(
+fn press_singleplayer_button(
     button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
     mut launch_single_player: EventWriter<LaunchSinglePlayer>,
 ) {
@@ -77,14 +68,31 @@ fn press_singleplayer(
     }
 }
 
-fn press_multiplayer(
-    mut ui_state: ResMut<NextState<GuiState>>,
-    button_query: Query<&Interaction, (Changed<Interaction>, With<MultiPlayerButton>)>,
+fn press_join_button(
+    mut net: ResMut<NetworkClient>,
+    keys: Res<ButtonInput<KeyCode>>,
+    server_ip: Query<&TextBox, With<ServerIp>>,
+    play_button: Query<&Interaction, (Changed<Interaction>, With<JoinButton>)>,
+    mut game_state: ResMut<NextState<GameState>>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
-        if *interaction == Interaction::Pressed {
-            ui_state.set(GuiState::MultiPlayer);
+    if play_button
+        .get_single()
+        .is_ok_and(|interaction| *interaction == Interaction::Pressed)
+        || keys.just_pressed(KeyCode::Enter)
+    {
+        let mut ip = server_ip.single().text.to_owned();
+
+        if !ip.contains(":") {
+            ip.push_str(":42069");
         }
+
+        let addr = match ip.parse() {
+            Ok(addr) => addr,
+            Err(_) => return,
+        };
+
+        net.connect(addr);
+        game_state.set(GameState::Connecting);
     }
 }
 

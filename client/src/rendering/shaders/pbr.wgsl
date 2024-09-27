@@ -2,6 +2,7 @@
 #import bevy_pbr::pbr_bindings
 #import bevy_pbr::pbr_types
 #import bevy_pbr::prepass_utils
+#import bevy_pbr::view_transformations
 
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_view_bindings::{
@@ -29,7 +30,7 @@ struct FragmentInput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-#ifdef VERTEX_UVS
+#ifdef VERTEX_UVS_A
     @location(2) uv: vec2<f32>,
 #endif
 #ifdef VERTEX_TANGENTS
@@ -49,26 +50,72 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let V = pbr_functions::calculate_view(in.world_position, is_orthographic);
 
 #ifdef VERTEX_UVS
-    var uv = in.uv;
-#ifdef VERTEX_TANGENTS
+    // TODO: Since this blends with the color below it the perspective is ruined at an angle. Hard to explain
+    //       in words, but can be seen easily. Some squares appear larger than expected when indented.
+    //       If the texture of the block it is applied to is passed together with the depth map we could offset
+    //       the uv position of the color texture to get the accurate color I think.
+    //       It's also needed when overlayed on transparent(masked) textures
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_DEPTH_MAP_BIT) != 0u) {
-        let N = in.world_normal;
-        let T = in.world_tangent.xyz;
-        let B = in.world_tangent.w * cross(N, T);
-        // Transform V from fragment to camera in world space to tangent space.
-        let Vt = vec3(dot(V, T), dot(V, B), dot(V, N));
-        uv = parallaxed_uv(
-            pbr_bindings::material.parallax_depth_scale,
-            pbr_bindings::material.max_parallax_layer_count,
-            pbr_bindings::material.max_relief_mapping_search_steps,
-            uv,
-            // Flip the direction of Vt to go toward the surface to make the
-            // parallax mapping algorithm easier to understand and reason
-            // about.
-            -Vt,
-        );
+        // This is taken from https://github.com/DartCat25/resourcepacks/tree/main/3d-breaking
+        // I've annotated some of what I understand
+
+        let color = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, in.uv, view.mip_bias);
+
+        // Only non-transparent parts of the texture are used to create the illusion.
+        if color.a < 0.1 {
+            discard;
+        }
+
+        // It uses the view direction(camera -> position) to decide what the offset should be.
+        // We transform the view direction so that x and y go along the surface of the face and z is the normal.
+        let view_position = view_transformations::position_world_to_view(in.world_position.xyz);
+        let view_normal = view_transformations::direction_world_to_view(in.world_normal);
+        var x: vec3<f32>;
+        var y: vec3<f32>;
+        // Why 0.9?
+        if abs(in.world_normal.y) >= 0.9 {
+            // why negative?
+            y = view_transformations::direction_world_to_view(vec3(0.0, 0.0, -1.0));
+            x = view_transformations::direction_world_to_view(vec3(-1.0, 0.0, 0.0));
+        } else {
+            y = view_transformations::direction_world_to_view(vec3(0.0, 1.0, 0.0));
+            x = cross(view_normal, y);
+        }
+
+        let coordinate_transform = mat3x3(x,y,view_normal);
+        let view_direction = normalize(view_position * coordinate_transform);
+
+        let texture_size = textureDimensions(pbr_bindings::depth_map_texture);
+        var offset: vec2<f32> = view_direction.xy / view_direction.z / f32(texture_size.x) * 0.5;
+
+        // TODO: I must have indexed the bottom mesh the wrong way around.
+        if in.world_normal.y < -0.9 {
+            offset.y *= -1.0;
+        }
+
+        // TODO: Whenever the offset pushes it off the edge of the texture it doesn't register as alpha == 0 
+        //       This causes edges to not be painted correctly.
+        //       Maybe this is wanted behaviour though? Just make the texture line up at the edges and it will
+        //       kinda look like a little chunk of the block has been removed somewhat?
+        //
+        // Increment offset until we hit a transparent part of the texture.
+        // Color it very dark to create the illusion of being and edge
+        for (var i = 1; i <= 16; i++) {
+            let uv = in.uv + offset / 16.0 * f32(i);
+            let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv, view.mip_bias);
+            if sample.a < 0.1 {
+                output_color = vec4(0.0, 0.0, 0.0, 0.85);
+                return output_color;
+            }
+        }
+
+        // 
+        return vec4(0.0, 0.0, 0.0, 0.6);
+        //if i > 16 {
+        //    let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv + offset, view.mip_bias);
+
+        //}
     }
-#endif
 #endif
 
 #ifdef VERTEX_COLORS
@@ -92,7 +139,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // if the face is angled right/left it is given no lighting penalty, but if front/back it is given a penalty of 0.3
     let top_deflection = dot(in.world_normal, vec3(0.0, 1.0, 0.0)) * 0.2;
     // Notice how it inverts the absolute of the dot product. This is so that vertices pointing up and down will
-    // result in 1.0 and not 0.0 as their vec2 dot product will always yield zero with their x and z of 0.
+    // result in 1.0 and not 0.0 as their vec2 dot product will always yield zero when x and z = 0.
     let deflection: f32 = 0.5 + (1.0 - abs(dot(vec2(1.0, 0.0), in.world_normal.xz))) * (0.3 + top_deflection);
     output_color = vec4(output_color.rgb * deflection, output_color.a);
 
@@ -103,95 +150,11 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
 
 #ifdef VERTEX_UVS
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
-        output_color = output_color * textureSampleBias(pbr_bindings::base_color_texture, pbr_bindings::base_color_sampler, uv, view.mip_bias);
+        output_color = output_color * textureSampleBias(pbr_bindings::base_color_texture, pbr_bindings::base_color_sampler, in.uv, view.mip_bias);
     }
 #endif
 
-    // NOTE: Unlit bit not set means == 0 is true, so the true case is if lit
-//    if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u) {
-//        // Prepare a 'processed' StandardMaterial by sampling all textures to resolve
-//        // the material members
-//        var pbr_input: pbr_functions::PbrInput;
-//
-//        pbr_input.material.base_color = output_color;
-//        pbr_input.material.reflectance = pbr_bindings::material.reflectance;
-//        pbr_input.material.flags = pbr_bindings::material.flags;
-//        pbr_input.material.alpha_cutoff = pbr_bindings::material.alpha_cutoff;
-//
-//        // TODO use .a for exposure compensation in HDR
-//        var emissive: vec4<f32> = pbr_bindings::material.emissive;
-//#ifdef VERTEX_UVS
-//        if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT) != 0u) {
-//            emissive = vec4<f32>(emissive.rgb * textureSampleBias(pbr_bindings::emissive_texture, pbr_bindings::emissive_sampler, uv, view.mip_bias).rgb, 1.0);
-//        }
-//#endif
-//        pbr_input.material.emissive = emissive;
-//
-//        var metallic: f32 = pbr_bindings::material.metallic;
-//        var perceptual_roughness: f32 = pbr_bindings::material.perceptual_roughness;
-//#ifdef VERTEX_UVS
-//        if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_METALLIC_ROUGHNESS_TEXTURE_BIT) != 0u) {
-//            let metallic_roughness = textureSampleBias(pbr_bindings::metallic_roughness_texture, pbr_bindings::metallic_roughness_sampler, uv, view.mip_bias);
-//            // Sampling from GLTF standard channels for now
-//            metallic = metallic * metallic_roughness.b;
-//            perceptual_roughness = perceptual_roughness * metallic_roughness.g;
-//        }
-//#endif
-//        pbr_input.material.metallic = metallic;
-//        pbr_input.material.perceptual_roughness = perceptual_roughness;
-//
-//        // TODO: Split into diffuse/specular occlusion?
-//        var occlusion: vec3<f32> = vec3(1.0);
-//#ifdef VERTEX_UVS
-//        if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_OCCLUSION_TEXTURE_BIT) != 0u) {
-//            occlusion = vec3(textureSampleBias(pbr_bindings::occlusion_texture, pbr_bindings::occlusion_sampler, uv, view.mip_bias).r);
-//        }
-//#endif
-//#ifdef SCREEN_SPACE_AMBIENT_OCCLUSION
-//        let ssao = textureLoad(screen_space_ambient_occlusion_texture, vec2<i32>(in.position.xy), 0i).r;
-//        let ssao_multibounce = gtao_multibounce(ssao, pbr_input.material.base_color.rgb);
-//        occlusion = min(occlusion, ssao_multibounce);
-//#endif
-//        pbr_input.occlusion = occlusion;
-//
-//        pbr_input.frag_coord = in.position;
-//        pbr_input.world_position = in.world_position;
-//
-//        pbr_input.world_normal = pbr_functions::prepare_world_normal(
-//            in.world_normal,
-//            (pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT) != 0u,
-//            in.is_front,
-//        );
-//
-//        pbr_input.is_orthographic = is_orthographic;
-//
-//#ifdef LOAD_PREPASS_NORMALS
-//        pbr_input.N = bevy_pbr::prepass_utils::prepass_normal(in.position, 0u);
-//#else
-//        pbr_input.N = pbr_functions::apply_normal_mapping(
-//            pbr_bindings::material.flags,
-//            pbr_input.world_normal,
-//#ifdef VERTEX_TANGENTS
-//#ifdef STANDARDMATERIAL_NORMAL_MAP
-//            in.world_tangent,
-//#endif
-//#endif
-//#ifdef VERTEX_UVS
-//            uv,
-//#endif
-//            view.mip_bias,
-//        );
-//#endif
-//
-//        pbr_input.V = V;
-//        pbr_input.occlusion = occlusion;
-//
-//        pbr_input.flags = mesh.flags;
-//
-//        output_color = pbr_functions::pbr(pbr_input);
-//    } else {
-        output_color = pbr_functions::alpha_discard(pbr_bindings::material, output_color);
-//    }
+    output_color = pbr_functions::alpha_discard(pbr_bindings::material, output_color);
 
     // fog
     if (fog.mode != FOG_MODE_OFF && (pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {

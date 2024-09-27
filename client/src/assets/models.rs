@@ -64,14 +64,9 @@ pub struct ModelConfig {
 }
 
 #[derive(Component)]
-pub struct Model {
-    pub asset_id: ModelAssetId,
-}
-
-impl Model {
-    pub fn new(asset: ModelAssetId) -> Self {
-        Self { asset_id: asset }
-    }
+pub enum Model {
+    Asset(ModelAssetId),
+    Custom,
 }
 
 #[derive(Resource)]

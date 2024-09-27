@@ -13,7 +13,7 @@ mod gui;
 // Hand/equipped item is a special type of interface.
 mod hand;
 pub mod server;
-// Common widgets used between the two ui systems.
+// Common widgets used by both ui systems.
 mod widgets;
 
 pub const DEFAULT_FONT_HANDLE: Handle<Font> = Handle::weak_from_u128(1491772431825224041);

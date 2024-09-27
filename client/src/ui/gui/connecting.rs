@@ -1,7 +1,4 @@
-use bevy::{
-    prelude::*,
-    ui::{widget::UiImageSize, ContentSize},
-};
+use bevy::prelude::*;
 use fmc_protocol::messages;
 
 use super::{GuiState, InterfaceBundle, Interfaces};
@@ -36,11 +33,7 @@ struct CancelButton;
 #[derive(Component)]
 struct StatusText;
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut interfaces: ResMut<Interfaces>,
-) {
+fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
         .spawn(InterfaceBundle {
             style: Style {
@@ -53,20 +46,9 @@ fn setup(
                 align_items: AlignItems::Center,
                 ..default()
             },
+            background_color: Color::srgb_u8(33, 33, 33).into(),
             ..default()
         })
-        .insert((
-            ContentSize::default(),
-            UiImageSize::default(),
-            UiImage::from(
-                asset_server.load::<Image>("embedded://client/ui/gui/assets/background.png"),
-            ),
-            ImageScaleMode::Tiled {
-                tile_x: true,
-                tile_y: true,
-                stretch_value: 2.0,
-            },
-        ))
         .with_children(|parent| {
             parent
                 .spawn(NodeBundle {

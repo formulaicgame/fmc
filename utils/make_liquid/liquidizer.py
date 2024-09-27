@@ -16,7 +16,7 @@ flowing_texture_name = "flowing_water.png"
 still_texture_name = "still_water.png"
 fog = {
     "color": {
-        "Rgba": {
+        "LinearRgba": {
             "red": 0,
             "green": 0,
             "blue": 1,
@@ -108,7 +108,13 @@ def make_block(name, top_quad, top_texture, rotate_texture, is_rotatable, cull_t
         },
         "light_attenuation": light_attenuation,
         "fog": fog,
-        "is_rotatable": is_rotatable,
+        "replaceable": True,
+        "placement": {
+            "floor": True,
+            "ceiling": True,
+            "sides": True,
+            "rotatable": True,
+        },
         "quads": quads
     }
 

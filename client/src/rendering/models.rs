@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::{
     animation::RepeatAnimation,
@@ -24,8 +24,9 @@ impl Plugin for ModelPlugin {
             Update,
             (
                 handle_model_add_delete,
+                handle_custom_models,
                 update_model_asset,
-                render_aabb,
+                //render_aabb,
                 handle_transform_updates,
                 interpolate_to_new_transform,
                 play_animations.after(handle_model_add_delete),
@@ -83,7 +84,7 @@ fn handle_model_add_delete(
                 },
                 ..default()
             })
-            .insert(Model::new(new_model.asset))
+            .insert(Model::Asset(new_model.asset))
             .insert(model_config.animation_graph.clone().unwrap())
             .insert(AnimationPlayer::default())
             .insert(TransformInterpolation::default())
@@ -91,6 +92,91 @@ fn handle_model_add_delete(
             .id();
 
         model_entities.insert(new_model.id, entity);
+    }
+}
+
+// The asset server will unload unused assets so we keep them here after first load to minimize
+// flickering from loading time.
+#[derive(Default, Deref, DerefMut)]
+struct TextureCache(HashSet<Handle<Image>>);
+
+fn handle_custom_models(
+    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut commands: Commands,
+    origin: Res<Origin>,
+    mut model_entities: ResMut<ModelEntities>,
+    mut new_models: EventReader<messages::SpawnCustomModel>,
+    mut cache: Local<TextureCache>,
+) {
+    for custom_model in new_models.read() {
+        // Server may send same id with intent to replace, in which case we delete and add anew
+        if let Some(old_entity) = model_entities.remove(&custom_model.id) {
+            commands.entity(old_entity).despawn_recursive();
+        }
+
+        let mut mesh = Mesh::new(
+            bevy::render::mesh::PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+
+        mesh.insert_indices(Indices::U32(custom_model.mesh_indices.clone()));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, custom_model.mesh_vertices.clone());
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, custom_model.mesh_normals.clone());
+
+        if let Some(texture_uvs) = &custom_model.mesh_uvs {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs.clone());
+        }
+
+        let base_color_texture = custom_model.material_color_texture.as_ref().map(|path| {
+            let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
+            cache.insert(handle.clone());
+            handle
+        });
+
+        let depth_map = custom_model.material_parallax_texture.as_ref().map(|path| {
+            let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
+            cache.insert(handle.clone());
+            handle
+        });
+
+        const TEXTURE_PATH: &str = "server_assets/active/textures/";
+        let material = StandardMaterial {
+            base_color: Srgba::hex(&custom_model.material_base_color)
+                .unwrap_or(Srgba::WHITE)
+                .into(),
+            base_color_texture,
+            depth_map,
+            alpha_mode: match custom_model.material_alpha_mode {
+                0 => AlphaMode::Opaque,
+                1 => AlphaMode::Mask(custom_model.material_alpha_cutoff),
+                2 => AlphaMode::Blend,
+                // TODO: Disconnect
+                _ => AlphaMode::Opaque,
+            },
+            double_sided: custom_model.material_double_sided,
+            ..default()
+        };
+
+        let entity = commands
+            .spawn(MaterialMeshBundle {
+                mesh: meshes.add(mesh),
+                material: materials.add(material),
+                transform: Transform {
+                    translation: (custom_model.position - origin.as_dvec3()).as_vec3(),
+                    rotation: custom_model.rotation,
+                    scale: custom_model.scale,
+                },
+                ..default()
+            })
+            .insert(Model::Custom)
+            .insert(AnimationPlayer::default())
+            .insert(TransformInterpolation::default())
+            .insert(MovesWithOrigin)
+            .id();
+
+        model_entities.insert(custom_model.id, entity);
     }
 }
 
@@ -116,7 +202,7 @@ fn update_model_asset(
             };
 
             *scene_handle = gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone();
-            model.asset_id = asset_update.asset;
+            *model = Model::Asset(asset_update.asset);
             *animation_graph = model_config.animation_graph.clone().unwrap();
         }
     }
@@ -214,7 +300,12 @@ fn play_animations(
 
         let (model, mut animation_player) = model_query.get_mut(*model_entity).unwrap();
 
-        let model_config = models.get_config(&model.asset_id).unwrap();
+        let Model::Asset(model_asset_id) = *model else {
+            // TODO: Disconnect
+            continue;
+        };
+
+        let model_config = models.get_config(&model_asset_id).unwrap();
 
         let Some(animation_index) = model_config
             .animations

@@ -2,7 +2,7 @@
     mesh_functions,
     mesh_view_bindings,
     mesh_bindings,
-    view_transformations::position_world_to_clip
+    view_transformations
 }
 
 struct Vertex {
@@ -68,7 +68,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 #ifdef VERTEX_POSITIONS
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.position = position_world_to_clip(out.world_position.xyz);
+    out.position = view_transformations::position_world_to_clip(out.world_position.xyz);
 #endif
 
 #ifdef VERTEX_UVS

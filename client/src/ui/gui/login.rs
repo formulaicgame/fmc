@@ -1,8 +1,4 @@
-use bevy::{
-    color::palettes::css::ANTIQUE_WHITE,
-    prelude::*,
-    ui::{widget::UiImageSize, ContentSize},
-};
+use bevy::prelude::*;
 
 use super::{GuiState, InterfaceBundle, Interfaces};
 use crate::{networking::Identity, ui::widgets::*};
@@ -21,14 +17,9 @@ struct LoginButton;
 #[derive(Component)]
 struct Username;
 
-fn interface_setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut interfaces: ResMut<Interfaces>,
-) {
+fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
         .spawn(InterfaceBundle {
-            background_color: ANTIQUE_WHITE.into(),
             style: Style {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -39,20 +30,9 @@ fn interface_setup(
                 align_items: AlignItems::Center,
                 ..default()
             },
+            background_color: Color::srgb_u8(33, 33, 33).into(),
             ..default()
         })
-        .insert((
-            ContentSize::default(),
-            UiImageSize::default(),
-            UiImage::from(
-                asset_server.load::<Image>("embedded://client/ui/gui/assets/background.png"),
-            ),
-            ImageScaleMode::Tiled {
-                tile_x: true,
-                tile_y: true,
-                stretch_value: 2.0,
-            },
-        ))
         .with_children(|parent| {
             parent
                 .spawn(NodeBundle {

@@ -139,12 +139,13 @@ fn replace_material_and_mesh(
         entity_commands.remove::<Handle<StandardMaterial>>();
         entity_commands.insert(extension_handle);
         let mesh = meshes.get(mesh_handle).unwrap().clone();
+        // Copy the mesh, light is applied to each individual mesh
         entity_commands.insert(meshes.add(mesh));
     }
 }
 
 #[derive(Default, Asset, AsBindGroup, Reflect, Debug, Clone)]
-pub struct PbrLightExtension {
+struct PbrLightExtension {
     // XXX: This is a useless variable to satisfy the AsBindGroup requirement. Ripped from example
     #[uniform(100)]
     _dummy: u32,

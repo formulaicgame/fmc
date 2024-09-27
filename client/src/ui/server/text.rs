@@ -206,6 +206,10 @@ fn send_text(
     }
 
     if let Ok((mut text_box, interface_node)) = focused_text_box.get_single_mut() {
+        if text_box.text.is_empty() {
+            return;
+        }
+
         net.send_message(messages::InterfaceTextInput {
             interface_path: interface_node.path.clone(),
             text: text_box.text.clone(),
