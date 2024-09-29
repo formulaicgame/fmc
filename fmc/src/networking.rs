@@ -572,7 +572,7 @@ fn log_connections(
                 let connection = server.connections.get(entity).unwrap();
                 info!(
                     "Player connected, ip: {}, username: {}",
-                    &player.username, connection.address
+                    connection.address, &player.username
                 );
             }
             NetworkEvent::Disconnected { entity } => {

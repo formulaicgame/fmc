@@ -12,6 +12,7 @@ pub mod utils;
 pub mod world;
 
 pub use fmc_noise as noise;
+pub use fmc_protocol as protocol;
 
 mod bevy_extensions;
 pub mod bevy {
