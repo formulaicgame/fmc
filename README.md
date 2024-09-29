@@ -1,4 +1,6 @@
 # Fmc 
+[![Discord](https://img.shields.io/discord/1289906834504810528.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/VMgFmdsQ6m)
+
 ![image](https://github.com/user-attachments/assets/f72ae725-2492-4677-8913-c12d23a5fd27)
 
 # How to run
