@@ -10,7 +10,7 @@ use crate::{
     world::chunk::Chunk,
 };
 
-use super::TerrainFeature;
+use super::{Surface, TerrainFeature};
 
 pub const BLUEPRINT_PATH: &str = "./resources/server/blueprints/";
 
@@ -37,7 +37,13 @@ pub enum Blueprint {
         vertical_range: Option<[i32; 2]>,
     },
     // A function that generates a feature
-    Generator(fn(position: IVec3, blocks: &mut TerrainFeature)),
+    Generator(fn(position: IVec3, chunk: &mut Chunk)),
+    // Places a single block
+    Decoration {
+        decoration_block: BlockId,
+        placed_on: HashSet<BlockId>,
+        can_replace: HashSet<BlockId>,
+    },
     // TODO: There's room to introduce branches without cluttering the interface too much I think.
     // TODO: Some way to specify canopy style.
     //
@@ -105,6 +111,21 @@ impl Blueprint {
                         vertical_range: vertical_range.clone(),
                     }
                 }
+                JsonBlueprint::Decoration {
+                    decoration_block,
+                    placed_on,
+                    can_replace,
+                } => Blueprint::Decoration {
+                    decoration_block: blocks.get_id(&decoration_block),
+                    placed_on: placed_on
+                        .iter()
+                        .map(|block_name| blocks.get_id(block_name))
+                        .collect::<HashSet<BlockId>>(),
+                    can_replace: can_replace
+                        .iter()
+                        .map(|block_name| blocks.get_id(block_name))
+                        .collect::<HashSet<BlockId>>(),
+                },
                 JsonBlueprint::Tree {
                     trunk_block,
                     leaf_block,
@@ -152,30 +173,15 @@ impl Blueprint {
     // faces be it floor, roof or wall, below or above ground. Idk how to do it.
     pub fn construct(
         &self,
-        chunk_position: IVec3,
-        surface: &Vec<Option<(usize, BlockId)>>,
-        rng: &mut rand::rngs::StdRng,
-    ) -> TerrainFeature {
-        let mut feature = TerrainFeature {
-            blocks: HashMap::new(),
-            can_replace: HashSet::new(),
-        };
-        self._construct(chunk_position, surface, rng, &mut feature);
-
-        return feature;
-    }
-
-    fn _construct(
-        &self,
         origin: IVec3,
-        surface: &Vec<Option<(usize, BlockId)>>,
+        chunk: &mut Chunk,
+        surface: &Surface,
         rng: &mut rand::rngs::StdRng,
-        feature: &mut TerrainFeature,
     ) {
         match self {
             Blueprint::Collection(blueprints) => {
                 for blueprint in blueprints {
-                    blueprint._construct(origin, surface, rng, feature);
+                    blueprint.construct(origin, chunk, surface, rng);
                 }
             }
             Blueprint::Distribution {
@@ -193,13 +199,39 @@ impl Blueprint {
                 for _ in 0..*count {
                     let position =
                         origin + utils::block_index_to_position(rng.sample(distribution));
-                    blueprint._construct(position, surface, rng, feature);
+                    blueprint.construct(position, chunk, surface, rng);
                 }
             }
-            Blueprint::Generator(generator_function) => {
-                generator_function(origin, feature);
+            Blueprint::Decoration {
+                decoration_block,
+                placed_on,
+                can_replace,
+            } => {
+                let mut terrain_feature = TerrainFeature::default();
+                terrain_feature.can_replace.extend(can_replace);
+
+                let (chunk_position, index) =
+                    utils::world_position_to_chunk_position_and_block_index(origin);
+                let index = index >> 4;
+                let (surface_y, surface_block) = match &surface[index] {
+                    Some(s) => s,
+                    None => return,
+                };
+
+                if !placed_on.contains(surface_block) {
+                    return;
+                }
+
+                let mut position = origin;
+                position.y = chunk_position.y + *surface_y as i32 + 1;
+
+                terrain_feature.insert_block(position, *decoration_block);
+
+                terrain_feature.apply(chunk_position, chunk);
             }
-            // TODO: Trunk width
+            Blueprint::Generator(generator_function) => {
+                generator_function(origin, chunk);
+            }
             Blueprint::Tree {
                 trunk_block,
                 leaf_block,
@@ -210,6 +242,10 @@ impl Blueprint {
                 soil_blocks,
                 can_replace,
             } => {
+                let mut terrain_feature = TerrainFeature::default();
+
+                terrain_feature.can_replace.extend(can_replace);
+
                 // The distribution goes over a 3d space, so we convert it to 2d and set the y to
                 // whatever the surface height is at that position.
                 let (chunk_position, index) =
@@ -227,11 +263,9 @@ impl Blueprint {
                 let mut position = origin;
                 position.y = chunk_position.y + *surface_y as i32;
 
-                feature.can_replace.extend(can_replace);
-
                 let height = trunk_height + random_height.sample(rng);
                 for height in 1..=height {
-                    feature.insert_block(position + IVec3::new(0, height, 0), *trunk_block);
+                    terrain_feature.insert_block(position + IVec3::new(0, height, 0), *trunk_block);
                 }
 
                 // Insert two bottom leaf layers.
@@ -245,7 +279,7 @@ impl Blueprint {
                                 // Remove 50% of edges for more variance
                                 continue;
                             }
-                            feature.insert_block(
+                            terrain_feature.insert_block(
                                 IVec3 {
                                     x: position.x + x,
                                     y: position.y + y,
@@ -267,7 +301,7 @@ impl Blueprint {
                             {
                                 continue;
                             }
-                            feature.insert_block(
+                            terrain_feature.insert_block(
                                 IVec3 {
                                     x: position.x + x,
                                     y: position.y + y,
@@ -278,12 +312,27 @@ impl Blueprint {
                         }
                     }
                 }
+
+                // Trunk bounding box
+                terrain_feature.add_bounding_box(
+                    position + IVec3::Y,
+                    position + IVec3::new(0, *trunk_height, 0),
+                );
+                // Canopy bounding box
+                terrain_feature.add_bounding_box(
+                    position + IVec3::new(-1, *trunk_height + 1, -1),
+                    position + IVec3::new(1, height + 1, 1),
+                );
+
+                terrain_feature.apply(chunk_position, chunk);
             }
             Blueprint::OreVein {
                 ore_block,
                 count,
                 can_replace,
             } => {
+                let mut terrain_feature = TerrainFeature::default();
+
                 // TODO: Implement as const when making rand lib
                 let directions = rand::distributions::Slice::<IVec3>::new(&[
                     IVec3::X,
@@ -298,10 +347,12 @@ impl Blueprint {
                 let mut position = origin;
                 for direction in directions.sample_iter(rng).take(*count as usize) {
                     position += *direction;
-                    feature.insert_block(position, *ore_block)
+                    terrain_feature.insert_block(position, *ore_block)
                 }
 
-                feature.can_replace.extend(can_replace);
+                terrain_feature.can_replace.extend(can_replace);
+
+                terrain_feature.apply(utils::world_position_to_chunk_position(origin), chunk);
             }
         }
     }
@@ -344,6 +395,11 @@ enum JsonBlueprint {
         blueprint: Box<AmbiguousJsonBlueprint>,
         count: u32,
         vertical_range: Option<[i32; 2]>,
+    },
+    Decoration {
+        decoration_block: String,
+        placed_on: Vec<String>,
+        can_replace: Vec<String>,
     },
     Tree {
         trunk_block: String,
@@ -398,7 +454,7 @@ pub fn load_blueprints(blocks: &Blocks) -> HashMap<String, Blueprint> {
     ) {
         if !named_blueprints.contains_key(child_name) {
             panic!(
-                "Failed while validating the Feature Blueprints. The blueprint '{}', \
+                "Failed while validating the terrain feature blueprints. The blueprint '{}', \
                 depends on another blueprint '{}', but it could not be found. This is most \
                 likely the result of a missing file at '{}', make sure it is present.",
                 parent_name,
@@ -411,7 +467,7 @@ pub fn load_blueprints(blocks: &Blocks) -> HashMap<String, Blueprint> {
     fn validate_block(blueprint_name: &str, block_name: &str, blocks: &Blocks) {
         if !blocks.contains_block(block_name) {
             panic!(
-                "Failed while validating the Feature Blueprints. The blueprint '{}' \
+                "Failed while validating the terrain feature blueprints. The blueprint '{}' \
                 references a block with the name '{}', but no block by that name exists. \
                 Make sure a block by the same name is present at '{}'",
                 blueprint_name, block_name, BLOCK_CONFIG_PATH
@@ -435,6 +491,19 @@ pub fn load_blueprints(blocks: &Blocks) -> HashMap<String, Blueprint> {
                 JsonBlueprint::Distribution { blueprint, .. } => {
                     if let AmbiguousJsonBlueprint::Named(child_name) = blueprint.as_ref() {
                         validate_blueprint(blueprint_name, child_name, &named_json_blueprints)
+                    }
+                }
+                JsonBlueprint::Decoration {
+                    decoration_block,
+                    placed_on,
+                    can_replace,
+                } => {
+                    validate_block(blueprint_name, &decoration_block, blocks);
+                    for block_name in placed_on.iter() {
+                        validate_block(blueprint_name, block_name, blocks)
+                    }
+                    for block_name in can_replace.iter() {
+                        validate_block(blueprint_name, block_name, blocks)
                     }
                 }
                 JsonBlueprint::Tree {

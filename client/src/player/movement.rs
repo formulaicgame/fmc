@@ -142,7 +142,7 @@ fn change_player_acceleration(
                 KeyCode::KeyD => horizontal_acceleration += sideways,
                 KeyCode::Space => {
                     if player.is_flying {
-                        player.velocity.y = JUMP_VELOCITY;
+                        player.velocity.y = JUMP_VELOCITY * 2.0;
                     } else if player.is_swimming {
                         vertical_acceleration.y = 20.0
                     } else if player.is_grounded.y && last_jump.elapsed().as_secs_f32() > JUMP_TIME
@@ -153,7 +153,7 @@ fn change_player_acceleration(
                 }
                 KeyCode::ShiftLeft => {
                     if player.is_flying {
-                        player.velocity.y = -JUMP_VELOCITY;
+                        player.velocity.y = -JUMP_VELOCITY * 2.0;
                     } else if player.is_swimming {
                         vertical_acceleration.y = -30.0
                     }

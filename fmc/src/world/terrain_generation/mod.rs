@@ -1,13 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Index,
+};
 
 use bevy::prelude::*;
 
 use crate::{
-    blocks::{BlockId, BlockState},
+    blocks::{BlockId, BlockState, Blocks},
     utils,
 };
 
-use super::chunk::Chunk;
+use super::{chunk::Chunk, WorldMap};
 
 pub mod blueprints;
 
@@ -15,8 +18,9 @@ pub trait TerrainGenerator: Send + Sync {
     fn generate_chunk(&self, position: IVec3) -> Chunk;
 }
 
+#[derive(Default)]
 pub struct TerrainFeature {
-    /// The blocks the feature consists of segmented into the chunks they are a part of.
+    /// The blocks the feature consists of partitioned into the chunks they are a part of.
     pub blocks: HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>,
     // TODO: Replacement rules should be more granular. Blueprints may consist of many
     // sub-blueprints that each have their own replacement rules that should be followed only for
@@ -34,6 +38,10 @@ pub struct TerrainFeature {
     // }
     // https://gist.github.com/daboross/976978d8200caf86e02acb6805961195 says really long at bottom
     pub can_replace: HashSet<BlockId>,
+    // Terrain feautres may supply a set of bounding boxes that will restrict the
+    // feature so that it is only placed where all blocks within the bounding boxes are
+    // replaceable.
+    pub bounding_boxes: Vec<(IVec3, IVec3)>,
 }
 
 impl TerrainFeature {
@@ -46,52 +54,179 @@ impl TerrainFeature {
             .push((block_index, block_id, None));
     }
 
-    // TODO: Is it possible to make it so that features can fail? There are many things that just
-    // don't look very good when partially placed. Failure means it would have to revert to the
-    // previous state, which is not an easy task. The features are applied to chunks as the chunks
-    // are generated, and changing the block to then set it back again does not seem plausible.
-    // There would have to be some notification system I suppose that triggers a feature
-    // application when all the chunks it will apply to have been generated and are in memory. Then
-    // it can check all placements as the first thing it does, then apply if it succeeds. Sounds
-    // expensive though.
-    pub fn apply(&self, chunk: &mut Chunk, chunk_position: IVec3) {
-        if let Some(feature_blocks) = self.blocks.get(&chunk_position) {
-            for (block_index, block_id, block_state) in feature_blocks {
-                if !chunk.changed_blocks.contains(block_index)
-                    && self.can_replace.contains(&chunk[*block_index])
-                {
-                    chunk[*block_index] = *block_id;
-                    chunk.set_block_state(*block_index, block_state.map(BlockState));
-                }
-            }
-        }
+    fn add_bounding_box(&mut self, min: IVec3, max: IVec3) {
+        assert!(min.cmple(max).all());
+        self.bounding_boxes.push((min, max));
     }
 
-    // Applies the feature and returns the blocks that were changed. Used for updating chunks that
-    // have already been sent to the clients.
-    pub fn apply_return_changed(
-        &self,
-        chunk: &mut Chunk,
-        chunk_position: IVec3,
-    ) -> Option<Vec<(usize, BlockId, Option<u16>)>> {
-        if let Some(mut feature_blocks) = self.blocks.get(&chunk_position).cloned() {
-            feature_blocks.retain(|(block_index, block_id, block_state)| {
-                if !chunk.changed_blocks.contains(block_index)
-                    && self.can_replace.contains(&chunk[*block_index])
-                {
-                    chunk[*block_index] = *block_id;
-                    chunk.set_block_state(*block_index, block_state.map(BlockState));
-                    true
-                } else {
-                    false
-                }
-            });
+    pub fn applies_to_chunk(&self, chunk_position: &IVec3) -> bool {
+        return self.blocks.contains_key(chunk_position);
+    }
 
-            if feature_blocks.len() > 0 {
-                return Some(feature_blocks);
+    // Check if the blocks of the feature, and its bounding boxes fit inside a single chunk.
+    pub fn fits_in_chunk(&self, chunk_position: IVec3) -> bool {
+        if self.blocks.len() != 1 || !self.blocks.contains_key(&chunk_position) {
+            return false;
+        }
+
+        for (min, max) in self.bounding_boxes.iter() {
+            let min_chunk_position = utils::world_position_to_chunk_position(*min);
+            let max_chunk_position = utils::world_position_to_chunk_position(*max);
+            if min_chunk_position != chunk_position || max_chunk_position != chunk_position {
+                return false;
             }
         }
 
-        return None;
+        return true;
+    }
+
+    fn check_bounds(&self, chunk_position: IVec3, chunk: &Chunk, blocks: &Blocks) -> bool {
+        // Check against already placed blocks
+        for (min, max) in self.bounding_boxes.iter().cloned() {
+            for x in min.x..=max.x {
+                for z in min.z..=max.z {
+                    for y in min.y..=max.y {
+                        let block_position = IVec3::new(x, y, z);
+                        let (bounds_chunk_position, block_index) =
+                            utils::world_position_to_chunk_position_and_block_index(block_position);
+
+                        if bounds_chunk_position != chunk_position {
+                            continue;
+                        }
+
+                        let block_id = chunk[block_index];
+                        let block = blocks.get_config(&block_id);
+
+                        if !block.replaceable || !self.can_replace.contains(&block_id) {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            for terrain_feature in chunk.terrain_features.iter() {
+                for (other_min, other_max) in terrain_feature.bounding_boxes.iter() {
+                    if other_max.cmpge(min).all() && other_min.cmple(max).all() {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// This should only be used on terrain features that place blocks in multiple chunks.
+    pub fn apply_edge_feature(
+        &self,
+        world_map: &mut WorldMap,
+    ) -> Vec<(IVec3, Vec<(usize, BlockId, Option<u16>)>)> {
+        let mut placed_blocks = Vec::new();
+
+        // First we check that all the chunks are available. We eat the extra lookup time so that
+        // we won't have to fail late in the bounds/collision checks as that is very wasteful.
+        for chunk_position in self.blocks.keys() {
+            if !world_map.contains_chunk(chunk_position) {
+                return placed_blocks;
+            }
+        }
+
+        let blocks = Blocks::get();
+        for chunk_position in self.blocks.keys() {
+            let chunk = world_map.get_chunk(chunk_position).unwrap();
+            // TODO: If it intersects with another edge feature, both will be ignored. It should
+            // instead choose the one that is closer to the origin of the world.
+            if !self.check_bounds(*chunk_position, chunk, blocks) {
+                return placed_blocks;
+            };
+        }
+
+        for (chunk_position, blocks) in self.blocks.iter() {
+            let mut new_blocks = Vec::new();
+            let chunk = world_map.get_chunk_mut(chunk_position).unwrap();
+
+            for (block_index, block_id, block_state) in blocks.iter().cloned() {
+                if !chunk.changed_blocks.contains(&block_index)
+                    && self.can_replace.contains(&chunk[block_index])
+                {
+                    chunk[block_index] = block_id;
+                    chunk.set_block_state(block_index, block_state.map(BlockState));
+                    new_blocks.push((block_index, block_id, block_state));
+                }
+            }
+
+            if !new_blocks.is_empty() {
+                placed_blocks.push((*chunk_position, new_blocks));
+            }
+        }
+
+        return placed_blocks;
+    }
+
+    pub fn apply(self, chunk_position: IVec3, chunk: &mut Chunk) {
+        if !self.fits_in_chunk(chunk_position) {
+            // The feature is part of many chunks, have to wait until they are loaded.
+            chunk.terrain_features.push(self);
+            return;
+        }
+
+        if !self.check_bounds(chunk_position, chunk, Blocks::get()) {
+            // The feature is blocked by the terrain or another feature, can't be placed
+            return;
+        };
+
+        for blocks in self.blocks.values() {
+            for (block_index, block_id, block_state) in blocks.iter().cloned() {
+                if !chunk.changed_blocks.contains(&block_index)
+                    && self.can_replace.contains(&chunk[block_index])
+                {
+                    chunk[block_index] = block_id;
+                    chunk.set_block_state(block_index, block_state.map(BlockState));
+                }
+            }
+        }
+
+        if self.bounding_boxes.len() != 0 {
+            // Terrain features with bounding boxes must be available for other terrain features to
+            // test against.
+            chunk.terrain_features.push(self);
+        }
+
+        return;
+    }
+}
+
+/// Keeps track of the surface of a chunk.
+pub struct Surface {
+    // (y_index, surface block) of each block column if there is one
+    surface_blocks: Vec<Option<(usize, BlockId)>>,
+}
+
+impl Surface {
+    // TODO: The topmost block in each block column will never be used as we don't know what's
+    // above it, might be ignoreable.
+    pub fn new(chunk: &Chunk, air: BlockId) -> Self {
+        let mut surface_blocks = vec![None; Chunk::SIZE.pow(2)];
+        for (column_index, block_column) in chunk.blocks.chunks(Chunk::SIZE).enumerate() {
+            let mut air_encountered = false;
+            for (y_index, block_id) in block_column.into_iter().enumerate().rev() {
+                if air_encountered && *block_id != air {
+                    surface_blocks[column_index] = Some((y_index, *block_id));
+                    break;
+                }
+                if *block_id == air {
+                    air_encountered = true;
+                }
+            }
+        }
+
+        Self { surface_blocks }
+    }
+}
+
+impl Index<usize> for Surface {
+    type Output = Option<(usize, BlockId)>;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.surface_blocks[index]
     }
 }

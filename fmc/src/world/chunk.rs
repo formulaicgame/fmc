@@ -19,7 +19,8 @@ pub struct Chunk {
     // All blocks that have been changed in the chunk. These are kept in memory at runtime to allow
     // applying neighbour chunk's terrain features without overwriting.
     pub changed_blocks: HashSet<usize>,
-    // Generated features like trees etc.
+    // This stores the edge features of the chunk + the features that contain bounding boxes that
+    // need to be checked against when applying edge features.
     pub terrain_features: Vec<TerrainFeature>,
     // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
     // (zero indexed) the formula x * Chunk::SIZE^2 + z * Chunk::SIZE + y is used.
@@ -185,7 +186,7 @@ impl Chunk {
     }
 }
 
-// 'chunk[[x,y,z]]'
+// Index a chunk by `chunk[[x,y,z]]`
 impl Index<[usize; 3]> for Chunk {
     type Output = BlockId;
 

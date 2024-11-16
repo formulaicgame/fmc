@@ -87,7 +87,7 @@ fn unload_chunks(
     world_map.chunks.retain(|chunk_pos, chunk| {
         let distance = (*chunk_pos - origin.0).abs() / IVec3::splat(Chunk::SIZE as i32);
         if distance
-            .cmpgt(IVec3::splat(settings.render_distance as i32))
+            .cmpgt(IVec3::splat(settings.render_distance as i32) + 1)
             .any()
         {
             if let Some(entity) = chunk.entity {

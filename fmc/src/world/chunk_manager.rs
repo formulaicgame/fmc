@@ -191,11 +191,13 @@ fn unsubscribe_from_chunks(
 ) {
     // reborrow to make split borrowing work.
     let chunk_subscriptions = chunk_subscriptions.into_inner();
+
     for (entity, origin, render_distance) in player_origin_query.iter() {
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get_mut(&entity)
             .unwrap();
+
         let removed = subscribed_chunks.extract_if(|chunk_position| {
             let distance = (*chunk_position - origin.0).abs() / Chunk::SIZE as i32;
             if distance
@@ -358,51 +360,72 @@ fn handle_chunk_loading_tasks(
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
 ) {
     for (entity, mut task) in chunks.iter_mut() {
-        if let Some((chunk_position, mut chunk)) = future::block_on(future::poll_once(&mut task.0))
+        if let Some((new_chunk_position, chunk)) = future::block_on(future::poll_once(&mut task.0))
         {
+            world_map.insert(new_chunk_position, chunk);
+
             // TODO: This seems to be a common operation? Maybe create some combination iterator
-            // utilily to fight the drift. moore_neigbourhood(n) or something more friendly
+            // utility to fight the drift. moore_neigbourhood(n) or something more friendly
             //
-            // XXX: Terrain features should be applied to the chunk that generated them during
-            // generation.
+            // XXX: Terrain features that fit within the chunk should be applied at generation!
             for x in -1..=1 {
                 for y in -1..=1 {
                     for z in -1..=1 {
-                        let neighbour_position =
-                            chunk_position + IVec3::new(x, y, z) * Chunk::SIZE as i32;
+                        let adjacent_chunk_position =
+                            new_chunk_position + IVec3::new(x, y, z) * Chunk::SIZE as i32;
 
-                        let neighbour_chunk = match world_map.get_chunk_mut(&neighbour_position) {
+                        let chunk = match world_map.get_chunk_mut(&adjacent_chunk_position) {
                             Some(c) => c,
                             // x,y,z = 0, ignored here
                             None => continue,
                         };
 
-                        // Apply neighbours' features to the chunk.
-                        for terrain_feature in neighbour_chunk.terrain_features.iter() {
-                            terrain_feature.apply(&mut chunk, chunk_position);
-                        }
+                        // Since we need mutable access to all chunks to apply terrain features we
+                        // need to temporarily remove them to satisfy the borrow checker.
+                        let terrain_features =
+                            std::mem::replace(&mut chunk.terrain_features, Vec::default());
 
-                        // Apply chunk's features to the neigbours.
-                        for terrain_feature in chunk.terrain_features.iter() {
-                            if let Some(changed) = terrain_feature
-                                .apply_return_changed(neighbour_chunk, neighbour_position)
+                        for terrain_feature in terrain_features.iter() {
+                            if !terrain_feature.applies_to_chunk(&new_chunk_position)
+                                || terrain_feature.fits_in_chunk(new_chunk_position)
                             {
+                                // Skip if the feature doesn't apply to the generated chunk or if
+                                // it is one of the features that fit within the chunk and has thus
+                                // already been placed.
+                                continue;
+                            }
+
+                            for (chunk_position, blocks) in
+                                terrain_feature.apply_edge_feature(&mut world_map)
+                            {
+                                if chunk_position == new_chunk_position {
+                                    // No need to send a block updates for the new chunk as it
+                                    // hasn't been sent yet.
+                                    continue;
+                                }
+
                                 if let Some(subscribers) =
-                                    chunk_subscriptions.get_subscribers(&neighbour_position)
+                                    chunk_subscriptions.get_subscribers(&chunk_position)
                                 {
                                     net.send_many(
                                         subscribers,
                                         messages::BlockUpdates {
-                                            chunk_position: neighbour_position,
-                                            blocks: changed,
+                                            chunk_position,
+                                            blocks,
                                         },
                                     );
                                 }
                             }
                         }
+
+                        // And we move the terrain features back
+                        let chunk = world_map.get_chunk_mut(&adjacent_chunk_position).unwrap();
+                        chunk.terrain_features = terrain_features;
                     }
                 }
             }
+
+            let chunk = world_map.get_chunk_mut(&new_chunk_position).unwrap();
 
             let blocks = Blocks::get();
             for (index, block_id) in chunk.blocks.iter().enumerate() {
@@ -410,7 +433,7 @@ fn handle_chunk_loading_tasks(
                 if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
                     let mut entity_commands = commands.spawn_empty();
 
-                    let block_position = chunk_position + utils::block_index_to_position(index);
+                    let block_position = new_chunk_position + utils::block_index_to_position(index);
                     entity_commands.insert(BlockPosition(block_position));
 
                     if let Some(function) = block_config.spawn_entity_fn {
@@ -455,7 +478,7 @@ fn handle_chunk_loading_tasks(
 
             if let Some(subscribers) = chunk_subscriptions
                 .chunk_to_subscribers
-                .get(&chunk_position)
+                .get(&new_chunk_position)
             {
                 // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
                 // where it last stopped.
@@ -467,14 +490,13 @@ fn handle_chunk_loading_tasks(
                 net.send_many(
                     subscribers,
                     messages::Chunk {
-                        position: chunk_position,
+                        position: new_chunk_position,
                         blocks: chunk.blocks.clone(),
                         block_state: chunk.block_state.clone(),
                     },
                 );
             }
 
-            world_map.insert(chunk_position, chunk);
             commands.entity(entity).despawn();
         }
     }

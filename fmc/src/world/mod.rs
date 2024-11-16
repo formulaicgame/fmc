@@ -24,7 +24,7 @@ mod terrain_generation;
 
 pub use chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions};
 pub use map::WorldMap;
-pub use terrain_generation::{blueprints, TerrainFeature, TerrainGenerator};
+pub use terrain_generation::{blueprints, Surface, TerrainFeature, TerrainGenerator};
 
 pub struct WorldPlugin;
 
@@ -89,12 +89,12 @@ fn change_player_render_distance(
 // TODO: Move block update stuff to own module
 // TODO: Convert tuples to local struct "Block" to make access pretty?
 // TODO: It might be better to remove the back_* front_* blocks. They are only used for water at
-// time of writing. Adds 66% of lookup time.
+// time of writing. Adds 66% to lookup time.
 //
-// Some types of block need to know whenever a block adjacent to them changes (for example water
-// needs to know when it should spread). Instead of sending out the position of the changed block,
-// this struct is constructed to save on lookup time as each system that reacts to it would need
-// to query all the adjacent blocks separately.
+// Some blocks need to know when blocks adjacent to them change (for example water needs to know
+// when it should spread). Instead of sending out the position of the changed block, this struct is
+// constructed to save on lookup time as each system that reacts to it would need to query all the
+// adjacent blocks separately.
 //
 /// Event sent in response to a block update.
 #[derive(Event)]

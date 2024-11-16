@@ -22,24 +22,24 @@ impl WorldMap {
         }
     }
 
-    pub fn contains_chunk(&self, position: &IVec3) -> bool {
-        return self.chunks.contains_key(position);
+    pub fn contains_chunk(&self, chunk_position: &IVec3) -> bool {
+        return self.chunks.contains_key(chunk_position);
     }
 
     pub fn get_chunk(&self, position: &IVec3) -> Option<&Chunk> {
         return self.chunks.get(&position);
     }
 
-    pub fn get_chunk_mut(&mut self, position: &IVec3) -> Option<&mut Chunk> {
-        return self.chunks.get_mut(&position);
+    pub fn get_chunk_mut(&mut self, chunk_position: &IVec3) -> Option<&mut Chunk> {
+        return self.chunks.get_mut(&chunk_position);
     }
 
-    pub fn insert(&mut self, position: IVec3, value: Chunk) {
-        self.chunks.insert(position, value);
+    pub fn insert(&mut self, chunk_position: IVec3, value: Chunk) {
+        self.chunks.insert(chunk_position, value);
     }
 
-    pub fn remove_chunk(&mut self, position: &IVec3) {
-        self.chunks.remove(position);
+    pub fn remove_chunk(&mut self, chunk_position: &IVec3) {
+        self.chunks.remove(chunk_position);
     }
 
     pub fn get_block(&self, position: IVec3) -> Option<BlockId> {

@@ -56,7 +56,7 @@ fn pass_time(
     mut server_time_events: EventReader<messages::Time>,
 ) {
     let angle = if let Some(t) = server_time_events.read().last() {
-        t.angle
+        t.angle % std::f32::consts::TAU
     } else {
         return;
     };
