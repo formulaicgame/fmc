@@ -235,7 +235,9 @@ impl MeshBuilder {
             // 5 bits, light, 1 bit bool true if sunlight, 4 bits intensity
             self.packed_bits.push(
                 quad.texture_array_id
+                    // uv
                     | (i as u32) << 19
+                    // diagonal texture marker
                     | (quad.rotate_texture as u32) << 21
                     | (light.0 as u32) << 22,
             )

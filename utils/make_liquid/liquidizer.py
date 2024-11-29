@@ -23,13 +23,14 @@ fog = {
             "alpha": 1
         }
     },
-    "distance": 50
+    "start": 50,
+    "stop": 100
 }
 
 def make_block(name, top_quad, top_texture, rotate_texture, is_rotatable, cull_top=False, light_attenuation=0):
     quads = []
     
-    # top
+    #top
     quads.append({
         "vertices": copy.deepcopy(top_quad),
         "texture": top_texture,
@@ -39,7 +40,7 @@ def make_block(name, top_quad, top_texture, rotate_texture, is_rotatable, cull_t
     if cull_top:
         quads[0]["cull_face"] = "top"
 
-    # bottom
+    #bottom
     quads.append({
         "vertices": [
             [0.0, 0.0, 1.0],

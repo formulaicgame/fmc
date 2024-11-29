@@ -345,11 +345,10 @@ pub fn load_blocks(
                 let fog_settings = if let Some(fog) = fog {
                     Some(FogSettings {
                         color: fog.color,
-                        falloff: FogFalloff::from_visibility_squared(fog.distance),
-                        //falloff: FogFalloff::Linear {
-                        //    start: 0.0,
-                        //    end: fog.distance,
-                        //},
+                        falloff: FogFalloff::Linear {
+                            start: fog.start,
+                            end: fog.stop,
+                        },
                         ..default()
                     })
                 } else {
@@ -868,7 +867,8 @@ struct QuadPrimitiveJson {
 #[derive(Deserialize)]
 struct FogJson {
     color: Color,
-    distance: f32,
+    start: f32,
+    stop: f32,
 }
 
 #[derive(Deserialize)]

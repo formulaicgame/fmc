@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{game_state::GameState, player::PlayerCameraMarker};
+use crate::{game_state::GameState, player::Head};
 
 pub mod blocks;
 pub mod world_map;
@@ -34,7 +34,7 @@ pub struct MovesWithOrigin;
 fn update_origin(
     mut origin: ResMut<Origin>,
     mut positions: ParamSet<(
-        Query<&GlobalTransform, (Changed<GlobalTransform>, With<PlayerCameraMarker>)>,
+        Query<&GlobalTransform, (Changed<GlobalTransform>, With<Head>)>,
         Query<&mut Transform, With<MovesWithOrigin>>,
     )>,
 ) {

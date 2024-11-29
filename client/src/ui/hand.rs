@@ -10,7 +10,7 @@ use crate::{
     assets::models::{ModelAssetId, Models},
     game_state::GameState,
     networking::NetworkClient,
-    player::PlayerCameraMarker,
+    player::Head,
 };
 
 use super::server::{
@@ -43,7 +43,7 @@ impl Plugin for HandPlugin {
     }
 }
 
-fn setup(mut commands: Commands, player_camera: Query<Entity, Added<PlayerCameraMarker>>) {
+fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
     let camera_entity = player_camera.single();
     commands.entity(camera_entity).with_children(|parent| {
         parent.spawn(HandBundle::default());

@@ -65,7 +65,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         out.uv = UVS[3];
     }
 
-    // TODO: Can't you do this when applying it to the mesh?
     let rotate_uv = bool((vertex.packed_bits & 0x200000u) >> 21u);
     if rotate_uv {
         out.uv = vec2<f32>(

@@ -27,7 +27,6 @@ impl Plugin for GuiPlugin {
 }
 
 fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
-    // TODO: Slight hack, maybe better to let the server define this
     // In-game cursor
     let entity = commands
         .spawn(NodeBundle {
@@ -35,11 +34,10 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 width: Val::Px(3.0),
                 height: Val::Px(3.0),
                 position_type: PositionType::Absolute,
-                left: Val::Percent(50.0),
-                bottom: Val::Percent(50.0),
+                margin: UiRect::all(Val::Auto),
                 ..default()
             },
-            background_color: BackgroundColor(Color::rgba(0.9, 0.9, 0.9, 0.3)),
+            background_color: BackgroundColor(Color::srgba(0.9, 0.9, 0.9, 0.3)),
             ..Default::default()
         })
         .id();

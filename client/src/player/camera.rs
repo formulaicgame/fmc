@@ -9,6 +9,7 @@ use fmc_protocol::messages;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
+    player::Head,
     settings::Settings,
     world::{
         blocks::Blocks,
@@ -37,10 +38,10 @@ impl Plugin for CameraPlugin {
 #[derive(Bundle)]
 pub struct CameraBundle {
     camera_3d: Camera3dBundle,
-    marker: PlayerCameraMarker,
     // XXX: Remove in future if requirement for parent to have it is removed. Needed for
     // equipped item
     visibility: VisibilityBundle,
+    fog_settings: FogSettings,
 }
 
 impl Default for CameraBundle {
@@ -54,18 +55,18 @@ impl Default for CameraBundle {
                 .into(),
                 ..default()
             },
-            marker: PlayerCameraMarker::default(),
             visibility: VisibilityBundle::default(),
+            fog_settings: FogSettings {
+                color: Color::NONE,
+                ..default()
+            },
         }
     }
 }
 
-#[derive(Component, Default)]
-pub struct PlayerCameraMarker;
-
 fn update_render_distance(
     settings: Res<Settings>,
-    mut projection_query: Query<&mut Projection, With<PlayerCameraMarker>>,
+    mut projection_query: Query<&mut Projection, With<Head>>,
 ) {
     // TODO: This is Mut<Projection> so it complains, idk how to do it properly
     let mut projection = projection_query.single_mut();
@@ -103,7 +104,7 @@ fn rotate_camera(
         let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
         yaw -= (settings.sensitivity * ev.delta.x * window.width()).to_radians();
         pitch -= (settings.sensitivity * ev.delta.y * window.height()).to_radians();
-        pitch = pitch.clamp(-1.54, 1.54);
+        pitch = pitch.clamp(-1.57, 1.57);
 
         transform.rotation =
             Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
@@ -139,11 +140,10 @@ fn handle_camera_position_from_server(
 }
 
 fn fog(
-    settings: Res<Settings>,
     origin: Res<Origin>,
     mut camera_transform_query: Query<
         (&GlobalTransform, &Projection, &mut FogSettings),
-        (With<PlayerCameraMarker>, Changed<GlobalTransform>),
+        (With<Head>, Changed<GlobalTransform>),
     >,
     world_map: Res<WorldMap>,
 ) {
@@ -175,7 +175,10 @@ fn fog(
         if let Some(fog) = block_config.fog_settings() {
             *fog_settings = fog.clone();
         } else {
-            *fog_settings = settings.fog.clone();
+            *fog_settings = FogSettings {
+                color: Color::NONE,
+                ..default()
+            }
         }
     }
 }

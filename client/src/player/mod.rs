@@ -1,14 +1,11 @@
 use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_protocol::messages;
 
-use crate::{game_state::GameState, settings::Settings, world::MovesWithOrigin};
+use crate::{game_state::GameState, world::MovesWithOrigin};
 
 mod camera;
-// TODO: This is pub because of asset loading, remove when redone
 mod movement;
 mod physics;
-
-pub use camera::PlayerCameraMarker;
 
 // Used at setup to set camera position and define the AABB, but should be changed by the server.
 const DEFAULT_PLAYER_WIDTH: f32 = 0.6;
@@ -27,6 +24,9 @@ impl Plugin for PlayerPlugin {
             );
     }
 }
+
+#[derive(Component)]
+pub struct Head;
 
 // TODO: All this physics/control stuff has no business here. Server should send wasm plugin that
 // does everything. This is needed for other types of movement too, like boats.
@@ -51,7 +51,7 @@ impl PlayerState {
     }
 }
 
-fn setup_player(mut commands: Commands, settings: Res<Settings>) {
+fn setup_player(mut commands: Commands) {
     let player = PlayerState::new();
     // This is replaced by the server, serves as a default
     let aabb = Aabb::from_min_max(
@@ -68,8 +68,11 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
     );
 
     let head = commands
-        .spawn((camera::CameraBundle::default(), settings.fog.clone()))
-        .insert(SpatialListener::new(0.2))
+        .spawn((
+            camera::CameraBundle::default(),
+            SpatialListener::new(0.2),
+            Head,
+        ))
         .id();
 
     let body = commands

@@ -15,8 +15,6 @@
 }
 #import bevy_pbr::mesh_view_types::FOG_MODE_OFF
 
-//#import bevy_pbr::prepass_utils
-
 // This isn't the bevy's standard material, I just kept the name for some reason I don't remember.
 struct StandardMaterial {
     base_color: vec4<f32>,
@@ -270,7 +268,13 @@ fn fragment(
 //    }
 //
     if (fog.mode != FOG_MODE_OFF && (material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
-        output_color = apply_fog(fog, output_color, world_position.xyz, view.world_position.xyz);
+        var fog_copy = fog;
+        // TODO: Make the fog to go black to reduce visibility at night, adjusting only the
+        // rgb doesn't seem to work, so I just did rgba since it's easier to read.
+        // Maybe reduce the fog distance too?
+        // TODO: Tinting the rgb of the ambient light at sunrise/sunset could be nice?
+        fog_copy.base_color = fog_copy.base_color * lights.ambient_color.a;
+        output_color = apply_fog(fog_copy, output_color, world_position.xyz, view.world_position.xyz);
     }
 
 #ifdef TONEMAP_IN_SHADER
