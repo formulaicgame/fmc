@@ -23,8 +23,9 @@ impl Plugin for InterfacePlugin {
 #[derive(SystemSet, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct InterfaceEventRegistration;
 
+/// The item stack currently held by the cursor
 #[derive(Component, Deref, DerefMut)]
-pub struct HeldInterfaceItem {
+pub struct HeldInterfaceStack {
     pub item_stack: ItemStack,
 }
 
@@ -106,7 +107,7 @@ fn sort_item_updates(
 
 fn insert_held_item(mut commands: Commands, player_query: Query<Entity, Added<Player>>) {
     for entity in player_query.iter() {
-        commands.entity(entity).insert(HeldInterfaceItem {
+        commands.entity(entity).insert(HeldInterfaceStack {
             item_stack: ItemStack::default(),
         });
     }

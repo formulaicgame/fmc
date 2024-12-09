@@ -3,7 +3,11 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{blocks::BlockId, database::Database, models::ModelId};
+use crate::{
+    blocks::{BlockConfig, BlockId},
+    database::Database,
+    models::ModelId,
+};
 
 pub type ItemId = u32;
 pub const ITEM_CONFIG_PATH: &str = "resources/client/items/configurations/";
@@ -94,10 +98,24 @@ pub struct ItemConfig {
     /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in
     /// interfaces.
     pub categories: HashSet<String>,
-    /// If the item is used as a tool to break blocks faster
+    /// Present if the item is used as a tool to break blocks
     pub tool: Option<Tool>,
     /// Properties unique to the item
     pub properties: serde_json::Map<String, serde_json::Value>,
+}
+
+impl ItemConfig {
+    pub fn tool_efficiency(&self, block_config: &BlockConfig) -> f32 {
+        if let Some(tool) = &self.tool {
+            block_config
+                .tools
+                .contains(&tool.name)
+                .then_some(tool.efficiency)
+                .unwrap_or(1.0)
+        } else {
+            1.0
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -155,10 +173,12 @@ impl Item {
     }
 }
 
-// TODO: None of these members should be public, it will cause headache, did for debug
-/// An ItemStack holds several of the same item. Used in interfaces.
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct ItemStack {
+    // TODO: This Option makes the erognomics horrible. Instead reserve the item id 0, and have it
+    // be the default. This item can be defined by the server in assets as "default" to customize
+    // the look of it, currently it's hard coded client side.
+    //
     /// The item occupying the stack
     item: Option<Item>,
     /// Current stack size.
@@ -188,38 +208,56 @@ impl ItemStack {
         return self.size;
     }
 
-    pub fn add(&mut self, amount: u32) {
+    /// Combine two item stacks, returns the leftover
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two stacks don't contain the same item
+    #[track_caller]
+    pub fn add(&mut self, mut other: ItemStack) -> ItemStack {
+        if self.item != other.item {
+            panic!();
+        }
+
+        let amount = other.size.min(self.capacity - self.size);
         self.size += amount;
+        other.take(amount);
+
+        return other;
     }
 
-    pub fn subtract(&mut self, amount: u32) {
-        self.size -= amount;
+    /// Take the given amount of items out of the item stack
+    pub fn take(&mut self, amount: u32) -> ItemStack {
+        let taken = ItemStack {
+            item: self.item.clone(),
+            size: amount.min(self.size),
+            capacity: self.capacity,
+        };
+
+        self.size -= taken.size;
         if self.size == 0 {
             self.item = None;
             self.capacity = 0;
         }
+
+        taken
     }
 
-    /// Move items from this stack into another, if the items to not match, swap them.
-    #[track_caller]
-    pub fn transfer(&mut self, other: &mut ItemStack, mut amount: u32) {
+    /// Move items from this stack into another, if the items do not match, swap them.
+    pub fn transfer_to(&mut self, other: &mut ItemStack, amount: u32) {
         if self.is_empty() {
             return;
         } else if &self.item == &other.item {
-            // Transfer as much as is requested, as much as there's room for, or as much as is
-            // available.
-            amount = std::cmp::min(amount, other.capacity - other.size);
-            amount = std::cmp::min(amount, self.size);
-            other.add(amount);
-            self.subtract(amount);
+            // Take out the requested amount if that many are available
+            let to_transfer = self.take(amount);
+            // Add as much as other can hold
+            let leftover = other.add(to_transfer);
+            // Transfer what's left back
+            if !leftover.is_empty() {
+                self.add(leftover);
+            }
         } else if other.is_empty() {
-            other.item = self.item.clone();
-            other.capacity = self.capacity;
-
-            amount = std::cmp::min(amount, self.size);
-
-            other.add(amount);
-            self.subtract(amount);
+            *other = self.take(amount);
         } else {
             self.swap(other);
         }

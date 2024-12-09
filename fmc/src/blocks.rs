@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 use crate::{
     database::Database,
-    items::ItemId,
+    items::{ItemConfig, ItemId},
     models::{ModelId, Models},
     physics::{shapes::Aabb, Collider},
     prelude::*,
@@ -510,7 +510,7 @@ pub struct BlockConfig {
     /// Makes it possible to replace the block by placing another in its position.
     pub replaceable: bool,
     // Which tool categories will break this block faster.
-    tools: HashSet<String>,
+    pub tools: HashSet<String>,
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
     /// Used for chunk loading to decide which blocks can be seen through. Derived from the
@@ -523,12 +523,13 @@ pub struct BlockConfig {
 }
 
 impl BlockConfig {
-    pub fn drop(&self, tool: Option<&str>) -> Option<(ItemId, u32)> {
+    pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<(ItemId, u32)> {
         let Some(block_drop) = &self.drop else {
             return None;
         };
-        if let Some(tool) = tool {
-            return block_drop.drop(self.tools.contains(tool));
+
+        if let Some(tool) = tool.and_then(|t| t.tool.as_ref()) {
+            return block_drop.drop(self.tools.contains(&tool.name));
         } else {
             return block_drop.drop(false);
         }
@@ -540,20 +541,80 @@ impl BlockConfig {
             Friction::Drag(_) => false,
         }
     }
+
+    pub fn placeable(&self, against_block_face: BlockFace) -> bool {
+        match against_block_face {
+            BlockFace::Bottom if self.placement.ceiling => true,
+            BlockFace::Top if self.placement.floor => true,
+            BlockFace::Right | BlockFace::Left | BlockFace::Front | BlockFace::Back
+                if self.placement.sides =>
+            {
+                true
+            }
+
+            _ => false,
+        }
+    }
+
+    /// Given the distance from the player to the block and the face the block is placed on, return
+    /// the blocks rotation if any.
+    pub fn placement_rotation(
+        &self,
+        camera_transform: &Transform,
+        against_block_face: BlockFace,
+    ) -> Option<BlockState> {
+        if !self.placeable(against_block_face) {
+            return None;
+        }
+
+        if !self.placement.rotatable {
+            return None;
+        }
+
+        let mut block_state = BlockState::new();
+
+        let dir = camera_transform.forward();
+        let max = dir.x.abs().max(dir.z.abs());
+
+        if max == dir.x.abs() {
+            if dir.x.is_sign_positive() {
+                block_state.set_rotation(BlockRotation::Once);
+            } else {
+                block_state.set_rotation(BlockRotation::Thrice);
+            }
+        } else if max == dir.z.abs() {
+            if dir.z.is_sign_positive() {
+                block_state.set_rotation(BlockRotation::None);
+            } else {
+                block_state.set_rotation(BlockRotation::Twice);
+            }
+        }
+
+        if (against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top)
+            && self.placement.centered
+        {
+            block_state.set_centered(true);
+        }
+
+        return Some(block_state);
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(default)]
 pub struct BlockPlacement {
-    // Set if the block can be placed by clicking the top face of the block below
+    /// Set if the block can be placed by clicking the top face of a block
     pub floor: bool,
-    // Set if the block can be placed by clicking the bottom face of the block above
+    /// Set if the block can be placed by clicking the bottom face of a block
     pub ceiling: bool,
-    // Set if the block can be placed by clicking the sides of adjacent blocks
+    /// Set if the block can be placed by clicking the sides of blocks
     pub sides: bool,
-    // Set if the block is always rotated when placed.
+    /// Set if the block should be rotated when placed.
     pub rotatable: bool,
-    // Set if a transform should be applied when placing on a sideways adjacent block. This will
-    // rotate the block even if 'rotatable' is not set, but only on sides.
+    /// If 'rotatable' is set, this allows a block to be placed without rotation if it is placed on
+    /// the Top or Bottom face of a block.
+    pub centered: bool,
+    /// Set if a transform should be applied when rotated.
     pub side_transform: Option<Transform>,
 }
 
@@ -564,6 +625,7 @@ impl Default for BlockPlacement {
             ceiling: true,
             sides: true,
             rotatable: false,
+            centered: true,
             side_transform: None,
         }
     }
@@ -632,12 +694,27 @@ pub struct BlockData(pub Vec<u8>);
 pub struct BlockState(pub u16);
 
 impl BlockState {
-    pub fn new(rotation: BlockRotation) -> Self {
-        return Self(rotation as u16);
+    pub fn new() -> Self {
+        return Self(0);
     }
 
     pub fn as_u16(self) -> u16 {
         return self.0;
+    }
+
+    pub fn set_centered(&mut self, centered: bool) {
+        self.0 &= !1 << 3;
+        self.0 |= (centered as u16) << 3;
+    }
+
+    pub fn set_rotation(&mut self, rotation: BlockRotation) {
+        self.0 &= !0b11;
+        self.0 |= rotation as u16;
+    }
+
+    pub fn with_rotation(mut self, rotation: BlockRotation) -> Self {
+        self.set_rotation(rotation);
+        self
     }
 
     pub fn rotation(self) -> Option<BlockRotation> {
@@ -646,10 +723,6 @@ impl BlockState {
         } else {
             None
         }
-    }
-
-    pub fn set_rotation(&mut self, rotation: BlockRotation) {
-        self.0 = self.0 & !0b11 & (rotation as u16 & 0b11);
     }
 }
 

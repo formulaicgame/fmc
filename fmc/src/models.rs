@@ -14,12 +14,11 @@ use crate::{
     world::{ChunkSubscriptionEvent, ChunkSubscriptions},
 };
 
-// TODO:
-//use super::world_map::chunk_manager::ChunkUnloadEvent;
+// TODO use super::world_map::chunk_manager::ChunkUnloadEvent;
 
 pub const MODEL_PATH: &str = "./resources/client/textures/models/";
 
-// Type used to identify the asset of a model.
+// Used to identify the asset of a model.
 pub type ModelId = u32;
 
 pub struct ModelPlugin;
@@ -30,13 +29,12 @@ impl Plugin for ModelPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    // TODO: Maybe all of these systems should be PostUpdate. This way Update is the do
-                    // things place, and PostUpdate is the send to client place.
-                    //
                     send_models_on_chunk_subscription.before(send_animations),
                     //update_model_assets,
                     play_move_animation
                         .before(send_animations)
+                        // Make sure the velocity has been applied so we know whether to play the
+                        // animation
                         .after(PhysicsSystems),
                     send_animations,
                     remove_models,
@@ -167,6 +165,7 @@ pub struct ModelBundle {
     pub transform: Transform,
 }
 
+// TODO: With "custom" this is almost 200 bytes, can't accomodate
 #[derive(Component)]
 pub enum Model {
     Asset(ModelId),
@@ -390,9 +389,10 @@ fn update_model_transform(
     }
 }
 
-// TODO: Requiring models to have a Velocity seems unfortunate. Maybe have a separate component to
-// keep track of the velocity through difference in changes to the transform, with some lower and
-// higher bound for stopping/starting the animation.
+// TODO: Requiring models to have a Velocity seems unfortunate, as you might not want them to be
+// physics enabled. Maybe have a separate component to keep track of the velocity through
+// difference in changes to the transform, with some lower and higher bound for stopping/starting
+// the animation.
 fn play_move_animation(
     mut moved_models: Query<(&mut ModelAnimations, &Velocity), Changed<GlobalTransform>>,
 ) {

@@ -414,11 +414,9 @@ struct ServerConfig<'w> {
 
 impl ServerConfig<'_> {
     fn to_message(&self) -> Vec<u8> {
-        let blocks = Blocks::get();
-
         let server_config = messages::ServerConfig {
             assets_hash: self.assets.hash,
-            block_ids: blocks.asset_ids(),
+            block_ids: Blocks::get().asset_ids(),
             model_ids: self.models.asset_ids(),
             item_ids: self.items.asset_ids(),
             render_distance: self.render_distance.chunks,

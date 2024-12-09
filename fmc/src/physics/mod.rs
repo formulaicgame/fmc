@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::{math::DVec3, prelude::*};
+use bevy::math::DVec3;
 use serde::Deserialize;
 
 use crate::{
-    bevy_extensions::f64_transform::{GlobalTransform, Transform},
-    blocks::{Blocks, Friction},
+    blocks::{BlockFace, Blocks, Friction},
+    prelude::*,
     utils,
     world::{BlockUpdate, WorldMap},
 };
@@ -33,6 +33,7 @@ impl Plugin for PhysicsPlugin {
     }
 }
 
+// TODO: Make Aabb available only through this? Either way need to replace all current occurences
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Collider {
@@ -43,30 +44,31 @@ pub enum Collider {
 impl Collider {
     pub fn ray_intersection(
         &self,
-        ray_origin: DVec3,
-        ray_direction: DVec3,
-        collider_transform: Transform,
-    ) -> Option<f64> {
+        collider_transform: &Transform,
+        ray_transform: &Transform,
+    ) -> Option<(f64, BlockFace)> {
         match self {
-            Self::Aabb(aabb) => {
-                let aabb = aabb.transformed_by(collider_transform);
-                aabb.ray_intersection(ray_origin, ray_direction)
-            }
+            Self::Aabb(aabb) => aabb.ray_intersection(collider_transform, ray_transform),
             Self::Compound(aabbs) => {
-                let mut distance = None;
+                let mut hit = None;
+                let mut distance = f64::MAX;
                 for aabb in aabbs {
-                    let aabb = aabb.transformed_by(collider_transform);
-                    if let Some(new_distance) = aabb.ray_intersection(ray_origin, ray_direction) {
-                        let distance = distance.get_or_insert(0.0f64);
-                        *distance = distance.min(new_distance);
+                    if let Some((new_distance, new_face)) =
+                        aabb.ray_intersection(collider_transform, ray_transform)
+                    {
+                        if new_distance < distance {
+                            hit = Some((new_distance, new_face));
+                            distance = new_distance
+                        }
                     }
                 }
-                distance
+                hit
             }
         }
     }
 }
 
+// For ordering systems to remove 1-frame lag
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub struct PhysicsSystems;
 
@@ -187,7 +189,7 @@ fn simulate_aabb_physics(
 
             let blocks = Blocks::get();
 
-            // Check for collisions for all blocks within the aabb.
+            // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();
             let start = entity_aabb.min().floor().as_ivec3();
             let stop = entity_aabb.max().floor().as_ivec3();
@@ -205,7 +207,7 @@ fn simulate_aabb_physics(
 
                         let block_aabb = Aabb {
                             center: block_pos.as_dvec3() + 0.5,
-                            half_extents: DVec3::new(0.5, 0.5, 0.5),
+                            half_extents: DVec3::splat(0.5),
                         };
 
                         let distance = entity_aabb.center - block_aabb.center;
