@@ -10,6 +10,7 @@ mod assets;
 mod audio;
 mod game_state;
 mod networking;
+mod particles;
 mod player;
 mod rendering;
 mod settings;
@@ -41,6 +42,7 @@ fn main() {
         .add_plugins(networking::ClientPlugin)
         .add_plugins(assets::AssetPlugin)
         .add_plugins(audio::AudioPlugin)
+        .add_plugins(particles::ParticlePlugin)
         .add_plugins(game_state::GameStatePlugin)
         .add_plugins(rendering::RenderingPlugin)
         .add_plugins(player::PlayerPlugin)

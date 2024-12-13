@@ -12,7 +12,7 @@ use fmc_protocol::messages;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
-    player::PlayerState,
+    player::Player,
     world::{
         blocks::{Blocks, Friction},
         world_map::WorldMap,
@@ -71,7 +71,7 @@ impl Default for Timer {
 fn handle_position_updates_from_server(
     origin: Res<Origin>,
     mut position_events: EventReader<messages::PlayerPosition>,
-    mut player_query: Query<&mut Transform, With<PlayerState>>,
+    mut player_query: Query<&mut Transform, With<Player>>,
 ) {
     for event in position_events.read() {
         let mut transform = player_query.single_mut();
@@ -84,7 +84,7 @@ fn handle_position_updates_from_server(
 fn toggle_flight(
     keys: Res<ButtonInput<KeyCode>>,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut query: Query<&mut PlayerState>,
+    mut query: Query<&mut Player>,
     mut timer: Local<Timer>,
 ) {
     let window = window.single();
@@ -114,7 +114,7 @@ fn toggle_flight(
 fn change_player_acceleration(
     keys: Res<ButtonInput<KeyCode>>,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut player_query: Query<&mut PlayerState>,
+    mut player_query: Query<&mut Player>,
     camera_query: Query<&Transform, With<Camera>>,
     mut last_jump: Local<Timer>,
 ) {
@@ -207,7 +207,7 @@ fn simulate_player_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     fixed_time: Res<Time>,
-    mut player: Query<(&mut PlayerState, &mut Transform, &Aabb)>,
+    mut player: Query<(&mut Player, &mut Transform, &Aabb)>,
 ) {
     let (mut player, mut transform, player_aabb) = player.single_mut();
     let delta_time = fixed_time.delta_seconds();
@@ -364,7 +364,7 @@ fn simulate_player_physics(
 fn swimming(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
-    mut player: Query<(&mut PlayerState, &Transform, &Aabb)>,
+    mut player: Query<(&mut Player, &Transform, &Aabb)>,
 ) {
     let (mut player, transform, player_aabb) = player.single_mut();
 
@@ -428,7 +428,7 @@ fn send_position_to_server(
     net: Res<NetworkClient>,
     origin: Res<Origin>,
     time: Res<Time>,
-    player_transform: Query<(&PlayerState, &Transform)>,
+    player_transform: Query<(&Player, &Transform)>,
     mut last_time: Local<f32>,
     mut last_position: Local<Vec3>,
 ) {

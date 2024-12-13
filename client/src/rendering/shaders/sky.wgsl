@@ -22,10 +22,6 @@ var texture: texture_2d<f32>;
 @group(2) @binding(2)
 var texture_sampler: sampler;
 
-struct FragmentInput {
-    @builtin(position) world_position: vec4<f32>,
-}
-
 @fragment
 fn fragment(
     in: VertexOutput

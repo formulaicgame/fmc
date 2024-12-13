@@ -29,9 +29,9 @@ impl Materials {
 struct MaterialConfig {
     // One of "block" or "standard"
     pub r#type: String,
-    pub base_color: Color,
+    pub base_color: Srgba,
     pub base_color_texture: Option<String>,
-    pub emissive: Color,
+    pub emissive: Srgba,
     pub emissive_texture: Option<String>,
     pub perceptual_roughness: f32,
     pub metallic: f32,
@@ -51,9 +51,9 @@ impl Default for MaterialConfig {
         Self {
             // This field will panic if not in the file.
             r#type: "".to_owned(),
-            base_color: Color::WHITE,
+            base_color: Srgba::WHITE,
             base_color_texture: None,
-            emissive: Color::BLACK,
+            emissive: Srgba::BLACK,
             emissive_texture: None,
             //perceptual_roughness: 0.089,
             perceptual_roughness: 1.,
@@ -196,7 +196,7 @@ pub fn load_materials(
             // TODO: Maybe this can be removed, nothing uses it. I can't quite remember what the
             // plan was. Think I thought mobs were to use it.
             let material = StandardMaterial {
-                base_color: config.base_color,
+                base_color: config.base_color.into(),
                 base_color_texture,
                 emissive: config.emissive.into(),
                 emissive_texture,

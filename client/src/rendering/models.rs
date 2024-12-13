@@ -78,7 +78,7 @@ fn handle_model_add_delete(
             .spawn(SceneBundle {
                 scene: gltf.scenes[0].clone(),
                 transform: Transform {
-                    translation: (new_model.position - origin.as_dvec3()).as_vec3(),
+                    translation: origin.to_translation(new_model.position),
                     rotation: new_model.rotation,
                     scale: new_model.scale,
                 },
@@ -129,6 +129,8 @@ fn handle_custom_models(
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs.clone());
         }
 
+        const TEXTURE_PATH: &str = "server_assets/active/textures/";
+
         let base_color_texture = custom_model.material_color_texture.as_ref().map(|path| {
             let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
             cache.insert(handle.clone());
@@ -141,7 +143,6 @@ fn handle_custom_models(
             handle
         });
 
-        const TEXTURE_PATH: &str = "server_assets/active/textures/";
         let material = StandardMaterial {
             base_color: Srgba::hex(&custom_model.material_base_color)
                 .unwrap_or(Srgba::WHITE)

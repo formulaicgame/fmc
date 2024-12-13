@@ -5,7 +5,6 @@ use crate::{game_state::GameState, world::MovesWithOrigin};
 
 mod camera;
 mod movement;
-mod physics;
 
 // Used at setup to set camera position and define the AABB, but should be changed by the server.
 const DEFAULT_PLAYER_WIDTH: f32 = 0.6;
@@ -31,7 +30,7 @@ pub struct Head;
 // TODO: All this physics/control stuff has no business here. Server should send wasm plugin that
 // does everything. This is needed for other types of movement too, like boats.
 #[derive(Component, Default)]
-pub struct PlayerState {
+pub struct Player {
     // Current velocity
     pub velocity: Vec3,
     // Current acceleration
@@ -42,7 +41,7 @@ pub struct PlayerState {
     pub is_grounded: BVec3,
 }
 
-impl PlayerState {
+impl Player {
     pub fn new() -> Self {
         return Self {
             is_flying: true,
@@ -52,7 +51,7 @@ impl PlayerState {
 }
 
 fn setup_player(mut commands: Commands) {
-    let player = PlayerState::new();
+    let player = Player::new();
     // This is replaced by the server, serves as a default
     let aabb = Aabb::from_min_max(
         Vec3::new(
@@ -91,7 +90,7 @@ fn setup_player(mut commands: Commands) {
 
 fn handle_aabb_update(
     mut aabb_events: EventReader<messages::PlayerAabb>,
-    mut aabb_query: Query<&mut Aabb, With<PlayerState>>,
+    mut aabb_query: Query<&mut Aabb, With<Player>>,
 ) {
     for aabb_event in aabb_events.read() {
         let mut aabb = aabb_query.single_mut();

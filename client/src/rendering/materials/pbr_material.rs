@@ -53,7 +53,7 @@ fn update_light(
     origin: Res<Origin>,
     light_map: Res<LightMap>,
     mesh_query: Query<
-        (&GlobalTransform, &mut Handle<Mesh>),
+        (&GlobalTransform, &Handle<Mesh>),
         (
             With<Handle<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
             Or<(

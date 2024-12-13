@@ -43,9 +43,9 @@ impl Settings {
         return settings;
     }
     //fn save(&self) {
-    //    let contents = "".to_owned()
-    //    + "render_distance = " + &self.render_distance.to_string() + "\n"
-    //    + "fov = " + &self.fov.to_string();
+    //    let mut contents = "".to_owned()
+    //    contents += "render_distance = " + &self.render_distance.to_string() + "\n"
+    //    contents += "fov = " + &self.fov.to_string();
     //
     //}
 }

@@ -10,7 +10,7 @@ use bevy::{
 };
 use fmc_protocol::messages;
 
-use crate::{game_state::GameState, player::PlayerState, rendering::materials, utils};
+use crate::{game_state::GameState, player::Player, rendering::materials, utils};
 
 use super::materials::SkyMaterial;
 
@@ -41,7 +41,7 @@ struct Moon;
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    player_query: Query<Entity, With<PlayerState>>,
+    player_query: Query<Entity, With<Player>>,
     mut sky_materials: ResMut<Assets<materials::SkyMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -135,10 +135,15 @@ fn pass_time(
     let mut moon_transform = moon_query.single_mut();
     moon_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_seconds());
 
-    // TODO: This needs a proper easing curve. Should start decreasing while the sun is low
-    // in the sky to warn the player, then decrease until the glow of the sun is barely visible.
-    // Easing curves will be part of bevy 0.15
-    ambient_light.brightness = ((angle.sin() + 0.3) / 0.2).min(1.0).max(0.0);
+    // Max is lower so that the brightness peaks early and fades late
+    let max = 0.2;
+    let min = 0.3;
+    let range: f32 = 1.0 - (angle.sin().min(max).max(-min) + min) / (min + max);
+    // Exponential decay so that the brightness will decrease rapdidly come sunset to warn the
+    // player, and to let the light linger until the halo of the sun is completely gone.
+    // The exponent is chosen so that the brightness will bottom out at ~0.02 where it is just
+    // bright enough to see.
+    ambient_light.brightness = (range * -4.0).exp();
 }
 
 fn cube_mesh() -> Mesh {
@@ -284,17 +289,17 @@ fn stars(
     let mut rng = utils::Rng::new(1);
     let radius = RADIUS - 2.0;
     for _ in 0..700 {
-        let direction = Vec3::new(rng.next(), rng.next(), rng.next()) - 0.5;
+        let direction = Vec3::new(rng.next_f32(), rng.next_f32(), rng.next_f32()) - 0.5;
         let position = direction.normalize() * radius;
         parent.spawn(MaterialMeshBundle {
             mesh: star_mesh.clone(),
             material: material.clone(),
             transform: Transform::from_translation(position)
-                .with_scale(Vec3::splat(1.0 + rng.next() * 2.0))
+                .with_scale(Vec3::splat(1.0 + rng.next_f32() * 2.0))
                 .with_rotation(
-                    Quat::from_rotation_x(rng.next() * PI)
-                        * Quat::from_rotation_y(rng.next() * PI)
-                        * Quat::from_rotation_z(rng.next() * PI),
+                    Quat::from_rotation_x(rng.next_f32() * PI)
+                        * Quat::from_rotation_y(rng.next_f32() * PI)
+                        * Quat::from_rotation_z(rng.next_f32() * PI),
                 ),
             ..default()
         });

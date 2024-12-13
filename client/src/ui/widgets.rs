@@ -33,10 +33,14 @@ pub trait Widgets {
     fn spawn_text<'a>(&'a mut self, text: &str) -> EntityCommands<'a>;
 }
 
+// TODO: this function is const in 0.15
+//const BUTTON_COLOR: Color = Color::srgb_u8(66, 66, 66);
+const BUTTON_COLOR: Color = Color::srgb(0.26, 0.26, 0.26);
+
 impl Widgets for ChildBuilder<'_> {
     fn spawn_button<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'a> {
         let mut entity_commands = self.spawn(ButtonBundle {
-            background_color: Color::srgb_u8(66, 66, 66).into(),
+            background_color: BUTTON_COLOR.into(),
             style: Style {
                 aspect_ratio: Some(width / 20.0),
                 width: Val::Px(width),
@@ -124,32 +128,19 @@ impl Widgets for ChildBuilder<'_> {
     }
 }
 
-#[derive(Component, Deref, Default)]
-struct PreviousButtonColor(LinearRgba);
-
 fn tint_button_on_hover(
-    mut commands: Commands,
-    new_button_query: Query<Entity, Added<Button>>,
     mut button_query: Query<
-        (&Interaction, &mut PreviousButtonColor, &mut BackgroundColor),
+        (&Interaction, &mut BackgroundColor),
         (With<Button>, Changed<Interaction>),
     >,
 ) {
-    for entity in new_button_query.iter() {
-        commands
-            .entity(entity)
-            .insert(PreviousButtonColor::default());
-    }
-
-    for (interaction, mut prev_color, mut background_color) in button_query.iter_mut() {
+    for (interaction, mut background_color) in button_query.iter_mut() {
         match *interaction {
             Interaction::Hovered => {
-                prev_color.0 = background_color.0.into();
-                let new_color = prev_color.0 * (139.0 / 110.0);
-                background_color.0 = new_color.into();
+                *background_color = (BUTTON_COLOR.to_srgba() * 1.25).into();
             }
             _ => {
-                background_color.0 = prev_color.0.into();
+                *background_color = BUTTON_COLOR.to_srgba().into();
             }
         }
     }

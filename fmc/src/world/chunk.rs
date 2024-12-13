@@ -117,7 +117,7 @@ impl Chunk {
         ];
 
         if self.is_uniform() {
-            if blocks.get_config(&self[0]).is_transparent {
+            if blocks.get_config(&self[0]).is_transparent() {
                 for face in FACES {
                     for other_face in FACES {
                         self.visible_faces
@@ -156,7 +156,7 @@ impl Chunk {
                             }
 
                             let index = utils::world_position_to_block_index(position);
-                            if !visited[index] && blocks.get_config(&self[index]).is_transparent {
+                            if !visited[index] && blocks.get_config(&self[index]).is_transparent() {
                                 visited[index] = true;
                                 for offset in [
                                     IVec3::X,

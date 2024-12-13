@@ -122,15 +122,15 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     output_color = output_color * in.color;
 #endif
 
-    let artificial = pow(0.8, f32(15u - in.packed_bits & 0xFu));
-    var sunlight = pow(0.8, f32(15u - (in.packed_bits >> 4u) & 0xFu));
-    // TODO: This should probably be done for the artifical light too, but I haven't implemented it yet.
+    let artificial_level = f32(in.packed_bits & 0xFu);
+    var sunlight_level = f32((in.packed_bits >> 4u) & 0xFu);
+
     // TODO: The 1.2 is a scaling factor to make it look bright enough, idk if it's the models
     // themselves or something else in the shader that makes them darker than they should be.
-    sunlight = clamp(sunlight * lights.ambient_color.a, 0.04, 1.0) * 1.2;
-    // The object is made both a little brighter at no brightness as well as full brightness to
-    // make it contrast better against the terrain.
-    let light = max(sunlight, artificial);
+    let artificial = (pow(0.8, 15.0 - artificial_level)) * 1.2;
+    let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a * 1.2;
+    let light = select(artificial, sunlight, sunlight_level >= artificial_level);
+
     output_color = vec4(output_color.rgb * light, output_color.a);
     
     // TODO: The bottom is just given a somewhat dark color, but should be significantly darker than the sides.

@@ -48,6 +48,7 @@ impl Plugin for ClientPlugin {
             .add_event::<messages::InterfaceVisibilityUpdate>()
             .add_event::<messages::EnableClientAudio>()
             .add_event::<messages::Sound>()
+            .add_event::<messages::ParticleEffect>()
             .add_systems(OnEnter(GameState::Playing), send_client_ready)
             .add_systems(
                 PreUpdate,
@@ -307,9 +308,9 @@ fn connect(mut net: ResMut<NetworkClient>, identity: Res<Identity>) {
 
 #[derive(Default)]
 struct AssetDownload {
-    // Size of the compressed assets, first thing the server sends
+    // Total size of the compressed assets, first thing the server sends
     size: usize,
-    // How much have been downloaded
+    // How much has been downloaded
     downloaded: usize,
     // Buffer for downloaded data
     data: Option<Vec<u8>>,
@@ -477,7 +478,6 @@ impl Identity {
     }
 }
 
-// All ClientBound messages
 #[derive(SystemParam)]
 struct EventWriters<'w> {
     asset_response: EventWriter<'w, messages::AssetResponse>,
@@ -502,6 +502,7 @@ struct EventWriters<'w> {
     interface_visibility_update: EventWriter<'w, messages::InterfaceVisibilityUpdate>,
     enable_client_audio: EventWriter<'w, messages::EnableClientAudio>,
     sound: EventWriter<'w, messages::Sound>,
+    particle_effect: EventWriter<'w, messages::ParticleEffect>,
 }
 
 fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
@@ -519,177 +520,139 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
             MessageType::AssetResponse => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.asset_response.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::Disconnect => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.disconnect.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::ServerConfig => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.server_config.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::Time => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.time.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::Chunk => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.chunk.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::BlockUpdates => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.block_updates.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::DeleteModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.delete_model.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::ModelPlayAnimation => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.model_play_animation.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::ModelUpdateAsset => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.model_update_asset.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::ModelUpdateTransform => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.model_update_transform.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::NewModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.new_model.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::SpawnCustomModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.spawn_custom_model.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::PlayerAabb => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.player_aabb.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::PlayerCameraPosition => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.player_camera_position.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::PlayerCameraRotation => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.player_camera_rotation.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::PlayerPosition => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.player_position.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::InterfaceItemBoxUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.interface_item_box_update.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::InterfaceNodeVisibilityUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.interface_node_visibility_update.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::InterfaceTextUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.interface_text_update.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::InterfaceVisibilityUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.interface_visibility_update.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::EnableClientAudio => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.enable_client_audio.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
                 }
             }
             MessageType::Sound => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.sound.send(message);
-                } else {
-                    net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-                    break;
+                    continue;
+                }
+            }
+            MessageType::ParticleEffect => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    event_writers.particle_effect.send(message);
+                    continue;
                 }
             }
             _ => {
@@ -700,5 +663,8 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
                 break;
             }
         }
+
+        net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
+        break;
     }
 }

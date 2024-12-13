@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{math::DVec3, prelude::*};
 
 use crate::{game_state::GameState, player::Head};
 
@@ -27,6 +27,16 @@ impl Plugin for WorldPlugin {
 // borders.
 #[derive(Resource, Deref, DerefMut, Clone, Copy)]
 pub struct Origin(pub IVec3);
+
+impl Origin {
+    pub fn to_translation(&self, position: DVec3) -> Vec3 {
+        (position - self.as_dvec3()).as_vec3()
+    }
+
+    pub fn to_world(&self, position: Vec3) -> DVec3 {
+        self.as_dvec3() + position.as_dvec3()
+    }
+}
 
 #[derive(Component)]
 pub struct MovesWithOrigin;

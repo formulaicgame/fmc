@@ -3,7 +3,7 @@ use fmc_protocol::messages;
 
 use crate::{
     game_state::GameState,
-    player::PlayerState,
+    player::Player,
     world::{blocks::Blocks, world_map::WorldMap, Origin},
 };
 
@@ -33,11 +33,11 @@ fn play_sounds(
     mut sound_events: EventReader<messages::Sound>,
 ) {
     for sound in sound_events.read() {
-        let position = sound.position.unwrap_or(DVec3::ZERO) - origin.0.as_dvec3();
         commands
-            .spawn(TransformBundle::from_transform(
-                Transform::from_translation(position.as_vec3()),
-            ))
+            .spawn(TransformBundle::from_transform(Transform {
+                translation: origin.to_translation(sound.position.unwrap_or(DVec3::ZERO)),
+                ..default()
+            }))
             .insert(AudioBundle {
                 source: asset_server.load(AUDIO_PATH.to_owned() + &sound.sound),
                 settings: PlaybackSettings::DESPAWN.with_spatial(sound.position.is_some()),
@@ -62,10 +62,7 @@ fn play_walking_sound(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     client_side_audio: Res<ClientSideAudio>,
-    player_position: Query<
-        (&GlobalTransform, &Aabb),
-        (With<PlayerState>, Changed<GlobalTransform>),
-    >,
+    player_position: Query<(&GlobalTransform, &Aabb), (With<Player>, Changed<GlobalTransform>)>,
     mut last_position: Local<DVec3>,
     mut distance: Local<f64>,
     mut last_sound_index: Local<usize>,
@@ -78,7 +75,7 @@ fn play_walking_sound(
         return;
     };
 
-    let position = origin.0.as_dvec3() + global_transform.translation().as_dvec3();
+    let position = origin.to_world(global_transform.translation());
     *distance += position.distance(*last_position).abs();
     *last_position = position;
 

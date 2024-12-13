@@ -38,7 +38,7 @@ pub fn block_index_to_position(index: usize) -> IVec3 {
     return position;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Rng {
     seed: u64,
 }
@@ -48,7 +48,14 @@ impl Rng {
         Self { seed }
     }
 
-    pub fn next(&mut self) -> f32 {
+    pub fn next_u32(&mut self) -> u32 {
+        let seed = self.seed.wrapping_add(0x2d35_8dcc_aa6c_78a5);
+        self.seed = seed;
+        let t = u128::from(seed) * u128::from(seed ^ 0x8bb8_4b93_962e_acc9);
+        return ((t as u64) ^ (t >> 64) as u64) as u32;
+    }
+
+    pub fn next_f32(&mut self) -> f32 {
         let seed = self.seed.wrapping_add(0x2d35_8dcc_aa6c_78a5);
         self.seed = seed;
         let t = u128::from(seed) * u128::from(seed ^ 0x8bb8_4b93_962e_acc9);

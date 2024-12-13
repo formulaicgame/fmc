@@ -111,20 +111,10 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
             None => None,
         };
 
-        // Blocks that are not defined by gltf models are required to use a material. If the
-        // material is not opaque, then it is assumed transparent. If it is a model block it is
-        // always assumed that it is transparent.
-        let is_transparent = if let Some(material_name) = &block_config_json.material {
-            match block_materials.get(material_name) {
-                Some(m) => m.transparency != "opaque",
-                None => panic!(
-                    "Failed to find material for block: '{}', no material by the name: '{}'\
-                    Make sure the material is present at '{}'.",
-                    block_config_json.name, material_name, BLOCK_MATERIAL_PATH
-                ),
-            }
+        let material = if let Some(material_name) = &block_config_json.material {
+            block_materials.get(material_name).cloned()
         } else {
-            true
+            None
         };
 
         let model_id = if let Some(model_name) = &block_config_json.model {
@@ -157,6 +147,31 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
             None
         };
 
+        let particle_textures = if let Some(particle_texture) = block_config_json.particle_texture {
+            Some(BlockFaceTextures {
+                top: particle_texture.clone(),
+                bottom: particle_texture.clone(),
+                right: particle_texture.clone(),
+                left: particle_texture.clone(),
+                front: particle_texture.clone(),
+                back: particle_texture,
+            })
+        } else if let Some(faces) = block_config_json.faces {
+            // The path must be relative to /textures/ but faces are specified relative to
+            // /textures/blocks
+            let path = "blocks/";
+            Some(BlockFaceTextures {
+                top: path.to_owned() + &faces.top,
+                bottom: path.to_owned() + &faces.bottom,
+                right: path.to_owned() + &faces.right,
+                left: path.to_owned() + &faces.left,
+                front: path.to_owned() + &faces.front,
+                back: path.to_owned() + &faces.back,
+            })
+        } else {
+            None
+        };
+
         if let Some(block_id) = block_ids.remove(&block_config_json.name) {
             let block_config = BlockConfig {
                 name: block_config_json.name,
@@ -166,9 +181,10 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
                 replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
                 drop,
-                is_transparent,
+                material,
                 placement: block_config_json.placement,
                 hitbox,
+                particle_textures,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -407,6 +423,17 @@ impl BlockDropKind {
     }
 }
 
+// Paths to textures used by a cube relative to /textures/
+#[derive(Debug, Deserialize, Clone)]
+struct BlockFaceTextures {
+    top: String,
+    bottom: String,
+    left: String,
+    right: String,
+    front: String,
+    back: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct BlockConfigJson {
     // Name of the block
@@ -422,21 +449,23 @@ struct BlockConfigJson {
     tools: HashSet<String>,
     // Which item(s) the block drops
     drop: Option<BlockDropJson>,
-    // Renderding material, used to deduce transparency.
-    // None if it's a model block, the transparency is set to true.
-    // If the string is not "opaque", the transparency is set to true.
+    // Renderding material name, used to get the transparency.
+    // None if it's a model block and the transparency is set to true.
     material: Option<String>,
     // Collider used for physics/hit detection.
     hitbox: Option<Collider>,
     // These are the three ways you can define a block. We use them to generate the hitbox when it
     // is not explicitly defined. 'model' is a gltf model, 'quads' is a set vertices and 'faces' is
-    // a convenient way to define a cube.
+    // the six faces of a cube.
     model: Option<String>,
     quads: Option<Vec<BlockVerticesJson>>,
-    faces: Option<serde_json::Value>,
+    faces: Option<BlockFaceTextures>,
     // Rules for how the block can be placed by the player.
     #[serde(default)]
     placement: BlockPlacement,
+    // Texture used for particle when brekaing the block. Relative to /textures/
+    // If not supplied it will be derived from 'faces' if that is supplied.
+    particle_texture: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -496,6 +525,12 @@ impl BlockConfigJson {
     }
 }
 
+// TODO: 'hardness' 'tools' 'drop' 'particle_textures' are too specific. They should be handled
+// outside of library. Maybe something like: this lib reads block configs and stores them in
+// 'Blocks'. The game implementor creates their own BlockConfig struct with the values they need.
+// Wait until this lib loads, then load their own, and wrap them together. Maybe have a separate
+// crate that wraps the entire fmc library to shadow 'Blocks' so you can have all properties
+// combined.
 #[derive(Debug, Clone)]
 pub struct BlockConfig {
     /// Name of the block
@@ -513,16 +548,29 @@ pub struct BlockConfig {
     pub tools: HashSet<String>,
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
-    /// Used for chunk loading to decide which blocks can be seen through. Derived from the
-    /// transparency of the block's material or assumed to be transparent if it's a model.
-    pub is_transparent: bool,
-    // Aabb used for physics and hit detection. If None, assumed to be the size of a block.
+    // The rendering material for the block, if it uses one.
+    pub material: Option<BlockMaterial>,
+    /// Aabb used for physics and hit detection.
     pub hitbox: Option<Collider>,
-    // Rules for how the block can be placed by the player.
+    /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
+    ///
+    particle_textures: Option<BlockFaceTextures>,
 }
 
 impl BlockConfig {
+    pub fn is_transparent(&self) -> bool {
+        if let Some(material) = &self.material {
+            if material.transparency == "opaque" {
+                false
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
+
     pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<(ItemId, u32)> {
         let Some(block_drop) = &self.drop else {
             return None;
@@ -597,6 +645,39 @@ impl BlockConfig {
         }
 
         return Some(block_state);
+    }
+
+    pub fn particle_texture(&self, block_face: BlockFace) -> Option<&str> {
+        if let Some(paths) = &self.particle_textures {
+            let path = match block_face {
+                BlockFace::Top => &paths.top,
+                BlockFace::Bottom => &paths.bottom,
+                BlockFace::Right => &paths.right,
+                BlockFace::Left => &paths.left,
+                BlockFace::Front => &paths.front,
+                BlockFace::Back => &paths.back,
+            };
+            Some(path)
+        } else {
+            None
+        }
+    }
+
+    pub fn particle_color(&self) -> Option<String> {
+        let Some(material) = &self.material else {
+            return None;
+        };
+
+        let Some(color) = &material.base_color else {
+            return None;
+        };
+
+        let r = (color.red.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let g = (color.green.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let b = (color.blue.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let a = (color.alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+
+        return Some(format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a));
     }
 }
 
@@ -766,15 +847,25 @@ impl BlockRotation {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Debug)]
+struct Color {
+    red: f32,
+    green: f32,
+    blue: f32,
+    alpha: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
-struct BlockMaterial {
+pub struct BlockMaterial {
+    base_color: Option<Color>,
     transparency: String,
 }
 
 impl Default for BlockMaterial {
     fn default() -> Self {
         Self {
+            base_color: None,
             transparency: "opaque".to_owned(),
         }
     }

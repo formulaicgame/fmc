@@ -154,12 +154,13 @@ fn fragment(
     let texture_index_animation_offset: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
     output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index_animation_offset);
 
-    let artificial = pow(0.8, f32(15u - light_packed & 0xFu));
-    var sunlight = pow(0.8, f32(15u - (light_packed >> 4u) & 0xFu));
-    sunlight = clamp(sunlight * lights.ambient_color.a, 0.03, 1.0);
-    let light = max(sunlight, artificial);
-    //let light = artificial;
-    //let light = get_light(sunlight);
+    let artificial_level = f32(light_packed & 0xFu);
+    let sunlight_level = f32((light_packed >> 4u) & 0xFu);
+
+    let artificial = (pow(0.8, 15.0 - artificial_level));
+    let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a;
+    let light = select(artificial, sunlight, sunlight_level >= artificial_level);
+
     output_color = vec4(output_color.rgb * light, output_color.a);
 
     if abs(world_normal.z) == 1.0 {

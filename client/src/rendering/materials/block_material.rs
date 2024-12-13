@@ -380,20 +380,13 @@ impl Material for BlockMaterial {
         return Ok(());
     }
 
-    //fn prepass_vertex_shader() -> ShaderRef {
-    //    "src/rendering/shaders/mesh_prepass.wgsl".into()
-    //}
-
-    //fn prepass_fragment_shader() -> ShaderRef {
-    //    "src/rendering/shaders/pbr_prepass.wgsl".into()
-    //}
-
     fn vertex_shader() -> ShaderRef {
         BLOCK_MESH_SHADER.into()
     }
 
     fn fragment_shader() -> ShaderRef {
-        BLOCK_FRAGMENT_SHADER.into()
+        //BLOCK_FRAGMENT_SHADER.into()
+        "src/rendering/shaders/block.wgsl".into()
     }
 
     #[inline]
