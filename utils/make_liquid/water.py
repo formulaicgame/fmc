@@ -19,11 +19,11 @@ fog = {
         "LinearRgba": {
             "red": 0,
             "green": 0,
-            "blue": 1,
+            "blue": 0.7,
             "alpha": 1
         }
     },
-    "start": 50,
+    "start": 0,
     "stop": 100
 }
 
@@ -162,7 +162,7 @@ blocks.append(make_block(
     rotate_texture=False,
     is_rotatable=False,
     cull_top=True,
-    light_attenuation=1,
+    light_attenuation=2,
 ))
 
 blocks.append(make_block(
@@ -191,7 +191,6 @@ blocks.append(make_block(
     rotate_texture=False,
     is_rotatable=False,
     cull_top=True,
-    light_attenuation=1,
 ))
 
 blocks.extend(make_blocks(

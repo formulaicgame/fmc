@@ -180,6 +180,20 @@ fn fog(
                 ..default()
             }
         }
+
+        // TODO: Feels like making the fog darker as it grows dimmer would be nice, but it doesn't
+        // really work if the entire scene doesn't become darker.
+        // if let Some(light) = light_map.get_light(camera_top_position) {
+        //     let light_level = light.sunlight().max(light.artificial());
+        //     let brightness = 0.8f32.powi(15 - light_level as i32);
+        //
+        //     let mut color = fog_settings.color.to_linear();
+        //     color.red *= brightness;
+        //     color.green *= brightness;
+        //     color.blue *= brightness;
+        //
+        //     fog_settings.color = color.into();
+        // }
     }
 }
 

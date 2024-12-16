@@ -13,7 +13,7 @@
     view,
     fog
 }
-#import bevy_pbr::mesh_view_types::FOG_MODE_OFF
+#import bevy_pbr::mesh_view_types::{FOG_MODE_OFF, Fog}
 
 // This isn't the bevy's standard material, I just kept the name for some reason I don't remember.
 struct StandardMaterial {
@@ -270,12 +270,11 @@ fn fragment(
 //
     if (fog.mode != FOG_MODE_OFF && (material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
         var fog_copy = fog;
-        // TODO: Make the fog to go black to reduce visibility at night, adjusting only the
-        // rgb doesn't seem to work, so I just did rgba since it's easier to read.
-        // Maybe reduce the fog distance too?
+        // TODO: Make the fog go black to reduce visibility at night, maybe
+        // reduce the fog distance too?
         // TODO: Tinting the rgb of the ambient light at sunrise/sunset could be nice?
-        fog_copy.base_color = fog_copy.base_color * lights.ambient_color.a;
-        output_color = apply_fog(fog_copy, output_color, world_position.xyz, view.world_position.xyz);
+        fog_copy.base_color = vec4(fog_copy.base_color.rgb * lights.ambient_color.a, fog_copy.base_color.a);
+        output_color = linear_fog(fog_copy, output_color, world_position);
     }
 
 #ifdef TONEMAP_IN_SHADER
@@ -294,4 +293,23 @@ fn fragment(
     output_color = premultiply_alpha(material.flags, output_color);
 #endif
     return output_color;
+}
+
+fn linear_fog(
+    fog_params: Fog,
+    input_color: vec4<f32>,
+    world_position: vec4<f32>,
+) -> vec4<f32> {
+    let distance = length(vec3(
+        world_position.xz - view.world_position.xz,
+        // Makes fog appear below the camera, but not above
+        min(world_position.y - view.world_position.y, 0.0))
+    );
+    var fog_color = fog_params.base_color;
+    let start = fog_params.be.x;
+    let end = fog_params.be.y;
+    fog_color.a *= 1.0 - clamp((end - distance) / (end - start), 0.0, 1.0);
+    // The input_color alpha and fog alpha are added to transition water opacity to opaque so that
+    // you can only see through it at very sharp angles.
+    return vec4<f32>(mix(input_color.rgb, fog_color.rgb, fog_color.a), input_color.a + fog_color.a);
 }
