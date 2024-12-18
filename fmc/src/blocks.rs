@@ -123,8 +123,8 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
             None
         };
 
-        let hitbox = if block_config_json.hitbox.is_some() {
-            block_config_json.hitbox
+        let hitbox = if let Some(hitbox) = block_config_json.hitbox {
+            Some(hitbox.to_collider())
         } else if let Some(model_name) = block_config_json.model {
             let model_config = models.get_by_name(&model_name);
             let aabb = model_config.aabb.clone();
@@ -453,7 +453,7 @@ struct BlockConfigJson {
     // None if it's a model block and the transparency is set to true.
     material: Option<String>,
     // Collider used for physics/hit detection.
-    hitbox: Option<Collider>,
+    hitbox: Option<ColliderJson>,
     // These are the three ways you can define a block. We use them to generate the hitbox when it
     // is not explicitly defined. 'model' is a gltf model, 'quads' is a set vertices and 'faces' is
     // the six faces of a cube.
@@ -466,6 +466,32 @@ struct BlockConfigJson {
     // Texture used for particle when brekaing the block. Relative to /textures/
     // If not supplied it will be derived from 'faces' if that is supplied.
     particle_texture: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AabbJson {
+    min: DVec3,
+    max: DVec3,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ColliderJson {
+    Aabb(AabbJson),
+    Compound(Vec<AabbJson>),
+}
+
+impl ColliderJson {
+    fn to_collider(&self) -> Collider {
+        match self {
+            ColliderJson::Aabb(aabb) => Collider::Aabb(Aabb::from_min_max(aabb.min, aabb.max)),
+            ColliderJson::Compound(list) => Collider::Compound(
+                list.into_iter()
+                    .map(|aabb| Aabb::from_min_max(aabb.min, aabb.max))
+                    .collect(),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

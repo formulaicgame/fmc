@@ -4,7 +4,7 @@ use fmc_protocol::messages;
 
 use crate::{
     bevy_extensions::f64_transform::{GlobalTransform, Transform},
-    blocks::{BlockFace, BlockPosition, Blocks},
+    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks, Friction},
     interfaces::InterfaceNodes,
     models::ModelMap,
     networking::{NetworkMessage, Server},
@@ -16,10 +16,9 @@ use crate::{
 pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
+        app.add_systems(Update, send_aabb).add_systems(
+            PreUpdate,
             (
-                send_aabb,
                 handle_player_position_updates,
                 handle_camera_rotation_updates,
                 find_target
@@ -71,7 +70,7 @@ pub struct DefaultPlayerBundle {
     transform: Transform,
     velocity: Velocity,
     camera: Camera,
-    target: Target,
+    targets: Targets,
     aabb: Aabb,
     interfaces: InterfaceNodes,
 }
@@ -84,7 +83,7 @@ impl DefaultPlayerBundle {
             global_transform: GlobalTransform::default(),
             transform: Transform::default(),
             camera: Camera::default(),
-            target: Target::None,
+            targets: Targets::default(),
             velocity: Velocity::default(),
             aabb: Aabb::from_min_max(DVec3::new(-0.3, 0.0, -0.3), DVec3::new(0.3, 1.8, 0.3)),
             interfaces: InterfaceNodes::default(),
@@ -132,8 +131,34 @@ fn handle_camera_rotation_updates(
     }
 }
 
+/// Contains what the player is looking at, sorted by the distance from the camera.
+/// The scan for targets will stop at the first entity it hits with an aabb or the first block that
+/// is solid.
+#[derive(Component, Deref, DerefMut, Debug, Default)]
+pub struct Targets(Vec<Target>);
+
+impl Targets {
+    /// Get the first block that matches the provided condition
+    pub fn get_first_block<F>(&self, f: F) -> Option<&Target>
+    where
+        F: Fn(&BlockId) -> bool,
+    {
+        for target in self.iter() {
+            match target {
+                Target::Entity { .. } => return None,
+                Target::Block { block_id, .. } => {
+                    if f(block_id) {
+                        return Some(target);
+                    }
+                }
+            }
+        }
+
+        return None;
+    }
+}
 /// Tracks what the player is currently looking at
-#[derive(Component, Debug)]
+#[derive(Debug)]
 pub enum Target {
     Entity {
         /// Distance to the target from the camera
@@ -144,6 +169,7 @@ pub enum Target {
     },
     Block {
         block_position: IVec3,
+        block_id: BlockId,
         /// Distance to the target from the camera
         distance: f64,
         /// The face of block that was hit
@@ -151,24 +177,20 @@ pub enum Target {
         /// The block's entity, if it has one
         entity: Option<Entity>,
     },
-    None,
 }
 
 impl Target {
-    fn set_to_closest(&mut self, other: Self) {
-        let distance = self.distance();
-        let other_distance = other.distance();
-
-        if other_distance < distance {
-            *self = other;
-        }
-    }
-
-    fn distance(&self) -> f64 {
+    pub fn distance(&self) -> f64 {
         match self {
             Self::Entity { distance, .. } => *distance,
             Self::Block { distance, .. } => *distance,
-            Self::None => f64::MAX,
+        }
+    }
+
+    pub fn entity(&self) -> Option<Entity> {
+        match self {
+            Target::Entity { entity, .. } => Some(*entity),
+            Target::Block { entity, .. } => *entity,
         }
     }
 }
@@ -182,21 +204,21 @@ fn find_target(
         Option<&BlockPosition>,
         &GlobalTransform,
     )>,
-    mut player_query: Query<
-        (&mut Target, &Camera, &Transform),
-        Or<(Changed<Camera>, Changed<Transform>)>,
-    >,
+    mut player_query: Query<(&mut Targets, &Camera, &Transform)>,
 ) {
     let blocks = Blocks::get();
 
-    for (mut target, camera, transform) in player_query.iter_mut() {
-        *target = Target::None;
+    for (mut targets, camera, transform) in player_query.iter_mut() {
+        targets.clear();
 
         let camera_transform = Transform {
             translation: transform.translation + camera.translation,
             rotation: camera.rotation,
             ..default()
         };
+
+        let mut min_distance = f64::MAX;
+        let mut model_target = None;
 
         let chunk_position =
             utils::world_position_to_chunk_position(transform.translation.floor().as_ivec3());
@@ -232,6 +254,7 @@ fn find_target(
 
                             Target::Block {
                                 block_position: block_position.0,
+                                block_id,
                                 block_face,
                                 distance,
                                 entity: Some(entity),
@@ -253,23 +276,67 @@ fn find_target(
                             continue;
                         };
 
-                        target.set_to_closest(new_target);
+                        if new_target.distance() < min_distance {
+                            min_distance = new_target.distance();
+                            model_target = Some(new_target);
+                        }
                     }
                 }
             }
         }
 
-        if let Some((block_position, block_id, block_face, distance)) =
-            world_map.raycast_to_block(&camera_transform, 5.0)
-        {
-            let new_target = Target::Block {
-                block_position,
-                distance,
-                block_face,
-                entity: None,
+        if let Some(model_target) = model_target {
+            targets.push(model_target);
+        }
+
+        let mut raycast = world_map.raycast(&camera_transform, 5.0);
+        while let Some(block_id) = raycast.next_block() {
+            let block_config = blocks.get_config(&block_id);
+
+            let Some(hitbox) = &block_config.hitbox else {
+                // Blocks that don't have a hitbox cannot be targeted. This will normally be
+                // blocks that are considered void, like air, not water.
+                continue;
             };
 
-            target.set_to_closest(new_target);
+            let block_position = raycast.position();
+            let rotation = world_map
+                .get_block_state(block_position)
+                .map(BlockState::rotation)
+                .flatten()
+                .map(BlockRotation::as_quat)
+                .unwrap_or_default();
+
+            let block_transform = Transform {
+                translation: block_position.as_dvec3(),
+                rotation,
+                ..default()
+            };
+
+            if let Some((distance, block_face)) =
+                hitbox.ray_intersection(&block_transform, &camera_transform)
+            {
+                // TODO: it will add blocks with entities twice if the model is hit
+                let block_index = utils::world_position_to_block_index(block_position);
+                let entity = world_map
+                    .get_chunk(&chunk_position)
+                    .map(|chunk| chunk.block_entities.get(&block_index).cloned())
+                    .flatten();
+
+                targets.push(Target::Block {
+                    block_position,
+                    block_id,
+                    distance,
+                    block_face,
+                    entity,
+                });
+            };
+
+            if matches!(block_config.friction, Friction::Static { .. }) {
+                break;
+            }
         }
+
+        targets.sort_unstable_by(|a, b| a.distance().partial_cmp(&b.distance()).unwrap());
     }
 }

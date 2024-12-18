@@ -74,7 +74,7 @@ fn handle_particles_from_server(
                 for _ in 0..*count as usize {
                     let rand_offset = Vec3::new(rng.next_f32(), rng.next_f32(), rng.next_f32());
                     let offset = -*spawn_offset + *spawn_offset * 2.0 * rand_offset;
-                    let translation = origin.to_translation(*position) + offset;
+                    let translation = origin.to_local(*position) + offset;
 
                     let velocity = *min_velocity
                         + (*max_velocity - *min_velocity)

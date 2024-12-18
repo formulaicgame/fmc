@@ -35,7 +35,7 @@ fn play_sounds(
     for sound in sound_events.read() {
         commands
             .spawn(TransformBundle::from_transform(Transform {
-                translation: origin.to_translation(sound.position.unwrap_or(DVec3::ZERO)),
+                translation: origin.to_local(sound.position.unwrap_or(DVec3::ZERO)),
                 ..default()
             }))
             .insert(AudioBundle {
@@ -75,7 +75,7 @@ fn play_walking_sound(
         return;
     };
 
-    let position = origin.to_world(global_transform.translation());
+    let position = origin.to_global(global_transform.translation());
     *distance += position.distance(*last_position).abs();
     *last_position = position;
 

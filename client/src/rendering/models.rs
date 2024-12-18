@@ -78,7 +78,7 @@ fn handle_model_add_delete(
             .spawn(SceneBundle {
                 scene: gltf.scenes[0].clone(),
                 transform: Transform {
-                    translation: origin.to_translation(new_model.position),
+                    translation: origin.to_local(new_model.position),
                     rotation: new_model.rotation,
                     scale: new_model.scale,
                 },

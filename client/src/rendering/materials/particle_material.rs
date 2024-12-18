@@ -76,7 +76,7 @@ fn update_lighting(
             continue;
         };
 
-        let position = origin.to_world(transform.translation()).as_ivec3();
+        let position = origin.to_global(transform.translation()).as_ivec3();
         let Some(light) = light_map.get_light(position) else {
             continue;
         };

@@ -29,11 +29,11 @@ impl Plugin for WorldPlugin {
 pub struct Origin(pub IVec3);
 
 impl Origin {
-    pub fn to_translation(&self, position: DVec3) -> Vec3 {
+    pub fn to_local(&self, position: DVec3) -> Vec3 {
         (position - self.as_dvec3()).as_vec3()
     }
 
-    pub fn to_world(&self, position: Vec3) -> DVec3 {
+    pub fn to_global(&self, position: Vec3) -> DVec3 {
         self.as_dvec3() + position.as_dvec3()
     }
 }

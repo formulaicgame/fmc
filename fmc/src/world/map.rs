@@ -62,14 +62,24 @@ impl WorldMap {
         }
     }
 
-    /// Find which block the transform is looking at, if any.
-    /// returns (block position, block id, block face, distance to hit)
-    pub fn raycast_to_block(
-        &self,
-        ray_transform: &Transform,
-        max_distance: f64,
-    ) -> Option<(IVec3, BlockId, BlockFace, f64)> {
-        let blocks = Blocks::get();
+    /// Iterator over all the blocks the ray goes through.
+    pub fn raycast(&self, ray_transform: &Transform, max_distance: f64) -> WorldMapRayCast {
+        WorldMapRayCast::new(self, ray_transform, max_distance)
+    }
+}
+
+pub struct WorldMapRayCast<'a> {
+    world_map: &'a WorldMap,
+    max_distance: f64,
+    forward: DVec3,
+    distance_next: DVec3,
+    distance_increment: DVec3,
+    current_block_position: IVec3,
+    step: IVec3,
+}
+
+impl<'a> WorldMapRayCast<'a> {
+    fn new(world_map: &'a WorldMap, ray_transform: &Transform, max_distance: f64) -> Self {
         let forward = ray_transform.forward();
         let direction = forward.signum();
 
@@ -92,54 +102,48 @@ impl WorldMap {
         distance_next = distance_next / forward.abs();
 
         // How far along the forward vector you need to go to traverse one block in each direction.
-        let t_block = 1.0 / forward.abs();
+        let distance_increment = 1.0 / forward.abs();
         // +/-1 to shift block_pos when it hits the grid
         let step = direction.as_ivec3();
 
-        // The origin block of the ray.
-        let mut block_pos = ray_transform.translation.floor().as_ivec3();
+        let current_block_position = ray_transform.translation.floor().as_ivec3();
 
-        let mut next = distance_next.min_element();
-        while (next * forward).length_squared() < max_distance.powi(2) {
-            if distance_next.x == next {
-                block_pos.x += step.x;
-                distance_next.x += t_block.x;
-            } else if distance_next.z == next {
-                block_pos.z += step.z;
-                distance_next.z += t_block.z;
-            } else {
-                block_pos.y += step.y;
-                distance_next.y += t_block.y;
-            }
-
-            next = distance_next.min_element();
-
-            if let Some(block_id) = self.get_block(block_pos) {
-                let block_config = blocks.get_config(&block_id);
-                let Some(hitbox) = &block_config.hitbox else {
-                    continue;
-                };
-
-                let rotation = self
-                    .get_block_state(block_pos)
-                    .map(BlockState::rotation)
-                    .flatten()
-                    .map(BlockRotation::as_quat)
-                    .unwrap_or_default();
-
-                let block_transform = Transform {
-                    translation: block_pos.as_dvec3(),
-                    rotation,
-                    ..default()
-                };
-
-                if let Some((distance, block_face)) =
-                    hitbox.ray_intersection(&block_transform, ray_transform)
-                {
-                    return Some((block_pos, block_id, block_face, distance));
-                };
-            }
+        Self {
+            world_map,
+            max_distance,
+            forward,
+            distance_next,
+            distance_increment,
+            current_block_position,
+            step,
         }
-        return None;
+    }
+
+    pub fn position(&self) -> IVec3 {
+        self.current_block_position
+    }
+
+    pub fn next_block(&mut self) -> Option<BlockId> {
+        let next = self.distance_next.min_element();
+
+        if (self.distance_next.min_element() * self.forward).length_squared()
+            > self.max_distance.powi(2)
+        {
+            return None;
+        }
+
+        if self.distance_next.x == next {
+            self.current_block_position.x += self.step.x;
+            self.distance_next.x += self.distance_increment.x;
+        } else if self.distance_next.z == next {
+            self.current_block_position.z += self.step.z;
+            self.distance_next.z += self.distance_increment.z;
+        } else {
+            self.current_block_position.y += self.step.y;
+            self.distance_next.y += self.distance_increment.y;
+        }
+
+        // TODO: Probably wise to cache the chunk
+        return self.world_map.get_block(self.current_block_position);
     }
 }
