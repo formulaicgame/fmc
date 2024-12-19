@@ -396,8 +396,6 @@ fn send_clicks(
     }
 }
 
-// TODO: This no longer works as intended. I can't decide on a way to make it recognize when it
-// should replace.
 // TODO: Needs repetition if button held down. Test to where it feels reasonably comfortable so
 // that you can fly and place without having to pace yourself.
 //

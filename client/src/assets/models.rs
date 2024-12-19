@@ -17,6 +17,7 @@ use crate::{game_state::GameState, networking::NetworkClient};
 const MODEL_PATH: &str = "server_assets/active/textures/models/";
 const BLOCK_TEXTURE_PATH: &str = "server_assets/active/textures/blocks/";
 
+// Model asset ids are provided by the server on connection
 pub type ModelAssetId = u32;
 
 pub(super) struct ModelPlugin;
@@ -94,7 +95,8 @@ pub(super) fn load_models(
     // This is the genertic animation applied to runtime generated models. Models loaded from gltf
     // files should supply their own animation.
     let click_animation = asset_server.add(JsonModel::click_animation());
-    let (block_animation_graph, block_animation_index) = AnimationGraph::from_clip(click_animation);
+    let (block_animation_graph, block_animation_index) =
+        AnimationGraph::from_clip(click_animation.clone());
     let block_animation_graph = asset_server.add(block_animation_graph);
 
     let mut model_configs = Models {
@@ -155,8 +157,13 @@ pub(super) fn load_models(
                     return;
                 }
             };
-            let gltf = json_model.build_gltf(asset_server.as_ref());
+            let mut gltf = json_model.build_gltf(asset_server.as_ref());
+            gltf.animations.push(click_animation.clone());
+            gltf.named_animations
+                .insert("left_click".into(), click_animation.clone());
             let gltf_handle = asset_server.add(gltf);
+
+            loading_models.models.insert(gltf_handle.id(), *model_id);
 
             ModelConfig {
                 gltf_handle,
@@ -385,22 +392,45 @@ impl JsonModel {
         }
     }
 
-    // TODO: This animation is bad, blender can be used to make a good one. The camera of blender
-    // is hard to make match up with the one for bevy, idk why. A good approximation can be found
-    // in one of the blender files iirc
+    // NOTE: If you want to make this better there's a blender file called "block_template.blend"
+    // in the *server* implementation
     fn click_animation() -> AnimationClip {
         let mut animation = AnimationClip::default();
         let name = Name::new("block_model");
         animation.add_curve_to_target(
             AnimationTargetId::from_name(&name),
             VariableCurve {
-                keyframe_timestamps: vec![0.0, 0.083333336, 0.125, 0.16666667, 0.20833333],
+                keyframe_timestamps: vec![
+                    0.0,
+                    0.016666668,
+                    0.033333335,
+                    0.05,
+                    0.06666667,
+                    0.083333336,
+                    0.1,
+                    0.11666667,
+                    0.13333334,
+                    0.15,
+                    0.16666667,
+                    0.18333334,
+                    0.2,
+                    0.21666667,
+                ],
                 keyframes: Keyframes::Translation(vec![
-                    Vec3::new(0.1020781, -0.13220775, -0.10700002),
-                    Vec3::new(0.076120734, -0.114703014, -0.10700002),
-                    Vec3::new(0.050163373, -0.09719828, -0.10700002),
-                    Vec3::new(0.07612074, -0.11470301, -0.10700002),
-                    Vec3::new(0.1020781, -0.13220775, -0.10700002),
+                    Vec3::new(0.045858342, -0.13410479, -0.14700001),
+                    Vec3::new(0.038743485, -0.12983587, -0.14700001),
+                    Vec3::new(0.031628624, -0.12556696, -0.14700001),
+                    Vec3::new(0.024513766, -0.12129804, -0.14700001),
+                    Vec3::new(0.016800273, -0.13960254, -0.14700001),
+                    Vec3::new(0.015463241, -0.1475193, -0.14700001),
+                    Vec3::new(0.016409533, -0.15253721, -0.14700001),
+                    Vec3::new(0.018662963, -0.15581624, -0.14700001),
+                    Vec3::new(0.021805331, -0.1577653, -0.14700001),
+                    Vec3::new(0.025615111, -0.15851778, -0.14700001),
+                    Vec3::new(0.029963113, -0.15802298, -0.14700001),
+                    Vec3::new(0.034774512, -0.15598658, -0.14700001),
+                    Vec3::new(0.04002135, -0.1514692, -0.14700001),
+                    Vec3::new(0.045858342, -0.13410479, -0.14700001),
                 ]),
                 interpolation: Interpolation::Linear,
             },
@@ -408,13 +438,37 @@ impl JsonModel {
         animation.add_curve_to_target(
             AnimationTargetId::from_name(&name),
             VariableCurve {
-                keyframe_timestamps: vec![0.0, 0.083333336, 0.125, 0.16666667, 0.20833333],
+                keyframe_timestamps: vec![
+                    0.0,
+                    0.016666668,
+                    0.033333335,
+                    0.05,
+                    0.06666667,
+                    0.083333336,
+                    0.1,
+                    0.11666667,
+                    0.13333334,
+                    0.15,
+                    0.16666667,
+                    0.18333334,
+                    0.2,
+                    0.21666667,
+                ],
                 keyframes: Keyframes::Rotation(vec![
-                    Quat::from_xyzw(-0.60538566, 0.31365922, 0.32767585, 0.65402955),
-                    Quat::from_xyzw(-0.7988094, 0.3206745, 0.33568513, 0.3826055),
-                    Quat::from_xyzw(-0.86302054, 0.33542478, 0.37329403, 0.05776981),
-                    Quat::from_xyzw(-0.7988095, 0.32067442, 0.33568496, 0.38260534),
-                    Quat::from_xyzw(-0.60538566, 0.31365922, 0.32767585, 0.65402955),
+                    Quat::from_xyzw(0.013405943, 0.453133, 0.020592665, 0.8911042),
+                    Quat::from_xyzw(-0.11353387, 0.4639351, 0.036938243, 0.8777869),
+                    Quat::from_xyzw(-0.24070297, 0.4669857, 0.05293155, 0.84922594),
+                    Quat::from_xyzw(-0.3616851, 0.4621311, 0.06776566, 0.8068622),
+                    Quat::from_xyzw(-0.44845086, 0.45262963, 0.07820215, 0.76674813),
+                    Quat::from_xyzw(-0.5310297, 0.43890235, 0.087908566, 0.71947503),
+                    Quat::from_xyzw(-0.5313901, 0.4392143, 0.079550505, 0.7199911),
+                    Quat::from_xyzw(-0.53129196, 0.439573, 0.07118596, 0.72071975),
+                    Quat::from_xyzw(-0.52861947, 0.44036335, 0.06285859, 0.7229733),
+                    Quat::from_xyzw(-0.5177648, 0.44255105, 0.05464625, 0.73012465),
+                    Quat::from_xyzw(-0.48723018, 0.44772276, 0.046613112, 0.748317),
+                    Quat::from_xyzw(-0.41525686, 0.4570547, 0.038671818, 0.78559995),
+                    Quat::from_xyzw(-0.263162, 0.4663653, 0.030317979, 0.84399647),
+                    Quat::from_xyzw(0.013405943, 0.453133, 0.020592665, 0.8911042),
                 ]),
                 interpolation: Interpolation::Linear,
             },
@@ -422,15 +476,12 @@ impl JsonModel {
         animation.add_curve_to_target(
             AnimationTargetId::from_name(&name),
             VariableCurve {
-                keyframe_timestamps: vec![0.0, 0.083333336, 0.125, 0.16666667, 0.20833333],
+                keyframe_timestamps: vec![0.0, 0.21666667],
                 keyframes: Keyframes::Scale(vec![
-                    Vec3::new(0.07331951, 0.07331951, 0.07331952),
-                    Vec3::new(0.07331951, 0.07331951, 0.07331952),
-                    Vec3::new(0.07331951, 0.07331951, 0.07331951),
-                    Vec3::new(0.07331951, 0.07331951, 0.07331952),
-                    Vec3::new(0.07331951, 0.07331951, 0.07331952),
+                    Vec3::new(0.07331951, 0.07331951, 0.073319525),
+                    Vec3::new(0.07331951, 0.07331951, 0.073319525),
                 ]),
-                interpolation: Interpolation::Linear,
+                interpolation: Interpolation::Step,
             },
         );
         animation
@@ -469,7 +520,7 @@ fn transfer_animation_targets(
 // a panic. The models should preferably be loaded fully while loading the assets.
 //
 // Models that are loaded through the asset server need to have their animation graphs constructed
-// after the gltf has been loaded, as well as any animations that should be generated.
+// after the gltf has been loaded, as well as to add any animations that should be generated.
 fn construct_animations(
     mut models: ResMut<Models>,
     mut loading_models: ResMut<LoadingModels>,
