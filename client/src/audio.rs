@@ -1,4 +1,4 @@
-use bevy::{math::DVec3, prelude::*, render::primitives::Aabb};
+use bevy::{audio::Volume, math::DVec3, prelude::*, render::primitives::Aabb};
 use fmc_protocol::messages;
 
 use crate::{
@@ -40,7 +40,10 @@ fn play_sounds(
             }))
             .insert(AudioBundle {
                 source: asset_server.load(AUDIO_PATH.to_owned() + &sound.sound),
-                settings: PlaybackSettings::DESPAWN.with_spatial(sound.position.is_some()),
+                settings: PlaybackSettings::DESPAWN
+                    .with_spatial(sound.position.is_some())
+                    .with_speed(sound.speed)
+                    .with_volume(Volume::new(sound.volume.clamp(0.0, 1.0))),
             });
     }
 }
@@ -93,9 +96,9 @@ fn play_walking_sound(
     };
 
     let blocks = Blocks::get();
-    let walking_sounds = blocks.get_config(block_id).walking_sounds();
+    let step_sounds = blocks.get_config(block_id).step_sounds();
 
-    if walking_sounds.len() == 0 {
+    if step_sounds.len() == 0 {
         return;
     }
 
@@ -103,12 +106,12 @@ fn play_walking_sound(
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as usize
-        % walking_sounds.len().max(1);
+        % step_sounds.len();
 
     // Don't play the same sound twice
     if index == *last_sound_index {
         index += 1;
-        index = index % walking_sounds.len().max(1);
+        index = index % step_sounds.len().max(1);
     }
 
     *last_sound_index = index;
@@ -119,7 +122,9 @@ fn play_walking_sound(
             Transform::from_translation(global_transform.translation() + Vec3::from(aabb.center)),
         ))
         .insert(AudioBundle {
-            source: asset_server.load(AUDIO_PATH.to_owned() + &walking_sounds[index]),
-            settings: PlaybackSettings::DESPAWN.with_spatial(false),
+            source: asset_server.load(AUDIO_PATH.to_owned() + &step_sounds[index]),
+            settings: PlaybackSettings::DESPAWN
+                .with_spatial(false)
+                .with_volume(Volume::new(0.1)),
         });
 }

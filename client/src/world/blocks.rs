@@ -488,7 +488,7 @@ pub struct Cube {
     // Fog rendered if the camera is inside the bounds of the cube.
     pub fog_settings: Option<FogSettings>,
     // Sounds played when walked on or in (random pick)
-    sound: Vec<String>,
+    sound: Sound,
     // Light emitted by the block
     light: u8,
     // How the block can be placed
@@ -512,7 +512,7 @@ pub struct BlockModel {
     // interaction, or it should count as trying to place a block.
     interactable: bool,
     // Sounds played when walked on or in (random pick)
-    sound: Vec<String>,
+    sound: Sound,
     // Light emitted by the block
     light: u8,
     // How the block can be placed
@@ -613,11 +613,11 @@ impl Block {
         }
     }
 
-    pub fn walking_sounds(&self) -> &Vec<String> {
+    pub fn step_sounds(&self) -> &Vec<String> {
         // Random index, don't know if correct
         match self {
-            Block::Cube(c) => &c.sound,
-            Block::Model(m) => &m.sound,
+            Block::Cube(c) => &c.sound.step,
+            Block::Model(m) => &m.sound.step,
         }
     }
 }
@@ -728,7 +728,7 @@ enum BlockConfig {
         fog: Option<FogJson>,
         /// Sounds played when walking on/in block
         #[serde(default)]
-        sound: Vec<String>,
+        sound: Sound,
         /// Block placement rules
         #[serde(default)]
         placement: BlockPlacement,
@@ -745,7 +745,7 @@ enum BlockConfig {
         interactable: bool,
         /// Sounds played when walking on/in block
         #[serde(default)]
-        sound: Vec<String>,
+        sound: Sound,
         /// Light emitted by the block
         #[serde(default)]
         light: u8,
@@ -789,6 +789,12 @@ impl BlockConfig {
 
         return Ok(config);
     }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct Sound {
+    #[serde(default)]
+    pub step: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
