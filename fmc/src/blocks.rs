@@ -20,6 +20,7 @@ use crate::{
     models::{ModelId, Models},
     physics::{shapes::Aabb, Collider},
     prelude::*,
+    utils::Rng,
     world::chunk::Chunk,
 };
 
@@ -185,6 +186,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
                 placement: block_config_json.placement,
                 hitbox,
                 particle_textures,
+                sound: block_config_json.sound,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -435,6 +437,73 @@ struct BlockFaceTextures {
 }
 
 #[derive(Debug, Deserialize)]
+struct AabbJson {
+    min: DVec3,
+    max: DVec3,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ColliderJson {
+    Aabb(AabbJson),
+    Compound(Vec<AabbJson>),
+}
+
+impl ColliderJson {
+    fn to_collider(&self) -> Collider {
+        match self {
+            ColliderJson::Aabb(aabb) => Collider::Aabb(Aabb::from_min_max(aabb.min, aabb.max)),
+            ColliderJson::Compound(list) => Collider::Compound(
+                list.into_iter()
+                    .map(|aabb| Aabb::from_min_max(aabb.min, aabb.max))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockVerticesJson {
+    vertices: [[f32; 3]; 4],
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct Sounds {
+    #[serde(default)]
+    step: Vec<String>,
+    #[serde(default)]
+    hit: Vec<String>,
+    #[serde(default)]
+    destroy: Vec<String>,
+}
+
+impl Sounds {
+    pub fn step(&self, rng: &mut Rng) -> Option<&str> {
+        if self.step.len() == 0 {
+            return None;
+        }
+
+        Some(&self.step[rng.next_u32() as usize % self.step.len()])
+    }
+
+    pub fn hit(&self, rng: &mut Rng) -> Option<&str> {
+        if self.hit.len() == 0 {
+            return None;
+        }
+
+        Some(&self.hit[rng.next_u32() as usize % self.hit.len()])
+    }
+
+    pub fn destroy(&self, rng: &mut Rng) -> Option<&str> {
+        if self.destroy.len() == 0 {
+            return None;
+        }
+
+        Some(&self.destroy[rng.next_u32() as usize % self.destroy.len()])
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct BlockConfigJson {
     // Name of the block
     name: String,
@@ -466,37 +535,8 @@ struct BlockConfigJson {
     // Texture used for particle when brekaing the block. Relative to /textures/
     // If not supplied it will be derived from 'faces' if that is supplied.
     particle_texture: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AabbJson {
-    min: DVec3,
-    max: DVec3,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum ColliderJson {
-    Aabb(AabbJson),
-    Compound(Vec<AabbJson>),
-}
-
-impl ColliderJson {
-    fn to_collider(&self) -> Collider {
-        match self {
-            ColliderJson::Aabb(aabb) => Collider::Aabb(Aabb::from_min_max(aabb.min, aabb.max)),
-            ColliderJson::Compound(list) => Collider::Compound(
-                list.into_iter()
-                    .map(|aabb| Aabb::from_min_max(aabb.min, aabb.max))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockVerticesJson {
-    vertices: [[f32; 3]; 4],
+    #[serde(default)]
+    sound: Sounds,
 }
 
 impl BlockConfigJson {
@@ -552,12 +592,10 @@ impl BlockConfigJson {
 }
 
 // TODO: 'hardness' 'tools' 'drop' 'particle_textures' are too specific. They should be handled
-// outside of library. Maybe something like: this lib reads block configs and stores them in
-// 'Blocks'. The game implementor creates their own BlockConfig struct with the values they need.
-// Wait until this lib loads, then load their own, and wrap them together. Maybe have a separate
-// crate that wraps the entire fmc library to shadow 'Blocks' so you can have all properties
-// combined.
-#[derive(Debug, Clone)]
+// outside of library. Add a new field 'properties' with serde(flatten) on it to capture everything
+// not needed. The server implementor should then make their own 'Blocks' and 'BlockConfig'. Parse
+// the 'properties' field into it's BlockConfig and shadow Blocks.
+#[derive(Debug)]
 pub struct BlockConfig {
     /// Name of the block
     pub name: String,
@@ -565,13 +603,16 @@ pub struct BlockConfig {
     pub model: Option<ModelId>,
     /// The friction or drag.
     pub friction: Friction,
+    // TODO: Not needed
     /// How long it takes to break the block without a tool, None if the block should not be
     /// breakable. e.g. water, air
     pub hardness: Option<f32>,
     /// Makes it possible to replace the block by placing another in its position.
     pub replaceable: bool,
+    // TODO: Not needed
     // Which tool categories will break this block faster.
     pub tools: HashSet<String>,
+    // TODO: Not needed
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
     // The rendering material for the block, if it uses one.
@@ -580,8 +621,12 @@ pub struct BlockConfig {
     pub hitbox: Option<Collider>,
     /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
-    ///
+    // TODO: Not needed
+    /// Texture path for each face used for particles when breaking blocks
     particle_textures: Option<BlockFaceTextures>,
+    // TODO: Not needed
+    /// Sound files associated with the block
+    pub sound: Sounds,
 }
 
 impl BlockConfig {

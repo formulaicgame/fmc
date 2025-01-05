@@ -96,10 +96,10 @@ impl Chunk {
     }
 
     // TODO: This is expensive and needs to be recomputed every time a block changes. I don't think
-    // it is tenable with many players.
-    // Which blocks have been 'visited'(blocks that are transparent) can be cached as a
-    // bitvec(512 bytes). I don't know how to do it, but you could probably use this to skip all
-    // work in most cases by deducing that the changed block doesn't connect two regions.
+    // it is tenable with many players. Best way I can think of is to color the cells visited, then
+    // when changing a block, check if the adjacent blocks have different colors and merge them.
+    // Breaking the color limit is no big deal, an inaccurate result will only result in an
+    // extra chunk load or two.
     pub(super) fn check_visible_faces(&mut self) {
         let blocks = Blocks::get();
 

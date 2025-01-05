@@ -251,10 +251,10 @@ impl ItemStack {
             // Take out the requested amount if that many are available
             let to_transfer = self.take(amount);
             // Add as much as other can hold
-            let leftover = other.add(to_transfer);
+            let mut leftover = other.add(to_transfer);
             // Transfer what's left back
             if !leftover.is_empty() {
-                self.add(leftover);
+                leftover.transfer_to(self, leftover.size());
             }
         } else if other.is_empty() {
             *other = self.take(amount);
