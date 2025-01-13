@@ -26,8 +26,8 @@ use crate::{
 
 pub type BlockId = u16;
 
-pub const BLOCK_CONFIG_PATH: &str = "./resources/client/blocks/";
-const BLOCK_MATERIAL_PATH: &str = "./resources/client/materials/";
+pub const BLOCK_CONFIG_PATH: &str = "./assets/client/blocks/";
+const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/";
 
 // TODO: Regretting this, just make it a resource with an Arc inside so it can be cloned for
 // terrain generation.
@@ -211,7 +211,7 @@ fn move_blocks_resource_to_static(mut commands: Commands, mut blocks: ResMut<Blo
     commands.remove_resource::<Blocks>();
 }
 
-// TODO: Loading needs to be done when validating the resources too. Store them?
+// TODO: Loading needs to be done when validating the assets too. Store them?
 fn load_block_materials() -> HashMap<String, BlockMaterial> {
     let mut materials = HashMap::new();
 

@@ -16,7 +16,7 @@ use crate::{
 
 // TODO use super::world_map::chunk_manager::ChunkUnloadEvent;
 
-pub const MODEL_PATH: &str = "./resources/client/textures/models/";
+pub const MODEL_PATH: &str = "./assets/client/textures/models/";
 
 // Used to identify the asset of a model.
 pub type ModelId = u32;

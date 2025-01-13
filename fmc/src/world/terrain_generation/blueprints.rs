@@ -12,7 +12,7 @@ use crate::{
 
 use super::{Surface, TerrainFeature};
 
-pub const BLUEPRINT_PATH: &str = "./resources/server/blueprints/";
+pub const BLUEPRINT_PATH: &str = "./assets/server/blueprints/";
 
 // Blueprints contain instructions for placing terrain features.
 // Many features share the same layout, and even though blueprints are mainly meant to compose

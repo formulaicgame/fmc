@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub type ItemId = u32;
-pub const ITEM_CONFIG_PATH: &str = "resources/client/items/configurations/";
+pub const ITEM_CONFIG_PATH: &str = "assets/client/items/configurations/";
 
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {

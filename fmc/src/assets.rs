@@ -18,14 +18,14 @@ pub struct Assets {
 fn make_asset_tarball(mut commands: Commands) {
     let possibly_changed_assets = build_asset_archive();
 
-    if let Ok(saved_assets) = std::fs::read("resources/assets.tar.zstd") {
+    if let Ok(saved_assets) = std::fs::read("assets/assets.tar.zstd") {
         if hash(&saved_assets) != hash(&possibly_changed_assets) {
             // Tarball doesn't match the asset directory (something added since last run)
-            std::fs::write("resources/assets.tar.zstd", &possibly_changed_assets).unwrap();
+            std::fs::write("assets/assets.tar.zstd", &possibly_changed_assets).unwrap();
         }
     } else {
         // Assets haven't been saved to a tarball yet
-        std::fs::write("resources/assets.tar.zstd", &possibly_changed_assets).unwrap();
+        std::fs::write("assets/assets.tar.zstd", &possibly_changed_assets).unwrap();
     }
 
     commands.insert_resource(Assets {
@@ -43,7 +43,7 @@ fn hash(data: &[u8]) -> u64 {
 /// Creates an archive from all the assets in the client assets directory
 fn build_asset_archive() -> Vec<u8> {
     let mut archive = tar::Builder::new(Vec::new());
-    archive.append_dir_all(".", "resources/client").unwrap();
+    archive.append_dir_all(".", "assets/client").unwrap();
 
     let archive = archive.into_inner().unwrap();
 
