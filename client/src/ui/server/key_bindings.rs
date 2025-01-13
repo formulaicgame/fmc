@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
-        gui::GuiState,
+        client::GuiState,
         server::{InterfaceToggleEvent, Interfaces},
         UiState,
     },

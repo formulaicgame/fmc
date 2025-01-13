@@ -9,9 +9,10 @@ use bevy::{
 // sent by the server that's constructed at runtime, and the 'gui' system which handles 'client' ui
 // e.g. the main menu, the server list and the pause menu.
 
-mod gui;
-// Hand/equipped item is a special type of interface.
+// TODO: This should not be part of the ui module, remnant from not wanting to expose the server module.
 mod hand;
+
+mod client;
 pub mod server;
 // Common widgets used by both ui systems.
 mod widgets;
@@ -26,7 +27,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             widgets::WidgetPlugin,
-            gui::GuiPlugin,
+            client::GuiPlugin,
             hand::HandPlugin,
             server::ServerInterfacesPlugin,
         ))
@@ -35,7 +36,7 @@ impl Plugin for UiPlugin {
             Update,
             (
                 scale_ui.run_if(on_event::<WindowResized>()),
-                change_ui_state.run_if(state_changed::<gui::GuiState>),
+                change_ui_state.run_if(state_changed::<client::GuiState>),
                 cursor_visibiltiy.run_if(resource_changed::<CursorVisibility>),
             ),
         );
@@ -99,10 +100,10 @@ fn scale_ui(
 
 fn change_ui_state(
     mut ui_state: ResMut<NextState<UiState>>,
-    gui_state: Res<State<gui::GuiState>>,
+    gui_state: Res<State<client::GuiState>>,
     mut cursor_visibility: ResMut<CursorVisibility>,
 ) {
-    if *gui_state.get() == gui::GuiState::None {
+    if *gui_state.get() == client::GuiState::None {
         cursor_visibility.gui = false;
         ui_state.set(UiState::ServerInterfaces);
     } else {
