@@ -1,7 +1,8 @@
-use fmc_beta::{
-    // The 'fmc' module is the base layer of the game. It takes care of things like chunk management,
-    // networking, physics, etc... Things that are specific to the game are found in the 'fmc_beta'
-    // module, mobs, items and the like. Check out the docs to see what is available.
+use fmc_vanilla::{
+    // The 'fmc' module is the base layer of the game. It takes care of things like chunk
+    // management, networking, physics, etc... Things that are specific to the game are found in
+    // the 'fmc_vanilla' module, mobs, items and the like. Check out the docs to see what is
+    // available.
     fmc::{
         networking::Server,
         players::{Camera, Player},

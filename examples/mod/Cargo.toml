@@ -1,13 +1,13 @@
 [package]
-name = "example_mod"
-version = "0.1.0"
+name = "fmc_example_mod"
+license = "MIT OR Apache-2.0"
+description = "fmc example mod"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
-# TODO: Use cargo dependency when published
-#
 # Depend on the game you want to mod
-fmc_beta = { git = "https://github.com/formulaicgame/fmc_beta" }
+fmc_vanilla = { version = "0.0.1" }
 
 # Enable high optimizations for dependencies
 [profile.dev.package."*"]

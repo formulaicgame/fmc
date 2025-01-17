@@ -1,5 +1,5 @@
-use example_mod;
-use fmc_beta::prelude::*;
+use fmc_example_mod;
+use fmc_vanilla::prelude::*;
 
 // This provides a convenient way to test the mod. The content is in lib.rs
 
@@ -11,7 +11,7 @@ fn main() {
     }
 
     App::new()
-        .add_plugins(fmc_beta::DefaultPlugins)
-        .add_plugins(example_mod::Mod)
+        .add_plugins(fmc_vanilla::DefaultPlugins)
+        .add_plugins(fmc_example_mod::Mod)
         .run();
 }

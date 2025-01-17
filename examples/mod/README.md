@@ -7,6 +7,6 @@ If you publish your mod to crates.io please show consideration for the registry 
 
 ## Assets
 You can add your own assets to the assets folder, see the layout in
-[fmc_beta](https://github.com/formulaicgame/FMC-Beta/tree/master/assets) for how to organize them.  
+[fmc_vanilla](https://github.com/formulaicgame/FMC-Vanilla/tree/master/assets) for how to organize them.  
 They will automatically be included in the game when compiled.
 
