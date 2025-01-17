@@ -326,16 +326,17 @@ async fn build_mesh(
                                 None
                             };
 
-                            // TODO: Water surfaces under solid blocks will be 0 light level. Quads
-                            // need to be able to set the offset directly so that they can take
-                            // the light level of the block they are from perhaps.
-                            let light = match quad.light_face.rotate(block_state.rotation()) {
-                                BlockFace::Right => light_chunk.get_light(x + 1, y, z),
-                                BlockFace::Left => light_chunk.get_light(x - 1, y, z),
-                                BlockFace::Front => light_chunk.get_light(x, y, z + 1),
-                                BlockFace::Back => light_chunk.get_light(x, y, z - 1),
-                                BlockFace::Top => light_chunk.get_light(x, y + 1, z),
-                                BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
+                            let light = if block_config.is_transparent() {
+                                light_chunk.get_light(x, y, z)
+                            } else {
+                                match quad.light_face.rotate(block_state.rotation()) {
+                                    BlockFace::Right => light_chunk.get_light(x + 1, y, z),
+                                    BlockFace::Left => light_chunk.get_light(x - 1, y, z),
+                                    BlockFace::Front => light_chunk.get_light(x, y, z + 1),
+                                    BlockFace::Back => light_chunk.get_light(x, y, z - 1),
+                                    BlockFace::Top => light_chunk.get_light(x, y + 1, z),
+                                    BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
+                                }
                             };
 
                             builder.add_face(
@@ -347,7 +348,7 @@ async fn build_mesh(
                             );
                         }
                     }
-                    Block::Model(model) => {
+                    Block::Model(_model) => {
                         continue;
                     }
                 }
@@ -369,7 +370,7 @@ async fn build_mesh(
     return meshes;
 }
 
-// TODO: This used to used to store 2d arrays for the surrounding chunks, but changed to Chunk's to
+// TODO: This used to store 2d arrays for the surrounding chunks, but changed to Chunk's to
 // have access to block state while rendering. After changing though it looks to me like it renders
 // slower (not actually sure). How can this be? Constructing the arrays must surely be way more
 // expensive! Maybe it's because of having to map the option every time it's accessing a block.
@@ -377,7 +378,7 @@ async fn build_mesh(
 // vecs for chunks that don't exist.
 // See commit 'b5d40b1' for array layout
 //
-/// Larger chunk containing both the chunks and the immediate blocks around it.
+/// Larger chunk containing both the chunk and the immediate blocks around it.
 pub struct ExpandedChunk {
     pub center: Chunk,
     pub top: Option<Chunk>,
