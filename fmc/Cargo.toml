@@ -14,7 +14,7 @@ bevy = { version = "0.14.2", default-features=false, features = ["file_watcher",
 
 #fmc_protocol = "0.1.1" 
 fmc_protocol = { git = "https://github.com/formulaicgame/fmc_protocol" }
-fmc_noise = "0.2.1" 
+fmc_noise = "0.3.0" 
 
 gltf = "1.4.1"
 tar = "0.4.40"
