@@ -41,16 +41,23 @@ impl ServerBuildConfig {
 
         let mut command = cargo_command();
         command.args(["build", "--release"]);
-        command.current_dir("./server");
+        command.current_dir("./build");
         if command.status().is_ok() {
-            std::fs::copy("./server/target/release/server", ".").unwrap();
+            let mut exe_path = PathBuf::from("build/target/release/server");
+            exe_path.set_extension(std::env::consts::EXE_EXTENSION);
+            std::fs::copy(&exe_path, exe_path.file_name().unwrap()).unwrap();
         }
+
+        println!(
+            "Delete the 'build' folder if you don't intend to change the server.\n\
+            Keeping it will make the build go faster, but the folder is huge(~1-3Gb)."
+        )
     }
 
     fn create_cargo_project(&self) {
         let main_rs = format!(
             r#"
-use game::bevy::prelude::*;
+use game::prelude::*;
 
 fn main() {{
     App::new()
@@ -63,10 +70,9 @@ fn main() {{
 "#,
             self.mods
                 .iter()
-                .map(|m| m.name())
-                .collect::<Vec<&str>>()
-                .join("::Mod,\n")
-                + "::Mod\n"
+                .map(|m| format!("{}::Mod,", m.name()))
+                .collect::<Vec<String>>()
+                .join("\n")
         );
 
         let mut cargo_toml = format!(
@@ -77,28 +83,28 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-{} = {{ version = "{}", package = "game" }}
+game = {{ version = "{}", package = "{}" }}
 "#,
-            &self.game.name(),
             &self.game.version(),
+            &self.game.name(),
         );
 
         for dependency in &self.mods {
             cargo_toml += &format!("{} = \"{}\"\n", dependency.name(), dependency.version());
         }
 
-        if let Err(e) = std::fs::create_dir_all("./server/src") {
-            println!("Could not create server compiltation folder, error: {}", e);
+        if let Err(e) = std::fs::create_dir_all("./build/src") {
+            println!("Could not create build directory, error: {}", e);
             return;
         }
 
-        if let Err(e) = std::fs::write("./server/src/main.rs", main_rs) {
-            println!("Could construct server directory, error: {}", e);
+        if let Err(e) = std::fs::write("./build/src/main.rs", main_rs) {
+            println!("Failed while writing to build directory, error: {}", e);
             return;
         }
 
-        if let Err(e) = std::fs::write("./server/Cargo.toml", cargo_toml) {
-            println!("Could construct server directory, error: {}", e);
+        if let Err(e) = std::fs::write("./build/Cargo.toml", cargo_toml) {
+            println!("Failed while writin to build directory, error: {}", e);
             return;
         }
     }
@@ -106,8 +112,9 @@ edition = "2024"
 
 fn cargo_command() -> std::process::Command {
     let data_dir = data_dir().unwrap();
-    let mut command = std::process::Command::new(data_dir.join("fmc/rust/bin/cargo"));
-    command.env("CARGO_HOME", ".");
+    let mut command =
+        std::process::Command::new(data_dir.join("fmc/rust/bin/cargo").canonicalize().unwrap());
+    command.env("CARGO_HOME", data_dir);
 
     command
 }
@@ -115,7 +122,7 @@ fn cargo_command() -> std::process::Command {
 // TODO: Replace when ready for xdg
 fn data_dir() -> Option<PathBuf> {
     //dirs::data_dir()
-    Some(PathBuf::from("./server"))
+    Some(PathBuf::from("./build").canonicalize().unwrap())
 }
 
 // Returns true if a rust toolchain is available
