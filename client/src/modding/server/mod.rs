@@ -90,7 +90,7 @@ game = {{ version = "{}", package = "{}" }}
         );
 
         for dependency in &self.mods {
-            cargo_toml += &format!("{} = \"{}\"\n", dependency.name(), dependency.version());
+            cargo_toml += &format!("{} = {}\n", dependency.name(), dependency.version());
         }
 
         if let Err(e) = std::fs::create_dir_all("./build/src") {
@@ -120,9 +120,10 @@ fn cargo_command() -> std::process::Command {
 }
 
 // TODO: Replace when ready for xdg
+#[track_caller]
 fn data_dir() -> Option<PathBuf> {
     //dirs::data_dir()
-    Some(PathBuf::from("./build").canonicalize().unwrap())
+    Some(PathBuf::from("./build"))
 }
 
 // Returns true if a rust toolchain is available

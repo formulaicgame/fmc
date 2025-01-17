@@ -53,8 +53,10 @@ fn create_server_template(path: &str) {
 version = 1.0.0
 
 [mods]
-# examples
-# mod_name = 1.0.0 # mod from crates.io
+# examples:
+# mod from crates.io
+# mod_name = 1.0.0
+# mod from github
 # mod_name = https://github.com/modder/mod_name
 "#;
 
@@ -131,9 +133,9 @@ fn parse_server_build_config(path: &str) -> Result<ServerBuildConfig, String> {
 
         if mod_section {
             let spec = if !validate_version(value) || !value.starts_with("https://") {
-                format!("{{ version = {value} }}")
+                format!("{{ version = \"{value}\" }}")
             } else if value.starts_with("https://") {
-                format!("{{ git = {value} }}")
+                format!("{{ git = \"{value}\" }}")
             } else {
                 return Err(format!("line {n}: invalid spec {value}, must be either a version e.g. '1.0.0' or a git url e.g. 'https://github.com/..."));
             };
