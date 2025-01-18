@@ -160,12 +160,12 @@ fn get_rust() {
         _ => return,
     };
 
-    let response = match reqwest::blocking::get(url) {
+    let response = match ureq::get(url).call() {
         Ok(r) => r,
         Err(_) => return,
     };
 
-    let bytes = match response.bytes() {
+    let bytes = match response.into_string() {
         Ok(b) => b,
         Err(_) => return,
     };

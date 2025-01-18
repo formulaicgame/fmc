@@ -9,7 +9,6 @@ use bevy::{
     prelude::*,
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
 };
-use concurrent_queue::ConcurrentQueue;
 use fmc_protocol::{messages, MessageType, ServerBound};
 use serde::Serialize;
 
@@ -65,12 +64,32 @@ impl Plugin for ClientPlugin {
     }
 }
 
+struct ConcurrentQueue {
+    sender: crossbeam::Sender<String>,
+    receiver: crossbeam::Receiver<String>,
+}
+
+impl ConcurrentQueue {
+    fn new() -> Self {
+        let (sender, receiver) = crossbeam::bounded(1);
+        Self { sender, receiver }
+    }
+
+    fn push(&self, value: String) -> Result<(), String> {
+        self.sender.try_send(value).map_err(|e| e.into_inner())
+    }
+
+    fn pop(&self) -> Result<String, ()> {
+        self.receiver.try_recv().map_err(|e| ())
+    }
+}
+
 // TODO: Implement the buffers as some Read/Write impl it's too much to keep track of.
 #[derive(Resource)]
 pub struct NetworkClient {
     connection: Option<TcpStream>,
     connection_task: Option<Task<std::io::Result<TcpStream>>>,
-    disconnect_events: ConcurrentQueue<String>,
+    disconnect_events: ConcurrentQueue,
     // buffer for connection reads, compressed
     read_buffer: Vec<u8>,
     read_cursor: usize,
@@ -86,7 +105,7 @@ impl NetworkClient {
         Self {
             connection: None,
             connection_task: None,
-            disconnect_events: ConcurrentQueue::bounded(1),
+            disconnect_events: ConcurrentQueue::new(),
             read_buffer: vec![0; 1024 * 1024],
             read_cursor: 0,
             read_bytes: 0,

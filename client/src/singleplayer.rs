@@ -1,6 +1,6 @@
 use std::process::{Child, Stdio};
 
-use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
+use bevy::prelude::*;
 use fmc_protocol::messages;
 
 use crate::{game_state::GameState, networking::NetworkClient};
@@ -10,7 +10,6 @@ impl Plugin for SinglePlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LaunchSinglePlayer>()
             .insert_resource(ServerProcess(None))
-            .add_systems(Startup, download_game)
             .add_systems(
                 Update,
                 (
@@ -19,40 +18,6 @@ impl Plugin for SinglePlayerPlugin {
                 ),
             );
     }
-}
-
-// Temporary hard link to game until proper game hub
-fn download_game() {
-    let server_path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
-    if std::path::Path::new(&server_path).exists() {
-        return;
-    }
-
-    AsyncComputeTaskPool::get().spawn(async {
-        let url = match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("linux", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-unknown-linux-gnu",
-            ("windows", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-pc-windows-msvc.exe",
-            ("macos", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-apple-darwin",
-            ("macos", "aarch64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/aarch64-apple-darwin",
-            _ => return
-        };
-        let response = match reqwest::blocking::get(url) {
-            Ok(r) => r,
-            Err(_) => return
-        };
-        let bytes = match response.bytes() {
-            Ok(b) => b,
-            Err(_) => return
-        };
-
-        std::fs::create_dir("fmc_server").ok();
-        let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
-        std::fs::write(&path, bytes).ok();
-
-        if std::env::consts::FAMILY == "unix" {
-            std::process::Command::new("chmod").arg("+x").arg(&path).output().ok();
-        }
-    }).detach();
 }
 
 #[derive(Event)]

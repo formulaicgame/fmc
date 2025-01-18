@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::DARK_GRAY, ecs::system::EntityCommands, prelude::*};
+use bevy::{color::palettes::css::DIM_GRAY, ecs::system::EntityCommands, prelude::*};
 
 use super::DEFAULT_FONT_HANDLE;
 
@@ -29,7 +29,7 @@ pub trait Widgets {
     fn spawn_button<'a>(&'a mut self, width: f32, label: &str) -> EntityCommands<'a>;
     /// A rectangular textbox the user can input text into
     fn spawn_textbox<'a>(&'a mut self, width: f32, placeholder_text: &str) -> EntityCommands<'a>;
-    /// Spawns text with shadow, the text can be changed by querying for ShadowText
+    /// Spawns text with shadow
     fn spawn_text<'a>(&'a mut self, text: &str) -> EntityCommands<'a>;
 }
 
@@ -292,11 +292,12 @@ fn add_text_shadow(
                 }
             }
         };
+
         let mut shadow_text = text.clone();
         shadow_text
             .sections
             .iter_mut()
-            .for_each(|section| section.style.color = DARK_GRAY.into());
+            .for_each(|section| section.style.color = DIM_GRAY.into());
         let shadow_text_entity = commands
             .spawn(TextBundle {
                 text: shadow_text,
@@ -321,11 +322,14 @@ fn add_text_shadow(
 }
 
 fn update_text_shadow(
-    text_query: Query<(Ref<Text>, &TextShadow)>,
-    mut shadow_text_query: Query<&mut Text, Without<TextShadow>>,
+    text_query: Query<
+        (Ref<Text>, &Visibility, &TextShadow),
+        Or<(Changed<Visibility>, Changed<Text>)>,
+    >,
+    mut shadow_text_query: Query<(&mut Text, &mut Visibility), Without<TextShadow>>,
 ) {
-    for (text, shadow) in text_query.iter() {
-        if text.is_added() || !text.is_changed() {
+    for (text, visibility, shadow) in text_query.iter() {
+        if text.is_added() {
             continue;
         }
 
@@ -333,8 +337,10 @@ fn update_text_shadow(
         new_shadow_text
             .sections
             .iter_mut()
-            .for_each(|section| section.style.color = DARK_GRAY.into());
-        let mut shadow_text = shadow_text_query.get_mut(shadow.shadow_entity).unwrap();
+            .for_each(|section| section.style.color = DIM_GRAY.into());
+        let (mut shadow_text, mut shadow_visibility) =
+            shadow_text_query.get_mut(shadow.shadow_entity).unwrap();
         *shadow_text = new_shadow_text;
+        *shadow_visibility = *visibility;
     }
 }
