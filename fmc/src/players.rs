@@ -222,7 +222,7 @@ fn find_target(
 
         let chunk_position =
             utils::world_position_to_chunk_position(transform.translation.floor().as_ivec3());
-        // TODO: When ChunkPosition is implemented, this type of iteration should have its' own
+        // TODO: When ChunkPosition is implemented, this type of iteration should have its own
         // function.
         for x_offset in [IVec3::X, IVec3::NEG_X, IVec3::ZERO] {
             for y_offset in [IVec3::Y, IVec3::NEG_Y, IVec3::ZERO] {
@@ -238,7 +238,10 @@ fn find_target(
                         model_query.iter_many(model_entities)
                     {
                         let new_target = if let Some(block_position) = maybe_block {
-                            let block_id = world_map.get_block(block_position.0).unwrap();
+                            let Some(block_id) = world_map.get_block(block_position.0) else {
+                                continue;
+                            };
+
                             let block_config = blocks.get_config(&block_id);
 
                             let Some(hitbox) = &block_config.hitbox else {
@@ -317,7 +320,8 @@ fn find_target(
                 hitbox.ray_intersection(&block_transform, &camera_transform)
             {
                 // TODO: it will add blocks with entities twice if the model is hit
-                let block_index = utils::world_position_to_block_index(block_position);
+                let (chunk_position, block_index) =
+                    utils::world_position_to_chunk_position_and_block_index(block_position);
                 let entity = world_map
                     .get_chunk(&chunk_position)
                     .map(|chunk| chunk.block_entities.get(&block_index).cloned())

@@ -450,9 +450,7 @@ fn handle_chunk_loading_tasks(
                             block_position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
                         );
                         if let Some(mut side_transform) = block_config.placement.side_transform {
-                            if let Some(block_state) =
-                                chunk.block_state.get(&index).cloned().map(BlockState)
-                            {
+                            if let Some(block_state) = chunk.get_block_state(&index) {
                                 if let Some(rotation) = block_state.rotation() {
                                     side_transform.rotate_around(DVec3::ZERO, rotation.as_quat());
                                 }

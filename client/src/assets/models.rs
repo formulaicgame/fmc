@@ -2,10 +2,7 @@ use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
     gltf::{Gltf, GltfMesh, GltfPrimitive},
     prelude::*,
-    render::{
-        mesh::VertexAttributeValues, render_asset::RenderAssetUsages,
-        render_resource::PrimitiveTopology,
-    },
+    render::{render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
     utils::HashMap,
 };
 

@@ -156,7 +156,7 @@ impl Items {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Item {
     /// Id assigned to this item type, can be used to lookup properties specific to the item type.
     pub id: ItemId,

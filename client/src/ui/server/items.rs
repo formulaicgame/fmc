@@ -206,7 +206,7 @@ impl ItemStack {
     /// Move items from this stack. If this stack already contains items, the stack's items need to
     /// match, otherwise they will be swapped.
     #[track_caller]
-    pub fn transfer(&mut self, other: &mut ItemStack, mut amount: u32) -> u32 {
+    pub fn transfer_to(&mut self, other: &mut ItemStack, mut amount: u32) -> u32 {
         if self.is_empty() {
             panic!("Tried to transfer from a stack that is empty, this should be asserted by the caller");
         } else if &self.item == &other.item {
@@ -534,7 +534,7 @@ fn left_click_item_box(
 
                 let transfered = item_box
                     .item_stack
-                    .transfer(&mut cursor_box.item_stack, item_config.stack_size);
+                    .transfer_to(&mut cursor_box.item_stack, item_config.stack_size);
 
                 net.send_message(messages::InterfaceInteraction::TakeItem {
                     interface_path: interface_node.path.clone(),
@@ -553,7 +553,7 @@ fn left_click_item_box(
                 let size = cursor_box.item_stack.size;
                 let transfered = cursor_box
                     .item_stack
-                    .transfer(&mut item_box.item_stack, size);
+                    .transfer_to(&mut item_box.item_stack, size);
 
                 net.send_message(messages::InterfaceInteraction::PlaceItem {
                     interface_path: interface_node.path.clone(),
@@ -628,13 +628,13 @@ fn right_click_item_box(
             let size = item_box.item_stack.size;
             item_box
                 .item_stack
-                .transfer(&mut cursor_box.item_stack, size)
+                .transfer_to(&mut cursor_box.item_stack, size)
         } else {
             // If even, take half, if odd take half + 1
             let size = (item_box.item_stack.size + 1) / 2;
             item_box
                 .item_stack
-                .transfer(&mut cursor_box.item_stack, size)
+                .transfer_to(&mut cursor_box.item_stack, size)
         };
 
         net.send_message(messages::InterfaceInteraction::TakeItem {
@@ -655,7 +655,7 @@ fn right_click_item_box(
             let size = item_box.item_stack.size;
             let transfered = item_box
                 .item_stack
-                .transfer(&mut cursor_box.item_stack, size);
+                .transfer_to(&mut cursor_box.item_stack, size);
 
             net.send_message(messages::InterfaceInteraction::TakeItem {
                 interface_path: interface_node.path.clone(),
@@ -667,7 +667,9 @@ fn right_click_item_box(
                 return;
             }
 
-            let transfered = cursor_box.item_stack.transfer(&mut item_box.item_stack, 1);
+            let transfered = cursor_box
+                .item_stack
+                .transfer_to(&mut item_box.item_stack, 1);
 
             net.send_message(messages::InterfaceInteraction::PlaceItem {
                 interface_path: interface_node.path.clone(),
@@ -877,7 +879,7 @@ fn return_cursor_item(
                     if item_box.item_stack.item == cursor_box.item_stack.item {
                         let transfered = item_box
                             .item_stack
-                            .transfer(&mut cursor_box.item_stack, u32::MAX);
+                            .transfer_to(&mut cursor_box.item_stack, u32::MAX);
                         net.send_message(messages::InterfaceInteraction::PlaceItem {
                             interface_path: interface_node.path.clone(),
                             index: item_box.index as u32,
@@ -897,7 +899,7 @@ fn return_cursor_item(
                     if item_box.is_empty() {
                         let transfered = item_box
                             .item_stack
-                            .transfer(&mut cursor_box.item_stack, u32::MAX);
+                            .transfer_to(&mut cursor_box.item_stack, u32::MAX);
                         net.send_message(messages::InterfaceInteraction::PlaceItem {
                             interface_path: interface_node.path.clone(),
                             index: item_box.index as u32,

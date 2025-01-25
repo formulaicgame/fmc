@@ -470,6 +470,8 @@ struct BlockVerticesJson {
 #[derive(Debug, Deserialize, Default)]
 pub struct Sounds {
     #[serde(default)]
+    place: Vec<String>,
+    #[serde(default)]
     step: Vec<String>,
     #[serde(default)]
     hit: Vec<String>,
@@ -500,6 +502,14 @@ impl Sounds {
         }
 
         Some(&self.destroy[rng.next_u32() as usize % self.destroy.len()])
+    }
+
+    pub fn place(&self, rng: &mut Rng) -> Option<&str> {
+        if self.place.len() == 0 {
+            return None;
+        }
+
+        Some(&self.place[rng.next_u32() as usize % self.place.len()])
     }
 }
 
@@ -604,8 +614,8 @@ pub struct BlockConfig {
     /// The friction or drag.
     pub friction: Friction,
     // TODO: Not needed
-    /// How long it takes to break the block without a tool, None if the block should not be
-    /// breakable. e.g. water, air
+    /// How long it takes to break the block without a tool in seconds, None if the block should
+    /// not be breakable. e.g. water, air
     pub hardness: Option<f32>,
     /// Makes it possible to replace the block by placing another in its position.
     pub replaceable: bool,
@@ -661,7 +671,7 @@ impl BlockConfig {
         }
     }
 
-    pub fn placeable(&self, against_block_face: BlockFace) -> bool {
+    pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {
         match against_block_face {
             BlockFace::Bottom if self.placement.ceiling => true,
             BlockFace::Top if self.placement.floor => true,
@@ -675,14 +685,8 @@ impl BlockConfig {
         }
     }
 
-    /// Given the distance from the player to the block and the face the block is placed on, return
-    /// the blocks rotation if any.
-    pub fn placement_rotation(
-        &self,
-        camera_transform: &Transform,
-        against_block_face: BlockFace,
-    ) -> Option<BlockState> {
-        if !self.placeable(against_block_face) {
+    pub fn placement_rotation(&self, against_block_face: BlockFace) -> Option<BlockState> {
+        if !self.is_placeable(against_block_face) {
             return None;
         }
 
@@ -692,27 +696,12 @@ impl BlockConfig {
 
         let mut block_state = BlockState::new();
 
-        let dir = camera_transform.forward();
-        let max = dir.x.abs().max(dir.z.abs());
-
-        if max == dir.x.abs() {
-            if dir.x.is_sign_positive() {
-                block_state.set_rotation(BlockRotation::Once);
-            } else {
-                block_state.set_rotation(BlockRotation::Thrice);
-            }
-        } else if max == dir.z.abs() {
-            if dir.z.is_sign_positive() {
-                block_state.set_rotation(BlockRotation::None);
-            } else {
-                block_state.set_rotation(BlockRotation::Twice);
-            }
-        }
-
         if (against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top)
             && self.placement.centered
         {
             block_state.set_centered(true);
+        } else {
+            block_state.set_rotation(against_block_face.to_rotation());
         }
 
         return Some(block_state);
@@ -859,6 +848,10 @@ impl BlockState {
         self.0 |= (centered as u16) << 3;
     }
 
+    pub fn is_centered(&self) -> bool {
+        self.0 & (1 << 3) != 0
+    }
+
     pub fn set_rotation(&mut self, rotation: BlockRotation) {
         self.0 &= !0b11;
         self.0 |= rotation as u16;
@@ -870,6 +863,10 @@ impl BlockState {
     }
 
     pub fn rotation(self) -> Option<BlockRotation> {
+        if self.is_centered() {
+            return None;
+        }
+
         if self.0 & 0b100 == 0 {
             return Some(BlockRotation::from(self.0));
         } else {

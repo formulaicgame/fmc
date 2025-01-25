@@ -574,6 +574,8 @@ impl Block {
             Block::Cube(cube) => {
                 cube.placement.rotatable || cube.placement.side_transform.is_some()
             }
+            // Block models aren't handled by the client, but sent as separate models by the
+            // server.
             Block::Model(_model) => false,
         }
     }
