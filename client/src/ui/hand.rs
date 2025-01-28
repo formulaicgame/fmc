@@ -30,10 +30,10 @@ impl Plugin for HandPlugin {
                 //place_block,
                 send_clicks,
                 // workarounds for https://github.com/bevyengine/bevy/issues/10832
-                mark_animated_entity,
-                set_correct_transform_after_animation_finished,
+                //mark_animated_entity,
+                //set_correct_transform_after_animation_finished,
                 remove_finished_animations
-                    .after(set_correct_transform_after_animation_finished)
+                    //.after(set_correct_transform_after_animation_finished)
                     .after(play_equip_animation)
                     .after(play_use_animation)
                     .after(equip_item),
@@ -46,19 +46,16 @@ impl Plugin for HandPlugin {
 fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
     let camera_entity = player_camera.single();
     commands.entity(camera_entity).with_children(|parent| {
-        parent.spawn(HandBundle::default());
+        parent.spawn((
+            Hand::default(),
+            SceneRoot::default(),
+            // This is linked to animation targets by the same system that does it for models. The
+            // animation graph must be added manually.
+            AnimationPlayer::default(),
+            AnimationTransitions::default(),
+            AnimationGraphHandle::default(),
+        ));
     });
-}
-
-#[derive(Bundle, Default)]
-struct HandBundle {
-    scene: SceneBundle,
-    hand_marker: Hand,
-    // This is linked to animation targets by the same system that does it for models. The
-    // animation graph must be added manually.
-    animation_player: AnimationPlayer,
-    animation_transitions: AnimationTransitions,
-    animation_graph: Handle<AnimationGraph>,
 }
 
 #[derive(Component, Default)]
@@ -181,9 +178,9 @@ fn play_equip_animation(
     gltfs: Res<Assets<Gltf>>,
     mut hand_query: Query<(
         &mut AnimationPlayer,
-        &mut Handle<Scene>,
+        &mut SceneRoot,
         &mut Hand,
-        &mut Handle<AnimationGraph>,
+        &mut AnimationGraphHandle,
     )>,
 ) {
     let (mut animation_player, mut scene_handle, mut hand, mut animation_graph) =
@@ -200,7 +197,7 @@ fn play_equip_animation(
             } else {
                 // If there is no new model, we set it to nothing here so that the model is
                 // despawned.
-                *scene_handle = Handle::default();
+                *scene_handle = SceneRoot::default();
             }
         }
     }
@@ -213,14 +210,14 @@ fn play_equip_animation(
         let model = models.get_config(model_id).unwrap();
         let animation_index = model.named_animations["equip"];
 
-        if !animation_player.animation_is_playing(animation_index) {
+        if !animation_player.is_playing_animation(animation_index) {
             // Need to remove unequip animation or it will linger. Bevy doesn't remove finished
             // animations.
             animation_player.stop_all();
 
             let gltf = gltfs.get(&model.gltf_handle).unwrap();
-            *scene_handle = gltf.scenes[0].clone();
-            *animation_graph = model.animation_graph.clone().unwrap();
+            *scene_handle = SceneRoot(gltf.scenes[0].clone());
+            *animation_graph = AnimationGraphHandle(model.animation_graph.clone().unwrap());
         }
 
         let animation = animation_player.play(animation_index);
@@ -233,98 +230,99 @@ fn play_equip_animation(
     hand.equipping = false;
 }
 
-#[derive(Component)]
-struct AnimatedMarker;
+// #[derive(Component)]
+// struct AnimatedMarker;
+//
+// fn mark_animated_entity(
+//     mut commands: Commands,
+//     models: Res<Models>,
+//     animation_graphs: Res<Assets<AnimationGraph>>,
+//     animation_clips: Res<Assets<AnimationClip>>,
+//     hand_entity: Query<(&Hand, &AnimationGraphHandle), Added<Children>>,
+//     animation_targets: Query<(Entity, &AnimationTarget)>,
+// ) {
+//     let Ok((hand, animation_graph)) = hand_entity.get_single() else {
+//         return;
+//     };
+//
+//     let Some(model_config) = hand
+//         .equipped
+//         .and_then(|model_id| models.get_config(&model_id))
+//     else {
+//         return;
+//     };
+//
+//     let Some(left_click_index) = model_config.named_animations.get("left_click") else {
+//         return;
+//     };
+//
+//     let animation_graph = animation_graphs.get(animation_graph).unwrap();
+//     let left_click_node = animation_graph.get(*left_click_index).unwrap();
+//     let AnimationNodeType::Clip(left_click_handle) = &left_click_node.node_type else {
+//         unreachable!();
+//     };
+//     let left_click = animation_clips.get(left_click_handle).unwrap();
+//
+//     let Some(target_id) = left_click
+//         .curves()
+//         .iter()
+//         .next()
+//         .map(|(target, _curve)| target.clone())
+//     else {
+//         return;
+//     };
+//
+//     for (entity, animation_target) in animation_targets.iter() {
+//         if animation_target.id == target_id {
+//             commands.entity(entity).insert(AnimatedMarker);
+//             return;
+//         }
+//     }
+// }
 
-fn mark_animated_entity(
-    mut commands: Commands,
-    models: Res<Models>,
-    animation_graphs: Res<Assets<AnimationGraph>>,
-    animation_clips: Res<Assets<AnimationClip>>,
-    hand_entity: Query<(&Hand, &Handle<AnimationGraph>), Added<Children>>,
-    animation_targets: Query<(Entity, &AnimationTarget)>,
-) {
-    let Ok((hand, animation_graph)) = hand_entity.get_single() else {
-        return;
-    };
-
-    let Some(model_config) = hand
-        .equipped
-        .and_then(|model_id| models.get_config(&model_id))
-    else {
-        return;
-    };
-
-    let Some(left_click_index) = model_config.named_animations.get("left_click") else {
-        return;
-    };
-
-    let animation_graph = animation_graphs.get(animation_graph).unwrap();
-    let left_click_node = animation_graph.get(*left_click_index).unwrap();
-    let left_click_handle = left_click_node.clip.clone().unwrap();
-    let left_click = animation_clips.get(&left_click_handle).unwrap();
-
-    let Some(target_id) = left_click
-        .curves()
-        .iter()
-        .next()
-        .map(|(target, _curve)| target.clone())
-    else {
-        return;
-    };
-
-    for (entity, animation_target) in animation_targets.iter() {
-        if animation_target.id == target_id {
-            commands.entity(entity).insert(AnimatedMarker);
-            return;
-        }
-    }
-}
-
-fn set_correct_transform_after_animation_finished(
-    animation_graphs: Res<Assets<AnimationGraph>>,
-    animation_clips: Res<Assets<AnimationClip>>,
-    hand_query: Query<(&AnimationPlayer, &Handle<AnimationGraph>), With<Hand>>,
-    mut animated: Query<(&mut Transform, &AnimationTarget), With<AnimatedMarker>>,
-) {
-    let Ok((mut transform, target)) = animated.get_single_mut() else {
-        return;
-    };
-
-    let (animation_player, graph_handle) = hand_query.single();
-    for (node_index, animation) in animation_player.playing_animations() {
-        if !animation.is_finished() || animation.speed() < 0.0 {
-            continue;
-        }
-        let animation_graph = animation_graphs.get(graph_handle).unwrap();
-        let animation_clip_handle = animation_graph
-            .get(*node_index)
-            .unwrap()
-            .clip
-            .clone()
-            .unwrap();
-
-        let animation_clip = animation_clips.get(&animation_clip_handle).unwrap();
-        let Some(curves) = animation_clip.curves_for_target(target.id) else {
-            continue;
-        };
-
-        for curve in curves {
-            match &curve.keyframes {
-                Keyframes::Rotation(rotations) => {
-                    transform.rotation = rotations.last().cloned().unwrap();
-                }
-                Keyframes::Translation(translations) => {
-                    transform.translation = translations.last().cloned().unwrap();
-                }
-                Keyframes::Scale(scales) => {
-                    transform.scale = scales.last().cloned().unwrap();
-                }
-                _ => (),
-            }
-        }
-    }
-}
+// fn set_correct_transform_after_animation_finished(
+//     animation_graphs: Res<Assets<AnimationGraph>>,
+//     animation_clips: Res<Assets<AnimationClip>>,
+//     hand_query: Query<(&AnimationPlayer, &AnimationGraphHandle), With<Hand>>,
+//     mut animated: Query<(&mut Transform, &AnimationTarget), With<AnimatedMarker>>,
+// ) {
+//     let Ok((mut transform, target)) = animated.get_single_mut() else {
+//         return;
+//     };
+//
+//     let (animation_player, graph_handle) = hand_query.single();
+//     for (node_index, animation) in animation_player.playing_animations() {
+//         if !animation.is_finished() || animation.speed() < 0.0 {
+//             continue;
+//         }
+//         let animation_graph = animation_graphs.get(graph_handle).unwrap();
+//         let AnimationNodeType::Clip(animation_clip_handle) =
+//             &animation_graph.get(*node_index).unwrap().node_type
+//         else {
+//             unreachable!()
+//         };
+//
+//         let animation_clip = animation_clips.get(animation_clip_handle).unwrap();
+//         let Some(curves) = animation_clip.curves_for_target(target.id) else {
+//             continue;
+//         };
+//
+//         for curve in curves {
+//             match &curve.keyframes {
+//                 Keyframes::Rotation(rotations) => {
+//                     transform.rotation = rotations.last().cloned().unwrap();
+//                 }
+//                 Keyframes::Translation(translations) => {
+//                     transform.translation = translations.last().cloned().unwrap();
+//                 }
+//                 Keyframes::Scale(scales) => {
+//                     transform.scale = scales.last().cloned().unwrap();
+//                 }
+//                 _ => (),
+//             }
+//         }
+//     }
+// }
 
 fn remove_finished_animations(mut animation_player: Query<&mut AnimationPlayer, With<Hand>>) {
     let mut animation_player = animation_player.single_mut();
@@ -349,7 +347,7 @@ fn play_use_animation(
     // TODO: Needs a robust way to see if interface is open
     //
     // Only play if not in interface
-    if window.single().cursor.visible {
+    if window.single().cursor_options.visible {
         return;
     }
 
@@ -387,7 +385,7 @@ fn send_clicks(
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
-    if window.single().cursor.grab_mode != CursorGrabMode::None {
+    if window.single().cursor_options.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
             net.send_message(messages::LeftClick);
         } else if mouse_button_input.just_pressed(MouseButton::Right) {

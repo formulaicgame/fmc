@@ -75,17 +75,16 @@ fn setup_player(mut commands: Commands) {
         .id();
 
     let body = commands
-        .spawn(player)
-        .insert(VisibilityBundle::default())
-        .insert(TransformBundle {
-            local: Transform::from_translation(Vec3::NAN),
-            ..default()
-        })
-        .insert(MovesWithOrigin)
-        .insert(aabb)
+        .spawn((
+            player,
+            Visibility::default(),
+            Transform::from_translation(Vec3::NAN),
+            MovesWithOrigin,
+            aabb,
+        ))
         .id();
 
-    commands.entity(body).push_children(&[head]);
+    commands.entity(body).add_children(&[head]);
 }
 
 fn handle_aabb_update(

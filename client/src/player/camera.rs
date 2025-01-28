@@ -37,26 +37,24 @@ impl Plugin for CameraPlugin {
 
 #[derive(Bundle)]
 pub struct CameraBundle {
-    camera_3d: Camera3dBundle,
+    camera_3d: Camera3d,
+    projection: Projection,
     // XXX: Remove in future if requirement for parent to have it is removed. Needed for
     // equipped item
-    visibility: VisibilityBundle,
-    fog_settings: FogSettings,
+    visibility: Visibility,
+    fog_settings: DistanceFog,
 }
 
 impl Default for CameraBundle {
     fn default() -> Self {
         Self {
-            camera_3d: Camera3dBundle {
-                projection: PerspectiveProjection {
-                    fov: std::f32::consts::PI / 3.0,
-                    ..default()
-                }
-                .into(),
+            camera_3d: Camera3d::default(),
+            projection: Projection::Perspective(PerspectiveProjection {
+                fov: std::f32::consts::PI / 3.0,
                 ..default()
-            },
-            visibility: VisibilityBundle::default(),
-            fog_settings: FogSettings {
+            }),
+            visibility: Visibility::default(),
+            fog_settings: DistanceFog {
                 color: Color::NONE,
                 ..default()
             },
@@ -97,7 +95,7 @@ fn rotate_camera(
     for ev in mouse_events.read() {
         let mut transform = camera_query.single_mut();
 
-        if window.cursor.grab_mode == CursorGrabMode::None {
+        if window.cursor_options.grab_mode == CursorGrabMode::None {
             return;
         }
 
@@ -142,7 +140,7 @@ fn handle_camera_position_from_server(
 fn fog(
     origin: Res<Origin>,
     mut camera_transform_query: Query<
-        (&GlobalTransform, &Projection, &mut FogSettings),
+        (&GlobalTransform, &Projection, &mut DistanceFog),
         (With<Head>, Changed<GlobalTransform>),
     >,
     world_map: Res<WorldMap>,
@@ -175,7 +173,7 @@ fn fog(
         if let Some(fog) = block_config.fog_settings() {
             *fog_settings = fog.clone();
         } else {
-            *fog_settings = FogSettings {
+            *fog_settings = DistanceFog {
                 color: Color::NONE,
                 ..default()
             }

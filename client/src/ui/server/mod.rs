@@ -2,11 +2,10 @@ use std::collections::HashMap;
 
 use bevy::{
     ecs::system::EntityCommands,
+    image::{CompressedImageFormats, ImageSampler},
     prelude::*,
-    render::{
-        render_asset::RenderAssetUsages,
-        texture::{CompressedImageFormats, ImageSampler},
-    },
+    render::render_asset::RenderAssetUsages,
+    text::FontSmoothing,
 };
 use fmc_protocol::messages;
 use serde::Deserialize;
@@ -144,7 +143,7 @@ pub fn load_interfaces(
 
             let image = match Image::from_buffer(
                 &image_data,
-                bevy::render::texture::ImageType::Extension("png"),
+                bevy::image::ImageType::Extension("png"),
                 CompressedImageFormats::NONE,
                 false,
                 ImageSampler::Default,
@@ -189,29 +188,28 @@ pub fn load_interfaces(
                 parent_path
             };
 
-            let style = if let Some(image_path) = &config.image {
+            let node: Node = if let Some(image_path) = &config.image {
                 let dimensions = read_image_dimensions(&image_path);
-                let mut style = Style::from(config.style.clone());
-                style.width = Val::Px(dimensions.x);
-                style.height = Val::Px(dimensions.y);
-                style
+                let mut node: Node = config.style.clone().into();
+                node.width = Val::Px(dimensions.x);
+                node.height = Val::Px(dimensions.y);
+                node
             } else {
                 config.style.clone().into()
             };
 
             entity_commands.insert((
-                NodeBundle {
-                    style: style.clone(),
-                    background_color: config.background_color.unwrap_or(Color::NONE).into(),
-                    border_color: config.border_color.unwrap_or(Color::NONE).into(),
-                    ..default()
-                },
-                config.image.as_ref().map_or(UiImage::default(), |path| {
-                    asset_server
-                        .load(INTERFACE_TEXTURE_PATH.to_owned() + &path)
-                        .into()
-                }),
+                node,
+                BackgroundColor::from(config.background_color.unwrap_or(Color::NONE)),
+                BorderColor::from(config.border_color.unwrap_or(Color::NONE)),
             ));
+
+            if let Some(path) = &config.image {
+                entity_commands.insert(ImageNode {
+                    image: asset_server.load(INTERFACE_TEXTURE_PATH.to_owned() + &path),
+                    ..default()
+                });
+            }
 
             match &config.content {
                 NodeContent::Nodes(nodes) => {
@@ -268,22 +266,17 @@ pub fn load_interfaces(
                 } => {
                     entity_commands.with_children(|parent| {
                         parent.spawn((
-                            TextBundle {
-                                text: Text::from_section(
-                                    text,
-                                    TextStyle {
-                                        font_size: *font_size,
-                                        font: DEFAULT_FONT_HANDLE,
-                                        color: *color,
-                                        ..default()
-                                    },
-                                ),
-                                style: Style {
-                                    position_type: PositionType::Absolute,
-                                    ..default()
-                                },
+                            Node {
+                                position_type: PositionType::Absolute,
                                 ..default()
                             },
+                            Text::new(text),
+                            TextFont {
+                                font_size: *font_size,
+                                font: DEFAULT_FONT_HANDLE,
+                                font_smoothing: FontSmoothing::None,
+                            },
+                            TextColor(*color),
                             TextShadow::default(),
                         ));
                     });
@@ -293,15 +286,19 @@ pub fn load_interfaces(
         }
 
         let interface_entity = commands
-            .spawn(NodeBundle {
-                style: Style {
+            .spawn((
+                Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..default()
                 },
-                ..default()
-            })
+                InterfaceConfig {
+                    is_exclusive: node_config.exclusive,
+                    keyboard_focus: node_config.keyboard_focus,
+                },
+                Visibility::Hidden,
+            ))
             .with_children(|parent| {
                 let mut entity_commands = parent.spawn_empty();
                 spawn_interface(
@@ -314,16 +311,6 @@ pub fn load_interfaces(
 
                 entity_commands.insert(());
             })
-            .insert((
-                InterfaceConfig {
-                    is_exclusive: node_config.exclusive,
-                    keyboard_focus: node_config.keyboard_focus,
-                },
-                VisibilityBundle {
-                    visibility: Visibility::Hidden,
-                    ..default()
-                },
-            ))
             .id();
 
         // (Probably) safe to unwrap here, as it has already loaded a file with the name.
@@ -337,29 +324,27 @@ pub fn load_interfaces(
 
     commands
         .spawn((
-            ImageBundle {
-                style: Style {
-                    width: Val::Px(14.0),
-                    height: Val::Px(15.8),
-                    position_type: PositionType::Absolute,
-                    flex_direction: FlexDirection::ColumnReverse,
-                    align_items: AlignItems::FlexEnd,
-                    ..default()
-                },
-                z_index: ZIndex::Global(1),
+            ImageNode::default(),
+            Node {
+                width: Val::Px(14.0),
+                height: Val::Px(15.8),
+                position_type: PositionType::Absolute,
+                flex_direction: FlexDirection::ColumnReverse,
+                align_items: AlignItems::FlexEnd,
                 ..default()
             },
+            ZIndex(1),
             CursorItemBox::default(),
         ))
         .with_children(|parent| {
-            parent.spawn(TextBundle {
-                style: Style {
+            parent.spawn((
+                Text::default(),
+                Node {
                     top: Val::Px(1.0),
                     left: Val::Px(2.0),
                     ..default()
                 },
-                ..default()
-            });
+            ));
         });
 }
 
@@ -374,6 +359,7 @@ fn cleanup(mut commands: Commands, cursor_item_box: Query<Entity, With<CursorIte
 struct InterfaceToggleEvent {
     pub interface_entity: Entity,
 }
+
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct NodeConfig {
@@ -412,6 +398,140 @@ enum KeyboardFocus {
     Movement,
     // Interface consumes all keyboard input, only Escape will close it.
     Full,
+}
+
+// Wrapper for 'Style' that is deserializable
+#[derive(Deserialize, Clone, Debug)]
+#[serde(default, deny_unknown_fields)]
+struct NodeStyle {
+    display: Display,
+    position_type: PositionType,
+    overflow: Overflow,
+    overflow_clip_margin: OverflowClipMargin,
+    left: Val,
+    right: Val,
+    top: Val,
+    bottom: Val,
+    width: Val,
+    height: Val,
+    min_width: Val,
+    min_height: Val,
+    max_width: Val,
+    max_height: Val,
+    aspect_ratio: Option<f32>,
+    align_items: AlignItems,
+    justify_items: JustifyItems,
+    align_self: AlignSelf,
+    justify_self: JustifySelf,
+    align_content: AlignContent,
+    justify_content: JustifyContent,
+    margin: Rect,
+    padding: Rect,
+    border: Rect,
+    flex_direction: FlexDirection,
+    flex_wrap: FlexWrap,
+    flex_grow: f32,
+    flex_shrink: f32,
+    flex_basis: Val,
+    row_gap: Val,
+    column_gap: Val,
+    grid_auto_flow: GridAutoFlow,
+    grid_template_rows: Vec<RepeatedGridTrack>,
+    grid_template_columns: Vec<RepeatedGridTrack>,
+    grid_auto_rows: Vec<GridTrack>,
+    grid_auto_columns: Vec<GridTrack>,
+    grid_row: GridPlacement,
+    grid_column: GridPlacement,
+}
+
+impl Default for NodeStyle {
+    fn default() -> Self {
+        Self {
+            display: Display::DEFAULT,
+            position_type: PositionType::DEFAULT,
+            left: Val::Auto,
+            right: Val::Auto,
+            top: Val::Auto,
+            bottom: Val::Auto,
+            flex_direction: FlexDirection::DEFAULT,
+            flex_wrap: FlexWrap::DEFAULT,
+            align_items: AlignItems::DEFAULT,
+            justify_items: JustifyItems::DEFAULT,
+            align_self: AlignSelf::DEFAULT,
+            justify_self: JustifySelf::DEFAULT,
+            align_content: AlignContent::DEFAULT,
+            justify_content: JustifyContent::DEFAULT,
+            margin: Rect::default(),
+            padding: Rect::default(),
+            border: Rect::default(),
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: Val::Auto,
+            width: Val::Auto,
+            height: Val::Auto,
+            min_width: Val::Auto,
+            min_height: Val::Auto,
+            max_width: Val::Auto,
+            max_height: Val::Auto,
+            aspect_ratio: None,
+            overflow: Overflow::DEFAULT,
+            overflow_clip_margin: OverflowClipMargin::DEFAULT,
+            row_gap: Val::ZERO,
+            column_gap: Val::ZERO,
+            grid_auto_flow: GridAutoFlow::DEFAULT,
+            grid_template_rows: Vec::new(),
+            grid_template_columns: Vec::new(),
+            grid_auto_rows: Vec::new(),
+            grid_auto_columns: Vec::new(),
+            grid_column: GridPlacement::DEFAULT,
+            grid_row: GridPlacement::DEFAULT,
+        }
+    }
+}
+
+impl From<NodeStyle> for Node {
+    fn from(value: NodeStyle) -> Self {
+        Node {
+            display: value.display,
+            position_type: value.position_type,
+            overflow: value.overflow,
+            overflow_clip_margin: value.overflow_clip_margin,
+            left: value.left,
+            right: value.right,
+            top: value.top,
+            bottom: value.bottom,
+            width: value.width,
+            height: value.height,
+            min_width: value.min_width,
+            min_height: value.min_height,
+            max_width: value.max_width,
+            max_height: value.max_height,
+            aspect_ratio: value.aspect_ratio,
+            align_items: value.align_items,
+            justify_items: value.justify_items,
+            align_self: value.align_self,
+            justify_self: value.justify_self,
+            align_content: value.align_content,
+            justify_content: value.justify_content,
+            margin: value.margin.into(),
+            padding: value.padding.into(),
+            border: value.border.into(),
+            flex_direction: value.flex_direction,
+            flex_wrap: value.flex_wrap,
+            flex_grow: value.flex_grow,
+            flex_shrink: value.flex_shrink,
+            flex_basis: value.flex_basis,
+            row_gap: value.row_gap,
+            column_gap: value.column_gap,
+            grid_auto_flow: value.grid_auto_flow,
+            grid_template_rows: value.grid_template_rows,
+            grid_template_columns: value.grid_template_columns,
+            grid_auto_rows: value.grid_auto_rows,
+            grid_auto_columns: value.grid_auto_columns,
+            grid_row: value.grid_row,
+            grid_column: value.grid_column,
+        }
+    }
 }
 
 // TODO: As json I want it to be like "content: [..]" for Nodes, but all others should be
@@ -466,143 +586,6 @@ impl From<Rect> for UiRect {
             right: value.right.unwrap_or(Val::Px(0.0)),
             top: value.top.unwrap_or(Val::Px(0.0)),
             bottom: value.bottom.unwrap_or(Val::Px(0.0)),
-        }
-    }
-}
-
-// TODO: Maybe open issue in bevy see if Style can be made de/se. Missing for UiRect, but
-// the rest have it.
-//
-// Wrapper for 'Style' that is deserializable
-#[derive(Deserialize, Clone, Debug)]
-#[serde(default, deny_unknown_fields)]
-struct NodeStyle {
-    pub display: Display,
-    pub position_type: PositionType,
-    pub overflow: Overflow,
-    pub direction: Direction,
-    pub left: Val,
-    pub right: Val,
-    pub top: Val,
-    pub bottom: Val,
-    pub width: Val,
-    pub height: Val,
-    pub min_width: Val,
-    pub min_height: Val,
-    pub max_width: Val,
-    pub max_height: Val,
-    pub aspect_ratio: Option<f32>,
-    pub align_items: AlignItems,
-    pub justify_items: JustifyItems,
-    pub align_self: AlignSelf,
-    pub justify_self: JustifySelf,
-    pub align_content: AlignContent,
-    pub justify_content: JustifyContent,
-    pub margin: Rect,
-    pub padding: Rect,
-    pub border: Rect,
-    pub flex_direction: FlexDirection,
-    pub flex_wrap: FlexWrap,
-    pub flex_grow: f32,
-    pub flex_shrink: f32,
-    pub flex_basis: Val,
-    pub row_gap: Val,
-    pub column_gap: Val,
-    pub grid_auto_flow: GridAutoFlow,
-    pub grid_template_rows: Vec<RepeatedGridTrack>,
-    pub grid_template_columns: Vec<RepeatedGridTrack>,
-    pub grid_auto_rows: Vec<GridTrack>,
-    pub grid_auto_columns: Vec<GridTrack>,
-    pub grid_row: GridPlacement,
-    pub grid_column: GridPlacement,
-}
-
-impl Default for NodeStyle {
-    fn default() -> Self {
-        Self {
-            display: Display::DEFAULT,
-            position_type: PositionType::default(),
-            left: Val::Auto,
-            right: Val::Auto,
-            top: Val::Auto,
-            bottom: Val::Auto,
-            direction: Direction::default(),
-            flex_direction: FlexDirection::default(),
-            flex_wrap: FlexWrap::default(),
-            align_items: AlignItems::default(),
-            justify_items: JustifyItems::DEFAULT,
-            align_self: AlignSelf::DEFAULT,
-            justify_self: JustifySelf::DEFAULT,
-            align_content: AlignContent::DEFAULT,
-            justify_content: JustifyContent::DEFAULT,
-            margin: Rect::default(),
-            padding: Rect::default(),
-            border: Rect::default(),
-            flex_grow: 0.0,
-            flex_shrink: 1.0,
-            flex_basis: Val::Auto,
-            width: Val::Auto,
-            height: Val::Auto,
-            min_width: Val::Auto,
-            min_height: Val::Auto,
-            max_width: Val::Auto,
-            max_height: Val::Auto,
-            aspect_ratio: None,
-            overflow: Overflow::DEFAULT,
-            row_gap: Val::Px(0.0),
-            column_gap: Val::Px(0.0),
-            grid_auto_flow: GridAutoFlow::default(),
-            grid_template_rows: Vec::new(),
-            grid_template_columns: Vec::new(),
-            grid_auto_rows: Vec::new(),
-            grid_auto_columns: Vec::new(),
-            grid_column: GridPlacement::default(),
-            grid_row: GridPlacement::default(),
-        }
-    }
-}
-
-impl From<NodeStyle> for Style {
-    fn from(value: NodeStyle) -> Self {
-        Style {
-            display: value.display,
-            position_type: value.position_type,
-            overflow: value.overflow,
-            direction: value.direction,
-            left: value.left,
-            right: value.right,
-            top: value.top,
-            bottom: value.bottom,
-            width: value.width,
-            height: value.height,
-            min_width: value.min_width,
-            min_height: value.min_height,
-            max_width: value.max_width,
-            max_height: value.max_height,
-            aspect_ratio: value.aspect_ratio,
-            align_items: value.align_items,
-            justify_items: value.justify_items,
-            align_self: value.align_self,
-            justify_self: value.justify_self,
-            align_content: value.align_content,
-            justify_content: value.justify_content,
-            margin: value.margin.into(),
-            padding: value.padding.into(),
-            border: value.border.into(),
-            flex_direction: value.flex_direction,
-            flex_wrap: value.flex_wrap,
-            flex_grow: value.flex_grow,
-            flex_shrink: value.flex_shrink,
-            flex_basis: value.flex_basis,
-            row_gap: value.row_gap,
-            column_gap: value.column_gap,
-            grid_auto_flow: value.grid_auto_flow,
-            grid_template_rows: value.grid_template_rows,
-            grid_template_columns: value.grid_template_columns,
-            grid_auto_rows: value.grid_auto_rows,
-            grid_auto_columns: value.grid_auto_columns,
-            grid_row: value.grid_row,
-            grid_column: value.grid_column,
         }
     }
 }

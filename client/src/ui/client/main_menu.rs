@@ -3,7 +3,7 @@ use std::io::Write;
 use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
 use crossbeam::{Receiver, Sender};
 
-use super::{GuiState, InterfaceBundle, Interfaces};
+use super::{GuiState, Interface, Interfaces};
 use crate::{
     game_state::GameState,
     networking::{Identity, NetworkClient},
@@ -39,8 +39,9 @@ struct JoinButton;
 
 fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
-        .spawn(InterfaceBundle {
-            style: Style {
+        .spawn((
+            Interface,
+            Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -50,21 +51,17 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            background_color: Color::srgb_u8(33, 33, 33).into(),
-            ..default()
-        })
+            BackgroundColor::from(Color::srgb_u8(33, 33, 33)),
+        ))
         .with_children(|parent| {
             parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        width: Val::Percent(100.0),
-                        // XXX: Manually positioned since we want the interactive elements to
-                        // remain centered
-                        margin: UiRect::bottom(Val::Percent(20.0)),
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
+                .spawn(Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.0),
+                    // XXX: Manually positioned since we want the interactive elements to
+                    // remain centered
+                    margin: UiRect::bottom(Val::Percent(20.0)),
+                    justify_content: JustifyContent::Center,
                     ..default()
                 })
                 .with_children(|parent| {
@@ -164,7 +161,7 @@ fn download_progress_text(
                             error!("Couldn't set execution permissions for server");
                         }
                     }
-                    text.sections[0].value = "Singleplayer server downloaded!".to_owned();
+                    *text = Text::new("Singleplayer server downloaded!");
                 }
                 DownloadStatus::Progress { current, total } => {
                     fn bytes_to_string(bytes: usize) -> String {
@@ -185,14 +182,14 @@ fn download_progress_text(
                         format!("{:.1}{}", rounded_value, UNITS[index])
                     }
 
-                    text.sections[0].value = format!(
+                    text.0 = format!(
                         "Downloading singleplayer: {}/{}",
                         bytes_to_string(current),
                         bytes_to_string(total)
                     );
                 }
                 DownloadStatus::Failure(_err) => {
-                    text.sections[0].value = "Failed to download singleplayer".to_owned()
+                    text.0 = "Failed to download singleplayer".to_owned()
                 }
             }
         }

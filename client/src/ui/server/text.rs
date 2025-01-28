@@ -1,7 +1,4 @@
-use bevy::{
-    prelude::*,
-    text::{BreakLineOn, TextLayoutInfo},
-};
+use bevy::{prelude::*, text::LineBreak};
 use fmc_protocol::messages;
 
 use crate::{
@@ -20,7 +17,12 @@ impl Plugin for TextPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (handle_text_updates, change_line_size, send_text, fade_lines)
+            (
+                handle_text_updates,
+                //change_line_size,
+                send_text,
+                fade_lines,
+            )
                 .run_if(in_state(GameState::Playing)),
         );
     }
@@ -76,93 +78,73 @@ fn handle_text_updates(
                 }
             };
 
-            for new_line in &text_update.lines {
-                let mut sections = Vec::with_capacity(new_line.sections.len());
-                for section in &new_line.sections {
-                    let color = match Srgba::hex(&section.color) {
-                        Ok(c) => c.into(),
-                        Err(_) => {
-                            net.disconnect(&format!(
+            let mut entity_commands = if children.is_none() {
+                let entity = commands.spawn(Text::default()).id();
+                commands.entity(*interface_entity).add_child(entity);
+                commands.entity(entity)
+            } else if let Some(child_entity) = children.unwrap().get(text_update.index as usize) {
+                let mut e = commands.entity(*child_entity);
+                e.despawn_descendants();
+                e
+            } else {
+                let entity = commands.spawn(Text::default()).id();
+
+                if text_update.index < 0 {
+                    commands.entity(*interface_entity).add_children(&[entity]);
+                } else {
+                    commands
+                        .entity(*interface_entity)
+                        .insert_children(0, &[entity]);
+                }
+
+                commands.entity(entity)
+            };
+
+            entity_commands.insert((
+                Node {
+                    // XXX: Since the fake shadow text extends a little farther it
+                    // often wraps before the real text. To counteract this the real
+                    // text is made to wrap a little sooner by shrinking the width.
+                    width: Val::Percent(98.0),
+                    ..default()
+                },
+                BackgroundColor::from(text_container.text_background_color),
+                Line,
+            ));
+
+            let color: Color = match Srgba::hex(&text_update.color) {
+                Ok(c) => c.into(),
+                Err(_) => {
+                    net.disconnect(&format!(
                                     "Server sent malformed text box update for interface with name: {}. The text contained a malformed color property. '{}', is not a valid hex color.",
                                     &text_update.interface_path,
-                                    &section.color
+                                    &text_update.color
                                     ));
-                            return;
-                        }
-                    };
-                    sections.push(TextSection {
-                        value: section.text.clone(),
-                        style: TextStyle {
-                            font: DEFAULT_FONT_HANDLE,
-                            font_size: section.font_size,
-                            color,
-                        },
-                    });
+                    return;
                 }
+            };
+            entity_commands.with_child((
+                Text::new(&text_update.text),
+                TextColor::from(color),
+                TextFont {
+                    font: DEFAULT_FONT_HANDLE,
+                    font_size: text_update.font_size,
+                    ..default()
+                },
+                TextLayout {
+                    linebreak: LineBreak::WordOrCharacter,
+                    justify: JustifyText::Left,
+                },
+                TextShadow::default(),
+            ));
 
-                let mut text = Text::from_sections(sections);
-                text.linebreak_behavior = BreakLineOn::AnyCharacter;
-
-                let mut entity_commands = if children.is_none() {
-                    let entity = commands.spawn_empty().id();
-                    commands.entity(*interface_entity).add_child(entity);
-                    commands.entity(entity)
-                } else if let Some(child_entity) = children.unwrap().get(new_line.index as usize) {
-                    let mut e = commands.entity(*child_entity);
-                    e.despawn_descendants();
-                    e
-                } else {
-                    let entity = commands.spawn_empty().id();
-
-                    if new_line.index < 0 {
-                        commands.entity(*interface_entity).push_children(&[entity]);
-                    } else {
-                        commands
-                            .entity(*interface_entity)
-                            .insert_children(0, &[entity]);
-                    }
-
-                    commands.entity(entity)
-                };
-
-                if should_fade {
-                    entity_commands.insert(Fade {
-                        delay: Timer::from_seconds(10.0, TimerMode::Once),
-                    });
-                }
-
+            if should_fade {
                 entity_commands.insert((
-                    NodeBundle {
-                        style: Style {
-                            //width: Val::Percent(100.0),
-                            ..default()
-                        },
-                        visibility: if should_fade {
-                            Visibility::Visible
-                        } else {
-                            Visibility::Inherited
-                        },
-                        background_color: text_container.text_background_color.into(),
-                        ..default()
+                    Fade {
+                        delay: Timer::from_seconds(10.0, TimerMode::Once),
                     },
-                    Line,
+                    Visibility::Visible,
                 ));
-
-                entity_commands.with_children(|parent| {
-                    parent
-                        .spawn(TextBundle {
-                            text,
-                            style: Style {
-                                // XXX: Since the fake shadow text extends a little farther it
-                                // often wraps before the real text. To counteract this the real
-                                // text is made to wrap a little sooner by shrinking the width.
-                                width: Val::Percent(98.0),
-                                ..default()
-                            },
-                            ..default()
-                        })
-                        .insert(TextShadow::default());
-                });
             }
         }
     }
@@ -186,15 +168,15 @@ fn fade_lines(
 }
 
 // Increase background size vertically to make room for fake shadow text
-fn change_line_size(
-    mut line_query: Query<(&mut Style, &Children), Added<Line>>,
-    layout_query: Query<&TextLayoutInfo>,
-) {
-    for (mut style, children) in line_query.iter_mut() {
-        let layout = layout_query.get(children[0]).unwrap();
-        style.height = Val::Px(layout.logical_size.y + 1.0);
-    }
-}
+// fn change_line_size(
+//     mut line_query: Query<(&mut Node, &Children), Added<Line>>,
+//     layout_query: Query<&TextLayoutInfo>,
+// ) {
+//     for (mut node, children) in line_query.iter_mut() {
+//         let layout = layout_query.get(children[0]).unwrap();
+//         node.height = Val::Px(layout.logical_size.y + 1.0);
+//     }
+// }
 
 fn send_text(
     net: Res<NetworkClient>,

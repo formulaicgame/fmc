@@ -33,18 +33,14 @@ fn play_sounds(
     mut sound_events: EventReader<messages::Sound>,
 ) {
     for sound in sound_events.read() {
-        commands
-            .spawn(TransformBundle::from_transform(Transform {
-                translation: origin.to_local(sound.position.unwrap_or(DVec3::ZERO)),
-                ..default()
-            }))
-            .insert(AudioBundle {
-                source: asset_server.load(AUDIO_PATH.to_owned() + &sound.sound),
-                settings: PlaybackSettings::DESPAWN
-                    .with_spatial(sound.position.is_some())
-                    .with_speed(sound.speed)
-                    .with_volume(Volume::new(sound.volume.clamp(0.0, 1.0))),
-            });
+        commands.spawn((
+            Transform::from_translation(origin.to_local(sound.position.unwrap_or(DVec3::ZERO))),
+            AudioPlayer::<AudioSource>(asset_server.load(AUDIO_PATH.to_owned() + &sound.sound)),
+            PlaybackSettings::DESPAWN
+                .with_spatial(sound.position.is_some())
+                .with_speed(sound.speed)
+                .with_volume(Volume::new(sound.volume.clamp(0.0, 1.0))),
+        ));
     }
 }
 
@@ -117,14 +113,11 @@ fn play_walking_sound(
     *last_sound_index = index;
     *distance = 0.0;
 
-    commands
-        .spawn(TransformBundle::from_transform(
-            Transform::from_translation(global_transform.translation() + Vec3::from(aabb.center)),
-        ))
-        .insert(AudioBundle {
-            source: asset_server.load(AUDIO_PATH.to_owned() + &step_sounds[index]),
-            settings: PlaybackSettings::DESPAWN
-                .with_spatial(false)
-                .with_volume(Volume::new(0.1)),
-        });
+    commands.spawn((
+        Transform::from_translation(global_transform.translation() + Vec3::from(aabb.center)),
+        AudioPlayer::<AudioSource>(asset_server.load(AUDIO_PATH.to_owned() + &step_sounds[index])),
+        PlaybackSettings::DESPAWN
+            .with_spatial(false)
+            .with_volume(Volume::new(0.1)),
+    ));
 }

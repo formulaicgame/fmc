@@ -35,7 +35,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                scale_ui.run_if(on_event::<WindowResized>()),
+                scale_ui.run_if(on_event::<WindowResized>),
                 change_ui_state.run_if(state_changed::<client::GuiState>),
                 cursor_visibiltiy.run_if(resource_changed::<CursorVisibility>),
             ),
@@ -125,14 +125,14 @@ fn cursor_visibiltiy(
     let should_be_visible = cursor_visibility.gui || cursor_visibility.server;
     let mut window = window.single_mut();
 
-    if should_be_visible && !window.cursor.visible {
-        window.cursor.visible = true;
+    if should_be_visible && !window.cursor_options.visible {
+        window.cursor_options.visible = true;
         let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
         window.set_cursor_position(Some(position));
-        window.cursor.grab_mode = CursorGrabMode::None;
-    } else if !should_be_visible && window.cursor.visible {
-        window.cursor.visible = false;
-        window.cursor.grab_mode = if cfg!(unix) {
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+    } else if !should_be_visible && window.cursor_options.visible {
+        window.cursor_options.visible = false;
+        window.cursor_options.grab_mode = if cfg!(unix) {
             CursorGrabMode::Locked
         } else {
             CursorGrabMode::Confined

@@ -88,7 +88,7 @@ fn toggle_flight(
     mut timer: Local<Timer>,
 ) {
     let window = window.single();
-    if window.cursor.grab_mode == CursorGrabMode::None {
+    if window.cursor_options.grab_mode == CursorGrabMode::None {
         return;
     }
 
@@ -134,7 +134,7 @@ fn change_player_acceleration(
     let mut horizontal_acceleration = Vec3::ZERO;
     let mut vertical_acceleration = Vec3::ZERO;
     for key in keys.get_pressed() {
-        if window.cursor.grab_mode != CursorGrabMode::None {
+        if window.cursor_options.grab_mode != CursorGrabMode::None {
             match key {
                 KeyCode::KeyW => horizontal_acceleration += forward,
                 KeyCode::KeyS => horizontal_acceleration -= forward,
@@ -210,7 +210,7 @@ fn simulate_player_physics(
     mut player: Query<(&mut Player, &mut Transform, &Aabb)>,
 ) {
     let (mut player, mut transform, player_aabb) = player.single_mut();
-    let delta_time = fixed_time.delta_seconds();
+    let delta_time = fixed_time.delta_secs();
 
     if player.velocity.x != 0.0 {
         player.is_grounded.x = false;
@@ -432,7 +432,7 @@ fn send_position_to_server(
     mut last_time: Local<f32>,
     mut last_position: Local<Vec3>,
 ) {
-    *last_time += time.delta_seconds();
+    *last_time += time.delta_secs();
     if *last_time < 1.0 / 24.0 {
         // Fixed time is 1/144, but we want to send updates to the server at a more reasonable
         // cadence.

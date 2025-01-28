@@ -1,6 +1,6 @@
 # Fmc 
 
-Download at [fmc.gg](fmc.gg)  
+Download at [fmc.gg](https://fmc.gg)  
 [Discord](https://discord.gg/VMgFmdsQ6m)
 
 ![image](https://github.com/user-attachments/assets/f72ae725-2492-4677-8913-c12d23a5fd27)

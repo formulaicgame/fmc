@@ -115,9 +115,14 @@ fn handle_particles_from_server(
                     commands.spawn((
                         Particle::new(lifetime),
                         Velocity(velocity),
-                        MaterialMeshBundle {
-                            mesh: asset_server.add(mesh),
-                            material: asset_server.add(ParticleMaterial {
+                        Transform {
+                            translation,
+                            scale,
+                            ..default()
+                        },
+                        Mesh3d(asset_server.add(mesh)),
+                        MeshMaterial3d(
+                            asset_server.add(ParticleMaterial {
                                 texture: texture
                                     .as_ref()
                                     .map(|path| asset_server.load(TEXTURE_PATH.to_owned() + path)),
@@ -126,13 +131,7 @@ fn handle_particles_from_server(
                                     .is_some_and(|path| path.starts_with("blocks")),
                                 base_color,
                             }),
-                            transform: Transform {
-                                translation,
-                                scale,
-                                ..default()
-                            },
-                            ..default()
-                        },
+                        ),
                         MovesWithOrigin,
                     ));
                 }
@@ -265,7 +264,7 @@ pub fn simulate_physics(
 ) {
     for (mut transform, mut velocity) in entities.iter_mut() {
         let gravity = Vec3::new(0.0, -14.0, 0.0);
-        velocity.0 += gravity * time.delta_seconds();
+        velocity.0 += gravity * time.delta_secs();
 
         let mut friction = Vec3::ZERO;
 
@@ -275,7 +274,7 @@ pub fn simulate_physics(
             Vec3::new(0.0, 0.0, velocity.z),
         ] {
             let mut particle_aabb = Aabb::particle(&transform);
-            particle_aabb.center += directional_velocity * time.delta_seconds();
+            particle_aabb.center += directional_velocity * time.delta_secs();
 
             let blocks = Blocks::get();
 
@@ -307,7 +306,7 @@ pub fn simulate_physics(
             // TODO: This is remnant of when I tried to do all three axes at once. It could
             // probably be made to be simpler.
             let mut move_back = Vec3::ZERO;
-            let delta_time = Vec3::splat(time.delta_seconds());
+            let delta_time = Vec3::splat(time.delta_secs());
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
             for (collision, block_id) in collisions {
@@ -390,7 +389,7 @@ pub fn simulate_physics(
 
         // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
         // should be understood as 'velocity *= friction^time'
-        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_seconds());
+        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_secs());
         // Clamp the velocity when it is close to 0
         velocity.0 = Vec3::select(
             velocity.0.abs().cmplt(Vec3::splat(0.01)),

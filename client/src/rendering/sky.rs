@@ -49,51 +49,45 @@ fn setup(
         .entity(player_query.single())
         .with_children(|parent| {
             parent
-                .spawn(MaterialMeshBundle {
-                    mesh: meshes.add(Sphere::new(RADIUS).mesh().kind(SphereKind::Uv {
+                .spawn((
+                    Mesh3d(meshes.add(Sphere::new(RADIUS).mesh().kind(SphereKind::Uv {
                         // TODO: No clue what reasonable values are
                         sectors: 50,
                         stacks: 50,
-                    })),
-                    material: sky_materials.add(materials::SkyMaterial::skybox()),
-                    ..Default::default()
-                })
-                .insert(SkyBox)
+                    }))),
+                    MeshMaterial3d(sky_materials.add(materials::SkyMaterial::skybox())),
+                    SkyBox,
+                ))
                 .with_children(|parent| {
                     // The sun and moon are moved by following the rotation of the skybox
                     let cube = meshes.add(cube_mesh());
 
-                    parent
-                        .spawn(MaterialMeshBundle {
-                            mesh: cube.clone(),
-                            material: sky_materials.add(materials::SkyMaterial::sun(
-                                asset_server.load("assets/sun.png"),
-                            )),
-                            transform: Transform::from_xyz(RADIUS - 100.0, 0.0, 0.0)
-                                .with_rotation(
-                                    Quat::from_rotation_y(PI / 6.0)
-                                        * Quat::from_rotation_z(PI / 6.0),
-                                )
-                                .with_scale(Vec3::splat(50.0)),
-                            ..default()
-                        })
-                        .insert(Sun);
+                    parent.spawn((
+                        Mesh3d(cube.clone()),
+                        MeshMaterial3d(sky_materials.add(materials::SkyMaterial::sun(
+                            asset_server.load("assets/sun.png"),
+                        ))),
+                        Transform::from_xyz(RADIUS - 100.0, 0.0, 0.0)
+                            .with_rotation(
+                                Quat::from_rotation_y(PI / 6.0) * Quat::from_rotation_z(PI / 6.0),
+                            )
+                            .with_scale(Vec3::splat(50.0)),
+                        Sun,
+                    ));
 
-                    parent
-                        .spawn(MaterialMeshBundle {
-                            mesh: cube,
-                            material: sky_materials.add(materials::SkyMaterial::moon(
-                                asset_server.load("assets/moon.png"),
-                            )),
-                            transform: Transform::from_xyz(-RADIUS + 100.0, 0.0, 0.0)
-                                .with_rotation(
-                                    Quat::from_rotation_y(-PI / 6.0 + PI)
-                                        * Quat::from_rotation_z(-PI / 6.0),
-                                )
-                                .with_scale(Vec3::splat(50.0)),
-                            ..default()
-                        })
-                        .insert(Moon);
+                    parent.spawn((
+                        Mesh3d(cube),
+                        MeshMaterial3d(sky_materials.add(materials::SkyMaterial::moon(
+                            asset_server.load("assets/moon.png"),
+                        ))),
+                        Transform::from_xyz(-RADIUS + 100.0, 0.0, 0.0)
+                            .with_rotation(
+                                Quat::from_rotation_y(-PI / 6.0 + PI)
+                                    * Quat::from_rotation_z(-PI / 6.0),
+                            )
+                            .with_scale(Vec3::splat(50.0)),
+                        Moon,
+                    ));
 
                     stars(&mut meshes, &mut sky_materials, parent);
                 });
@@ -131,9 +125,9 @@ fn pass_time(
     // Sun/moon's rotation around its' own axis
     // One rotation per 5000 seconds
     let mut sun_transform = sun_query.single_mut();
-    sun_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_seconds());
+    sun_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_secs());
     let mut moon_transform = moon_query.single_mut();
-    moon_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_seconds());
+    moon_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_secs());
 
     // Max is lower so that the brightness peaks early and fades late
     let max = 0.2;
@@ -291,17 +285,16 @@ fn stars(
     for _ in 0..700 {
         let direction = Vec3::new(rng.next_f32(), rng.next_f32(), rng.next_f32()) - 0.5;
         let position = direction.normalize() * radius;
-        parent.spawn(MaterialMeshBundle {
-            mesh: star_mesh.clone(),
-            material: material.clone(),
-            transform: Transform::from_translation(position)
+        parent.spawn((
+            Mesh3d(star_mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_translation(position)
                 .with_scale(Vec3::splat(1.0 + rng.next_f32() * 2.0))
                 .with_rotation(
                     Quat::from_rotation_x(rng.next_f32() * PI)
                         * Quat::from_rotation_y(rng.next_f32() * PI)
                         * Quat::from_rotation_z(rng.next_f32() * PI),
                 ),
-            ..default()
-        });
+        ));
     }
 }

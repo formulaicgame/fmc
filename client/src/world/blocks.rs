@@ -343,7 +343,7 @@ pub fn load_blocks(
                 };
 
                 let fog_settings = if let Some(fog) = fog {
-                    Some(FogSettings {
+                    Some(DistanceFog {
                         color: fog.color,
                         falloff: FogFalloff::Linear {
                             start: fog.start,
@@ -486,7 +486,7 @@ pub struct Cube {
     // otherwise as if '1'.
     light_attenuation: u8,
     // Fog rendered if the camera is inside the bounds of the cube.
-    pub fog_settings: Option<FogSettings>,
+    pub fog_settings: Option<DistanceFog>,
     // Sounds played when walked on or in (random pick)
     sound: Sound,
     // Light emitted by the block
@@ -608,7 +608,7 @@ impl Block {
         }
     }
 
-    pub fn fog_settings(&self) -> Option<FogSettings> {
+    pub fn fog_settings(&self) -> Option<DistanceFog> {
         match self {
             Block::Cube(c) => c.fog_settings.clone(),
             Block::Model(_) => None,

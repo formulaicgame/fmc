@@ -4,7 +4,7 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
     render::{
-        mesh::{MeshVertexBufferLayoutRef, VertexAttributeValues},
+        mesh::{MeshAabb, MeshVertexBufferLayoutRef, VertexAttributeValues},
         render_resource::*,
     },
 };
@@ -53,12 +53,12 @@ fn update_light(
     origin: Res<Origin>,
     light_map: Res<LightMap>,
     mesh_query: Query<
-        (&GlobalTransform, &Handle<Mesh>),
+        (&GlobalTransform, &Mesh3d),
         (
-            With<Handle<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
+            With<MeshMaterial3d<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
             Or<(
                 Changed<GlobalTransform>,
-                Added<Handle<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
+                Added<MeshMaterial3d<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
             )>,
         ),
     >,
@@ -122,8 +122,8 @@ fn update_light(
 fn replace_material_and_mesh(
     mut commands: Commands,
     material_query: Query<
-        (Entity, &Handle<StandardMaterial>, &Handle<Mesh>),
-        Added<Handle<StandardMaterial>>,
+        (Entity, &MeshMaterial3d<StandardMaterial>, &Mesh3d),
+        Added<MeshMaterial3d<StandardMaterial>>,
     >,
     standard_materials: Res<Assets<StandardMaterial>>,
     mut pbr_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, PbrLightExtension>>>,
@@ -131,16 +131,16 @@ fn replace_material_and_mesh(
 ) {
     for (entity, standard_handle, mesh_handle) in material_query.iter() {
         let standard_material = standard_materials.get(standard_handle).unwrap();
-        let extension_handle = pbr_materials.add(ExtendedMaterial {
+        let extension_handle = MeshMaterial3d(pbr_materials.add(ExtendedMaterial {
             base: standard_material.clone(),
             extension: PbrLightExtension::default(),
-        });
+        }));
         let mut entity_commands = commands.entity(entity);
-        entity_commands.remove::<Handle<StandardMaterial>>();
+        entity_commands.remove::<MeshMaterial3d<StandardMaterial>>();
         entity_commands.insert(extension_handle);
         let mesh = meshes.get(mesh_handle).unwrap().clone();
-        // Copy the mesh, light is applied to each individual mesh
-        entity_commands.insert(meshes.add(mesh));
+        // Copy the mesh, light is baked into each individual mesh
+        entity_commands.insert(Mesh3d(meshes.add(mesh)));
     }
 }
 

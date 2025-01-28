@@ -142,11 +142,7 @@ fn handle_mesh_tasks(
             for (material_handle, mesh) in block_meshes.into_iter() {
                 children.push(
                     commands
-                        .spawn(MaterialMeshBundle {
-                            mesh: meshes.add(mesh.clone()),
-                            material: material_handle.clone(),
-                            ..Default::default()
-                        })
+                        .spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material_handle)))
                         .id(),
                 );
             }
@@ -156,7 +152,7 @@ fn handle_mesh_tasks(
                 // Removes previous meshes
                 .despawn_descendants()
                 .remove::<ChunkMeshTask>()
-                .push_children(&children);
+                .add_children(&children);
         }
     }
 

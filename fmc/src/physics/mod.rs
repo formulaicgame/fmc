@@ -180,7 +180,7 @@ fn simulate_aabb_physics(
             DVec3::new(0.0, 0.0, velocity.z),
         ] {
             let pos_after_move =
-                transform.translation + directional_velocity * time.delta_seconds_f64();
+                transform.translation + directional_velocity * time.delta_secs_f64();
 
             let entity_aabb = Aabb {
                 center: aabb.center + pos_after_move,
@@ -225,7 +225,7 @@ fn simulate_aabb_physics(
             // TODO: This is remnant of when I tried to do all three axes at once. It could
             // probably be made to be simpler.
             let mut move_back = DVec3::ZERO;
-            let delta_time = DVec3::splat(time.delta_seconds_f64());
+            let delta_time = DVec3::splat(time.delta_secs_f64());
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
             for (collision, block_id) in collisions {
@@ -313,7 +313,7 @@ fn simulate_aabb_physics(
 
         // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
         // should be parsed as 'velocity *= friction^time'
-        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_seconds_f64());
+        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_secs_f64());
         // Clamp the velocity when it is close to 0
         velocity.0 = DVec3::select(
             velocity.0.abs().cmplt(DVec3::splat(0.01)),
@@ -379,7 +379,7 @@ fn apply_acceleration(
             // external force is applied to them.
             continue;
         }
-        velocity.0 += acceleration.0 * time.delta_seconds_f64();
+        velocity.0 += acceleration.0 * time.delta_secs_f64();
         acceleration.0 = DVec3::ZERO;
     }
 }

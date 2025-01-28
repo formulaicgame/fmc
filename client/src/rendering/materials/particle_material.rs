@@ -1,8 +1,9 @@
 use bevy::{
     asset::{load_internal_asset, Handle},
+    image::Image,
     prelude::*,
     reflect::TypePath,
-    render::{render_resource::*, texture::Image},
+    render::render_resource::*,
 };
 
 use crate::{rendering::lighting::LightMap, world::Origin};
@@ -67,8 +68,11 @@ fn update_lighting(
     ambient_light: Res<AmbientLight>,
     mut meshes: ResMut<Assets<Mesh>>,
     particles: Query<
-        (&GlobalTransform, &Handle<Mesh>),
-        (With<Handle<ParticleMaterial>>, Changed<GlobalTransform>),
+        (&GlobalTransform, &Mesh3d),
+        (
+            With<MeshMaterial3d<ParticleMaterial>>,
+            Changed<GlobalTransform>,
+        ),
     >,
 ) {
     for (transform, mesh_handle) in particles.iter() {

@@ -43,7 +43,7 @@ impl Plugin for WorldPlugin {
             PostUpdate,
             (
                 handle_block_updates
-                    .run_if(on_event::<BlockUpdate>())
+                    .run_if(on_event::<BlockUpdate>)
                     // We want block models to be sent immediately as they are spawned, so it goes:
                     // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
                     .before(TransformSystem::TransformPropagate),

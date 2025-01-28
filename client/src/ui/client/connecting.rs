@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use fmc_protocol::messages;
 
-use super::{GuiState, InterfaceBundle, Interfaces};
+use super::{GuiState, Interface, Interfaces};
 use crate::{assets::AssetState, game_state::GameState, networking::NetworkClient, ui::widgets::*};
 
 // TODO: I think this looks better as an event architecture. You have something you want to
@@ -18,7 +18,7 @@ impl Plugin for ConnectingPlugin {
                     press_cancel.run_if(in_state(GuiState::Connecting)),
                     downloading_assets_text.run_if(resource_added::<messages::ServerConfig>),
                     (disconnect_text, show_when_disconnected_for_reason)
-                        .run_if(on_event::<messages::Disconnect>()),
+                        .run_if(on_event::<messages::Disconnect>),
                 ),
             )
             .add_systems(OnEnter(GameState::Connecting), show_when_connecting)
@@ -35,8 +35,9 @@ struct StatusText;
 
 fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
-        .spawn(InterfaceBundle {
-            style: Style {
+        .spawn((
+            Interface,
+            Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -46,18 +47,14 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            background_color: Color::srgb_u8(33, 33, 33).into(),
-            ..default()
-        })
+            BackgroundColor::from(Color::srgb_u8(33, 33, 33)),
+        ))
         .with_children(|parent| {
             parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        width: Val::Percent(100.0),
-                        ..default()
-                    },
+                .spawn(Node {
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    width: Val::Percent(100.0),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -88,12 +85,12 @@ fn press_cancel(
 // over in 'src/networking.rs'.
 fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut();
-    text.sections[0].value = "Downloading assets...".to_owned();
+    *text = Text::new("Downloading assets...");
 }
 
 fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut();
-    text.sections[0].value = "Loading assets...".to_owned();
+    *text = Text::new("Loading assets...");
 }
 
 fn disconnect_text(
@@ -102,7 +99,7 @@ fn disconnect_text(
 ) {
     for disconnect_event in disconnect_events.read() {
         let mut text = status_text.single_mut();
-        text.sections[0].value = disconnect_event.message.to_owned();
+        *text = Text::new(&disconnect_event.message);
     }
 }
 

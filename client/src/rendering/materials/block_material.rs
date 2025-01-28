@@ -1,14 +1,12 @@
 use bevy::{
     asset::{load_internal_asset, Handle},
+    image::Image,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
     render::{
-        alpha::AlphaMode,
-        mesh::MeshVertexBufferLayoutRef,
-        render_asset::RenderAssets,
-        render_resource::*,
-        texture::{GpuImage, Image},
+        alpha::AlphaMode, mesh::MeshVertexBufferLayoutRef, render_asset::RenderAssets,
+        render_resource::*, texture::GpuImage,
     },
 };
 

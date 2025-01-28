@@ -32,7 +32,7 @@ pub struct Settings {
     /// Horizontal speed while flying
     pub flight_speed: f32,
     /// Fog that limits visibility
-    pub fog: FogSettings,
+    pub fog: DistanceFog,
 }
 
 impl Settings {
@@ -58,7 +58,7 @@ impl Default for Settings {
             volume: 1.0,
             sensitivity: 0.00005,
             flight_speed: 50.0,
-            fog: FogSettings {
+            fog: DistanceFog {
                 color: Color::NONE,
                 ..default()
             },

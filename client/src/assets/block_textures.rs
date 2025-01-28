@@ -1,11 +1,11 @@
 use std::{collections::HashMap, io::prelude::*};
 
 use bevy::{
+    image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::{CompressedImageFormats, ImageSampler, ImageType},
     },
 };
 

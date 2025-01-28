@@ -30,13 +30,13 @@ fn handle_chat_messages(
             continue;
         };
 
-        let mut chat_history_update = messages::InterfaceTextUpdate::new("chat/history");
-        chat_history_update.append_line().with_text(
-            format!("[{}] {}", &player.username, &chat_message.text),
-            CHAT_FONT_SIZE,
-            CHAT_TEXT_COLOR,
-        );
-        net.broadcast(chat_history_update);
+        net.broadcast(messages::InterfaceTextUpdate {
+            interface_path: "chat/history".to_owned(),
+            index: i32::MAX,
+            text: format!("[{}] {}", &player.username, &chat_message.text),
+            font_size: CHAT_FONT_SIZE,
+            color: CHAT_TEXT_COLOR.to_owned(),
+        });
     }
 }
 
@@ -52,24 +52,24 @@ fn send_connection_messages(
     for event in network_events.read() {
         match event {
             NetworkEvent::Connected { entity } => {
-                let mut chat_update = messages::InterfaceTextUpdate::new("chat/history");
                 let player = &player_query.get(*entity).unwrap();
-                chat_update.append_line().with_text(
-                    format!("{} joined the game", player.username),
-                    CHAT_FONT_SIZE,
-                    CHAT_TEXT_COLOR,
-                );
-                net.broadcast(chat_update);
+                net.broadcast(messages::InterfaceTextUpdate {
+                    interface_path: "chat/history".to_owned(),
+                    index: i32::MAX,
+                    text: format!("{} joined the game", player.username),
+                    font_size: CHAT_FONT_SIZE,
+                    color: CHAT_TEXT_COLOR.to_owned(),
+                });
             }
             NetworkEvent::Disconnected { entity } => {
                 let player = player_query.get(*entity).unwrap();
-                let mut chat_update = messages::InterfaceTextUpdate::new("chat/history");
-                chat_update.append_line().with_text(
-                    format!("{} left the game", player.username),
-                    CHAT_FONT_SIZE,
-                    CHAT_TEXT_COLOR,
-                );
-                net.broadcast(chat_update);
+                net.broadcast(messages::InterfaceTextUpdate {
+                    interface_path: "chat/history".to_owned(),
+                    index: i32::MAX,
+                    text: format!("{} left the game", player.username),
+                    font_size: CHAT_FONT_SIZE,
+                    color: CHAT_TEXT_COLOR.to_owned(),
+                });
             }
         }
     }

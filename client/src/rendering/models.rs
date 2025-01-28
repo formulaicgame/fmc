@@ -75,20 +75,19 @@ fn handle_model_add_delete(
         };
 
         let entity = commands
-            .spawn(SceneBundle {
-                scene: gltf.scenes[0].clone(),
-                transform: Transform {
+            .spawn((
+                SceneRoot(gltf.scenes[0].clone()),
+                Transform {
                     translation: origin.to_local(new_model.position),
                     rotation: new_model.rotation,
                     scale: new_model.scale,
                 },
-                ..default()
-            })
-            .insert(Model::Asset(new_model.asset))
-            .insert(model_config.animation_graph.clone().unwrap())
-            .insert(AnimationPlayer::default())
-            .insert(TransformInterpolation::default())
-            .insert(MovesWithOrigin)
+                Model::Asset(new_model.asset),
+                AnimationGraphHandle(model_config.animation_graph.clone().unwrap()),
+                AnimationPlayer::default(),
+                TransformInterpolation::default(),
+                MovesWithOrigin,
+            ))
             .id();
 
         model_entities.insert(new_model.id, entity);
@@ -161,20 +160,19 @@ fn handle_custom_models(
         };
 
         let entity = commands
-            .spawn(MaterialMeshBundle {
-                mesh: meshes.add(mesh),
-                material: materials.add(material),
-                transform: Transform {
+            .spawn((
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(material)),
+                Transform {
                     translation: (custom_model.position - origin.as_dvec3()).as_vec3(),
                     rotation: custom_model.rotation,
                     scale: custom_model.scale,
                 },
-                ..default()
-            })
-            .insert(Model::Custom)
-            .insert(AnimationPlayer::default())
-            .insert(TransformInterpolation::default())
-            .insert(MovesWithOrigin)
+                Model::Custom,
+                AnimationPlayer::default(),
+                TransformInterpolation::default(),
+                MovesWithOrigin,
+            ))
             .id();
 
         model_entities.insert(custom_model.id, entity);
@@ -186,13 +184,12 @@ fn update_model_asset(
     model_entities: Res<ModelEntities>,
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
-    mut model_query: Query<(&mut Handle<Scene>, &mut Handle<AnimationGraph>, &mut Model)>,
+    mut model_query: Query<(&mut SceneRoot, &mut AnimationGraphHandle, &mut Model)>,
     mut asset_updates: EventReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
         if let Some(entity) = model_entities.get(&asset_update.id) {
-            let (mut scene_handle, mut animation_graph, mut model) =
-                model_query.get_mut(*entity).unwrap();
+            let (mut scene, mut animation_graph, mut model) = model_query.get_mut(*entity).unwrap();
 
             let Some(model_config) = models.get_config(&asset_update.asset) else {
                 net.disconnect(format!(
@@ -202,9 +199,10 @@ fn update_model_asset(
                 return;
             };
 
-            *scene_handle = gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone();
+            *scene =
+                SceneRoot(gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone());
             *model = Model::Asset(asset_update.asset);
-            *animation_graph = model_config.animation_graph.clone().unwrap();
+            *animation_graph = AnimationGraphHandle(model_config.animation_graph.clone().unwrap());
         }
     }
 }
@@ -288,7 +286,7 @@ fn play_animations(
     net: Res<NetworkClient>,
     models: Res<Models>,
     model_entities: Res<ModelEntities>,
-    mut model_query: Query<(&mut Model, &mut AnimationPlayer), With<Handle<AnimationGraph>>>,
+    mut model_query: Query<(&mut Model, &mut AnimationPlayer), With<AnimationGraphHandle>>,
     mut animation_events: EventReader<messages::ModelPlayAnimation>,
 ) {
     for animation in animation_events.read() {
@@ -382,18 +380,15 @@ fn render_aabb(
 
         let child = commands
             .spawn((
-                PbrBundle {
-                    mesh: meshes.add(mesh),
-                    material: materials.add(StandardMaterial {
-                        base_color: Color::rgb(0.0, 1.0, 0.0),
-                        unlit: true,
-                        ..default()
-                    }),
-                    transform: Transform {
-                        scale: 1.0 / transform.scale,
-                        translation: Vec3::new(0.0, 0.0, 0.0),
-                        ..default()
-                    },
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.0, 1.0, 0.0),
+                    unlit: true,
+                    ..default()
+                })),
+                Transform {
+                    scale: 1.0 / transform.scale,
+                    translation: Vec3::new(0.0, 0.0, 0.0),
                     ..default()
                 },
                 NotShadowCaster,

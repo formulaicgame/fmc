@@ -1,4 +1,13 @@
-use bevy::{color::palettes::css::DIM_GRAY, ecs::system::EntityCommands, prelude::*};
+use bevy::{
+    color::palettes::css::DIM_GRAY,
+    ecs::system::EntityCommands,
+    input::{
+        keyboard::{Key, KeyboardInput},
+        ButtonState,
+    },
+    prelude::*,
+    text::FontSmoothing,
+};
 
 use super::DEFAULT_FONT_HANDLE;
 
@@ -39,9 +48,9 @@ const BUTTON_COLOR: Color = Color::srgb(0.26, 0.26, 0.26);
 
 impl Widgets for ChildBuilder<'_> {
     fn spawn_button<'a>(&'a mut self, width: f32, text: &str) -> EntityCommands<'a> {
-        let mut entity_commands = self.spawn(ButtonBundle {
-            background_color: BUTTON_COLOR.into(),
-            style: Style {
+        let mut entity_commands = self.spawn((
+            Button,
+            Node {
                 aspect_ratio: Some(width / 20.0),
                 width: Val::Px(width),
                 border: UiRect::all(Val::Px(BORDER_SIZE)),
@@ -49,32 +58,30 @@ impl Widgets for ChildBuilder<'_> {
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            border_color: Color::BLACK.into(),
-            ..default()
-        });
+            BackgroundColor::from(BUTTON_COLOR),
+            BorderColor::from(Color::BLACK),
+        ));
         entity_commands.with_children(|parent| {
             parent
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+                    Node {
                         width: Val::Percent(100.0),
                         height: Val::Percent(100.0),
                         border: UiRect::all(Val::Px(BORDER_SIZE)),
                         ..default()
                     },
-                    border_color: Color::srgb_u8(128, 128, 128).into(),
-                    ..default()
-                })
+                    BorderColor::from(Color::srgb_u8(128, 128, 128)),
+                ))
                 .with_children(|first_border| {
-                    first_border.spawn(NodeBundle {
-                        style: Style {
+                    first_border.spawn((
+                        Node {
                             width: Val::Percent(100.0),
                             height: Val::Percent(100.0),
                             border: UiRect::all(Val::Px(BORDER_SIZE)),
                             ..default()
                         },
-                        border_color: Color::BLACK.into(),
-                        ..default()
-                    });
+                        BorderColor::from(Color::BLACK),
+                    ));
                 });
             parent.spawn_text(text);
         });
@@ -83,20 +90,18 @@ impl Widgets for ChildBuilder<'_> {
 
     fn spawn_textbox<'a>(&'a mut self, width: f32, placeholder_text: &str) -> EntityCommands<'a> {
         let entity_commands = self.spawn((
-            ButtonBundle {
-                background_color: Color::srgb_u8(66, 66, 66).into(),
-                border_color: Color::BLACK.into(),
-                style: Style {
-                    width: Val::Px(width),
-                    aspect_ratio: Some(width / 20.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    border: UiRect::all(Val::Px(BORDER_SIZE)),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
+            Button,
+            Node {
+                width: Val::Px(width),
+                aspect_ratio: Some(width / 20.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(BORDER_SIZE)),
+                overflow: Overflow::clip(),
                 ..default()
             },
+            BackgroundColor::from(Color::srgb_u8(66, 66, 66)),
+            BorderColor::from(Color::BLACK),
             TextBox {
                 text: placeholder_text.to_owned(),
             },
@@ -107,20 +112,15 @@ impl Widgets for ChildBuilder<'_> {
 
     fn spawn_text<'a>(&'a mut self, text: &str) -> EntityCommands<'a> {
         self.spawn((
-            TextBundle {
-                text: Text::from_section(
-                    text,
-                    TextStyle {
-                        font_size: FONT_SIZE,
-                        font: DEFAULT_FONT_HANDLE,
-                        color: Color::WHITE,
-                        ..default()
-                    },
-                ),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    ..default()
-                },
+            Text::new(text),
+            TextFont {
+                font_size: FONT_SIZE,
+                font: DEFAULT_FONT_HANDLE,
+                font_smoothing: FontSmoothing::None,
+            },
+            TextColor(Color::WHITE),
+            Node {
+                position_type: PositionType::Absolute,
                 ..default()
             },
             TextShadow::default(),
@@ -204,21 +204,28 @@ fn focus_text_box_on_interface_change(
 
 fn edit_text_box(
     mut focused_text_box: Query<&mut TextBox, With<FocusedTextBox>>,
-    mut chars: EventReader<ReceivedCharacter>,
+    mut keyboard_input: EventReader<KeyboardInput>,
 ) {
     if let Ok(mut text_box) = focused_text_box.get_single_mut() {
         // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has
         // no utility function for discerning if it is a valid char, you have to match the whole thing,
         // but more importantly is does not consider the repeat properties of the WM.
-        for event in chars.read() {
-            let char = event.char.chars().last().unwrap();
-            if char.is_ascii() {
-                if !char.is_control() {
-                    text_box.text.push(char);
-                } else if char == '\u{8}' {
-                    // This is backspace (pray)
+        for input in keyboard_input.read() {
+            if input.state != ButtonState::Pressed {
+                continue;
+            }
+
+            match &input.logical_key {
+                Key::Character(key) => {
+                    text_box.text.push_str(key.as_str());
+                }
+                Key::Backspace => {
                     text_box.text.pop();
                 }
+                Key::Space => {
+                    text_box.text.push(' ');
+                }
+                _ => (),
             }
         }
     }
@@ -231,7 +238,7 @@ fn update_textbox_text(
     for (text_box, children) in text_box_query.iter() {
         for child in children {
             if let Ok(mut text) = text_query.get_mut(*child) {
-                text.sections[0].value = text_box.text.clone();
+                *text = Text::new(&text_box.text);
             }
         }
     }
@@ -252,26 +259,28 @@ impl Default for TextShadow {
 
 fn add_text_shadow(
     mut commands: Commands,
-    parent_style: Query<&Style>,
-    mut text_query: Query<(&Parent, &Text, &mut TextShadow), Added<TextShadow>>,
+    parent_style: Query<&Node>,
+    mut new_text_query: Query<
+        (&Parent, &Text, &TextFont, &TextLayout, &mut TextShadow),
+        Added<TextShadow>,
+    >,
 ) {
-    for (parent, text, mut shadow) in text_query.iter_mut() {
+    for (parent, text, font, layout, mut shadow) in new_text_query.iter_mut() {
         // If an element is centered, the margin gets halved for some reason...
-        let font_size = text.sections[0].style.font_size;
         let parent_style = parent_style.get(parent.get()).unwrap();
         let vertical_margin = match parent_style.flex_direction {
             FlexDirection::Row | FlexDirection::RowReverse => {
                 if parent_style.align_items == AlignItems::Center {
-                    Val::Px((font_size / 5.3).round())
+                    Val::Px((font.font_size / 5.3).round())
                 } else {
-                    Val::Px((font_size / 10.6).round())
+                    Val::Px((font.font_size / 10.6).round())
                 }
             }
             FlexDirection::Column | FlexDirection::ColumnReverse => {
                 if parent_style.justify_content == JustifyContent::Center {
-                    Val::Px((font_size / 5.3).round())
+                    Val::Px((font.font_size / 5.3).round())
                 } else {
-                    Val::Px((font_size / 10.6).round())
+                    Val::Px((font.font_size / 10.6).round())
                 }
             }
         };
@@ -279,45 +288,39 @@ fn add_text_shadow(
         let horizontal_margin = match parent_style.flex_direction {
             FlexDirection::Row | FlexDirection::RowReverse => {
                 if parent_style.justify_content == JustifyContent::Center {
-                    Val::Px(font_size / 4.5)
+                    Val::Px(font.font_size / 4.5)
                 } else {
-                    Val::Px(font_size / 9.0)
+                    Val::Px(font.font_size / 9.0)
                 }
             }
             FlexDirection::Column | FlexDirection::ColumnReverse => {
                 if parent_style.align_items == AlignItems::Center {
-                    Val::Px(font_size / 4.5)
+                    Val::Px(font.font_size / 4.5)
                 } else {
-                    Val::Px(font_size / 9.0)
+                    Val::Px(font.font_size / 9.0)
                 }
             }
         };
 
-        let mut shadow_text = text.clone();
-        shadow_text
-            .sections
-            .iter_mut()
-            .for_each(|section| section.style.color = DIM_GRAY.into());
-        let shadow_text_entity = commands
-            .spawn(TextBundle {
-                text: shadow_text,
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    margin: UiRect {
-                        top: vertical_margin,
-                        left: horizontal_margin,
-                        ..default()
-                    },
+        let shadow_text = commands.spawn((
+            text.clone(),
+            TextColor(DIM_GRAY.into()),
+            font.clone(),
+            layout.clone(),
+            Node {
+                position_type: PositionType::Absolute,
+                margin: UiRect {
+                    top: vertical_margin,
+                    left: horizontal_margin,
                     ..default()
                 },
                 ..default()
-            })
-            .id();
+            },
+        ));
 
-        shadow.shadow_entity = shadow_text_entity;
-        commands
-            .entity(parent.get())
-            .insert_children(0, &[shadow_text_entity]);
+        let entity = shadow_text.id();
+        shadow.shadow_entity = entity;
+        commands.entity(parent.get()).insert_children(0, &[entity]);
     }
 }
 
@@ -333,14 +336,13 @@ fn update_text_shadow(
             continue;
         }
 
-        let mut new_shadow_text = text.clone();
-        new_shadow_text
-            .sections
-            .iter_mut()
-            .for_each(|section| section.style.color = DIM_GRAY.into());
-        let (mut shadow_text, mut shadow_visibility) =
-            shadow_text_query.get_mut(shadow.shadow_entity).unwrap();
-        *shadow_text = new_shadow_text;
+        let Ok((mut shadow_text, mut shadow_visibility)) =
+            shadow_text_query.get_mut(shadow.shadow_entity)
+        else {
+            continue;
+        };
+
+        *shadow_text = text.clone();
         *shadow_visibility = *visibility;
     }
 }

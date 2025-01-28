@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::{gltf::Gltf, prelude::*};
+use bevy::{gltf::Gltf, prelude::*, text::FontSmoothing, ui::FocusPolicy};
 
 use fmc_protocol::messages;
 use serde::{Deserialize, Serialize};
@@ -386,67 +386,70 @@ fn handle_item_box_updates(
 
                     // Item count text
                     entity_commands.with_children(|parent| {
-                        parent.spawn(TextBundle {
-                            text: Text::from_section(
-                                item_stack.size.to_string(),
-                                TextStyle {
-                                    font: asset_server.load("server_assets/active/font.otf"),
-                                    font_size: 8.0,
-                                    color: if item_stack.size > 1 {
-                                        Color::WHITE
-                                    } else {
-                                        Color::NONE
-                                    },
-                                    ..default()
-                                },
-                            ),
-                            style: Style {
+                        parent.spawn((
+                            Node {
                                 top: Val::Px(1.0),
                                 left: Val::Px(2.0),
                                 ..default()
                             },
-                            ..default()
-                        });
+                            Text(item_stack.size.to_string()),
+                            TextColor::from(if item_stack.size > 1 {
+                                Color::WHITE
+                            } else {
+                                Color::NONE
+                            }),
+                            TextFont {
+                                font: asset_server.load("server_assets/active/font.otf"),
+                                font_size: 8.0,
+                                font_smoothing: FontSmoothing::None,
+                            },
+                        ));
                     });
 
-                    entity_commands
-                        .insert(ImageBundle {
+                    entity_commands.insert((
+                        ImageNode {
                             image: if let Some(item_id) = &item_stack.item {
                                 asset_server.load(&items.get(item_id).image_path).into()
                             } else {
-                                UiImage::default()
+                                default()
                             },
-                            // TODO: This doesn't actually block? Can't highlight items because of it.
-                            focus_policy: bevy::ui::FocusPolicy::Block,
-                            style: Style {
-                                width: Val::Px(14.0),
-                                height: Val::Px(15.8),
-                                margin: UiRect {
-                                    //left: Val::Px(0.0),
-                                    //right: Val::Px(0.0),
-                                    top: Val::Px(0.1),
-                                    bottom: Val::Px(0.1),
-                                    ..default()
-                                },
-                                // https://github.com/bevyengine/bevy/issues/6879
-                                //padding: UiRect {
-                                //    left: Val::Px(1.0),
-                                //    right: Val::Auto,
-                                //    top: Val::Px(1.0),
-                                //    bottom: Val::Auto,
-                                //},
-                                // puts item count text in the bottom right corner
-                                flex_direction: FlexDirection::ColumnReverse,
-                                align_items: AlignItems::FlexEnd,
-                                ..default()
+                            color: if item_stack.item.is_some() {
+                                Color::WHITE
+                            } else {
+                                Color::NONE
                             },
                             ..default()
-                        })
-                        .insert(Interaction::default())
-                        .insert(ItemBox {
+                        },
+                        Node {
+                            width: Val::Px(14.0),
+                            height: Val::Px(15.8),
+                            margin: UiRect {
+                                //left: Val::Px(0.0),
+                                //right: Val::Px(0.0),
+                                top: Val::Px(0.1),
+                                bottom: Val::Px(0.1),
+                                ..default()
+                            },
+                            // https://github.com/bevyengine/bevy/issues/6879
+                            //padding: UiRect {
+                            //    left: Val::Px(1.0),
+                            //    right: Val::Auto,
+                            //    top: Val::Px(1.0),
+                            //    bottom: Val::Auto,
+                            //},
+                            // puts item count text in the bottom right corner
+                            flex_direction: FlexDirection::ColumnReverse,
+                            align_items: AlignItems::FlexEnd,
+                            ..default()
+                        },
+                        // TODO: This doesn't actually block? Can't highlight items because of it.
+                        FocusPolicy::Block,
+                        Interaction::default(),
+                        ItemBox {
                             item_stack,
                             index: item_box.index as usize,
-                        });
+                        },
+                    ));
                 }
             }
         }
@@ -706,53 +709,51 @@ fn right_click_item_box(
 fn update_cursor_item_stack_position(
     ui_scale: Res<UiScale>,
     mut cursor_move_event: EventReader<CursorMoved>,
-    mut held_item_stack_query: Query<&mut Style, With<CursorItemBox>>,
+    mut held_item_stack_query: Query<&mut Node, With<CursorItemBox>>,
 ) {
     for cursor_movement in cursor_move_event.read() {
-        let mut style = held_item_stack_query.single_mut();
-        style.left = Val::Px(cursor_movement.position.x / ui_scale.0 as f32 - 8.0);
-        style.top = Val::Px(cursor_movement.position.y / ui_scale.0 as f32 - 8.0);
+        let mut node = held_item_stack_query.single_mut();
+        node.left = Val::Px(cursor_movement.position.x / ui_scale.0 as f32 - 8.0);
+        node.top = Val::Px(cursor_movement.position.y / ui_scale.0 as f32 - 8.0);
     }
 }
 
 fn update_cursor_image(
     asset_server: Res<AssetServer>,
     items: Res<Items>,
-    mut cursor_item_query: Query<(&mut UiImage, &CursorItemBox, &Children)>,
+    mut cursor_item_query: Query<(&mut ImageNode, &CursorItemBox, &Children)>,
     // TODO: Add marker component
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<(&mut Text, &mut TextColor, &mut TextFont)>,
 ) {
     for (mut image, cursor_box, children) in cursor_item_query.iter_mut() {
         if let Some(item_id) = cursor_box.item_stack.item {
-            *image = asset_server.load(&items.get(&item_id).image_path).into();
+            image.image = asset_server.load(&items.get(&item_id).image_path).into();
             image.color = Color::WHITE;
 
-            let mut text = text_query.get_mut(children[0]).unwrap();
-            *text = Text::from_section(
-                cursor_box.item_stack.size.to_string(),
-                TextStyle {
-                    font: asset_server.load("server_assets/active/font.otf"),
-                    font_size: 8.0,
-                    color: if cursor_box.item_stack.size > 1 {
-                        Color::WHITE
-                    } else {
-                        Color::NONE
-                    },
-                },
-            );
+            let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
+            *text = Text(cursor_box.item_stack.size.to_string());
+            *font = TextFont {
+                font: asset_server.load("server_assets/active/font.otf"),
+                font_size: 8.0,
+                font_smoothing: FontSmoothing::None,
+            };
+            *color = TextColor(if cursor_box.item_stack.size > 1 {
+                Color::WHITE
+            } else {
+                Color::NONE
+            });
         } else {
             // Instead of hiding the node through visibility we mask it with the color. This is
             // because the item box still needs to be interactable so items can be put into it.
             image.color = Color::NONE;
-            let mut text = text_query.get_mut(children[0]).unwrap();
-            *text = Text::from_section(
-                cursor_box.item_stack.size.to_string(),
-                TextStyle {
-                    font: asset_server.load("server_assets/active/font.otf"),
-                    font_size: 6.0,
-                    color: Color::NONE,
-                },
-            );
+            let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
+            *text = Text(cursor_box.item_stack.size.to_string());
+            *font = TextFont {
+                font: asset_server.load("server_assets/active/font.otf"),
+                font_size: 6.0,
+                font_smoothing: FontSmoothing::None,
+            };
+            *color = TextColor(Color::NONE);
         }
     }
 }

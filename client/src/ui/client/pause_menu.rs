@@ -1,6 +1,6 @@
 use bevy::{color::palettes::css::DARK_GRAY, prelude::*, window::WindowFocused};
 
-use super::{GuiState, InterfaceBundle, Interfaces};
+use super::{GuiState, Interface, Interfaces};
 use crate::{game_state::GameState, networking::NetworkClient, ui::widgets::*};
 
 pub struct PauseMenuPlugin;
@@ -24,9 +24,9 @@ struct QuitButton;
 
 fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
-        .spawn(InterfaceBundle {
-            background_color: DARK_GRAY.with_alpha(0.5).into(),
-            style: Style {
+        .spawn((
+            Interface,
+            Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -36,8 +36,8 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            ..default()
-        })
+            BackgroundColor::from(DARK_GRAY.with_alpha(0.5)),
+        ))
         .with_children(|parent| {
             parent.spawn_button(200.0, "Resume").insert(ResumeButton);
             parent.spawn_button(200.0, "Quit").insert(QuitButton);

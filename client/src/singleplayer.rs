@@ -14,7 +14,7 @@ impl Plugin for SinglePlayerPlugin {
                 Update,
                 (
                     launch_singleplayer_server,
-                    kill_server_on_disconnect.run_if(on_event::<messages::Disconnect>()),
+                    kill_server_on_disconnect.run_if(on_event::<messages::Disconnect>),
                 ),
             );
     }

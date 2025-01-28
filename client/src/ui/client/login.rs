@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::{GuiState, InterfaceBundle, Interfaces};
+use super::{GuiState, Interface, Interfaces};
 use crate::{networking::Identity, ui::widgets::*};
 
 pub struct LoginPlugin;
@@ -19,8 +19,9 @@ struct Username;
 
 fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
     let entity = commands
-        .spawn(InterfaceBundle {
-            style: Style {
+        .spawn((
+            Interface,
+            Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -30,18 +31,14 @@ fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            background_color: Color::srgb_u8(33, 33, 33).into(),
-            ..default()
-        })
+            BackgroundColor::from(Color::srgb_u8(33, 33, 33)),
+        ))
         .with_children(|parent| {
             parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(12.0),
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(12.0),
+                    justify_content: JustifyContent::Center,
                     ..default()
                 })
                 .with_children(|parent| {
