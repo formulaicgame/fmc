@@ -147,7 +147,7 @@ fn download_progress_text(
     for reporter in downloads.iter() {
         while let Ok(status) = reporter.0.try_recv() {
             *timer = Timer::from_seconds(2.0, TimerMode::Once);
-            *visibility = Visibility::Visible;
+            *visibility = Visibility::Inherited;
 
             match status {
                 DownloadStatus::Success { path } => {
