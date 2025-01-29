@@ -129,7 +129,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // themselves or something else in the shader that makes them darker than they should be.
     let artificial = (pow(0.8, 15.0 - artificial_level)) * 1.2;
     let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a * 1.2;
-    let light = select(artificial, sunlight, sunlight_level >= artificial_level);
+    let light = max(artificial, sunlight);
 
     output_color = vec4(output_color.rgb * light, output_color.a);
     

@@ -383,8 +383,7 @@ impl Material for BlockMaterial {
     }
 
     fn fragment_shader() -> ShaderRef {
-        //BLOCK_FRAGMENT_SHADER.into()
-        "src/rendering/shaders/block.wgsl".into()
+        BLOCK_FRAGMENT_SHADER.into()
     }
 
     #[inline]

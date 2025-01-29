@@ -1,6 +1,6 @@
 use bevy::{
     asset::load_internal_asset,
-    math::Vec3A,
+    math::{DVec3, Vec3A},
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
     render::{
@@ -71,16 +71,16 @@ fn update_light(
         mesh_aabb.center *= Vec3A::from(transform.scale);
         mesh_aabb.half_extents *= Vec3A::from(transform.scale);
 
-        let position = transform.translation + origin.0.as_vec3();
+        let position = origin.to_global(transform.translation);
 
         // There's an assumption here that lighting is finsihed before this first runs that I don't
         // know if holds true.
         let mut new_light = Light(0);
         for (i, offset) in mesh_aabb.half_extents.to_array().into_iter().enumerate() {
-            let mut offset_vec = Vec3::ZERO;
-            offset_vec[i] = offset;
+            let mut offset_vec = DVec3::ZERO;
+            offset_vec[i] = offset as f64;
             for direction in [-1.0, 1.0] {
-                let position = (position + Vec3::from(mesh_aabb.center) + offset_vec * direction)
+                let position = (position + mesh_aabb.center.as_dvec3() + offset_vec * direction)
                     .floor()
                     .as_ivec3();
                 if let Some(light) = light_map.get_light(position) {

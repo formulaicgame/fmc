@@ -159,7 +159,7 @@ fn fragment(
 
     let artificial = (pow(0.8, 15.0 - artificial_level));
     let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a;
-    let light = select(artificial, sunlight, sunlight_level >= artificial_level);
+    let light = max(artificial, sunlight);
 
     output_color = vec4(output_color.rgb * light, output_color.a);
 

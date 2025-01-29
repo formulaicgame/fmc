@@ -8,6 +8,8 @@ use bevy::{
 
 use crate::{rendering::lighting::LightMap, world::Origin};
 
+const PARTICLE_SHADER: Handle<Shader> = Handle::weak_from_u128(34956038049630945);
+
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
@@ -17,6 +19,13 @@ impl Plugin for ParticleMaterialPlugin {
             ..default()
         })
         .add_systems(Update, update_lighting);
+
+        load_internal_asset!(
+            app,
+            PARTICLE_SHADER,
+            "../shaders/particles.wgsl",
+            Shader::from_wgsl
+        );
     }
 }
 
@@ -35,10 +44,11 @@ pub struct ParticleMaterial {
 
 impl Material for ParticleMaterial {
     fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/particles.wgsl".into()
+        PARTICLE_SHADER.into()
     }
+
     fn fragment_shader() -> ShaderRef {
-        "src/rendering/shaders/particles.wgsl".into()
+        PARTICLE_SHADER.into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {
@@ -80,16 +90,14 @@ fn update_lighting(
             continue;
         };
 
-        let position = origin.to_global(transform.translation()).as_ivec3();
+        let position = origin.to_global(transform.translation()).floor().as_ivec3();
         let Some(light) = light_map.get_light(position) else {
             continue;
         };
 
-        let mut light = if light.sunlight() >= light.artificial() {
-            0.8f32.powi(15 - light.sunlight() as i32) * ambient_light.brightness
-        } else {
-            0.8f32.powi(15 - light.artificial() as i32)
-        };
+        let sunlight = 0.8f32.powi(15 - light.sunlight() as i32) * ambient_light.brightness;
+        let artificial = 0.8f32.powi(15 - light.artificial() as i32);
+        let mut light = sunlight.max(artificial);
 
         // This makes the particles darker to increase contrast
         light *= 0.7;
