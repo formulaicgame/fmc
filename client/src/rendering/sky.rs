@@ -10,7 +10,9 @@ use bevy::{
 };
 use fmc_protocol::messages;
 
-use crate::{game_state::GameState, player::Player, rendering::materials, utils};
+use crate::{
+    assets::AssetState, game_state::GameState, player::Player, rendering::materials, utils,
+};
 
 use super::materials::SkyMaterial;
 
@@ -19,13 +21,9 @@ const RADIUS: f32 = 500.0;
 pub struct SkyPlugin;
 impl Plugin for SkyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PostStartup,
-            // This is just a hacky way to have it run after player setup, all of this should
-            // be removed when the sky is defined by the server.
-            setup,
-        )
-        .add_systems(Update, pass_time.run_if(in_state(GameState::Playing)));
+        app.add_systems(OnEnter(AssetState::Loading), setup)
+            .add_systems(OnEnter(GameState::Launcher), cleanup)
+            .add_systems(Update, pass_time.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -37,6 +35,12 @@ struct Sun;
 
 #[derive(Component)]
 struct Moon;
+
+fn cleanup(mut commands: Commands, skybox: Query<Entity, With<SkyBox>>) {
+    if let Ok(entity) = skybox.get_single() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
 
 fn setup(
     mut commands: Commands,
@@ -65,7 +69,7 @@ fn setup(
                     parent.spawn((
                         Mesh3d(cube.clone()),
                         MeshMaterial3d(sky_materials.add(materials::SkyMaterial::sun(
-                            asset_server.load("assets/sun.png"),
+                            asset_server.load("server_assets/active/textures/sun.png"),
                         ))),
                         Transform::from_xyz(RADIUS - 100.0, 0.0, 0.0)
                             .with_rotation(
@@ -78,7 +82,7 @@ fn setup(
                     parent.spawn((
                         Mesh3d(cube),
                         MeshMaterial3d(sky_materials.add(materials::SkyMaterial::moon(
-                            asset_server.load("assets/moon.png"),
+                            asset_server.load("server_assets/active/textures/moon.png"),
                         ))),
                         Transform::from_xyz(-RADIUS + 100.0, 0.0, 0.0)
                             .with_rotation(
