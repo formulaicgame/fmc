@@ -1,13 +1,12 @@
-# Fmc 
-
-Download at [fmc.gg](https://fmc.gg)  
-[Discord](https://discord.gg/VMgFmdsQ6m)
-
 ![image](https://github.com/user-attachments/assets/f72ae725-2492-4677-8913-c12d23a5fd27)
+
+## Fmc 
+Download game at [fmc.gg](https://fmc.gg)  
+Join the [Discord](https://discord.gg/VMgFmdsQ6m) if you have questions
 
 ## Modding
 
-Mods can be added through the `fmc build` command, see also `fmc build --template` for an example.
+Mods can be added through the `fmc build` command, see `fmc build --template` for an example.
 Mods are plain rust crates, and can be found at [crates.io](https://crates.io/search?q=fmc_) by searching for `fmc_`  
 To develop your own mod, see the [example mod](examples/mod).
 
