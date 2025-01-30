@@ -449,16 +449,18 @@ fn handle_chunk_loading_tasks(
                         let mut transform = Transform::from_translation(
                             block_position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
                         );
-                        if let Some(mut side_transform) = block_config.placement.side_transform {
-                            if let Some(block_state) = chunk.get_block_state(&index) {
-                                if let Some(rotation) = block_state.rotation() {
-                                    side_transform.rotate_around(DVec3::ZERO, rotation.as_quat());
+                        if let Some(block_state) = chunk.get_block_state(&index) {
+                            if let Some(rotation) = block_state.rotation() {
+                                if let Some(mut rotation_transform) =
+                                    block_config.placement.rotation_transform
+                                {
+                                    rotation_transform
+                                        .rotate_around(DVec3::ZERO, rotation.as_quat());
+                                    transform.translation += rotation_transform.translation;
+                                    transform.rotation *= rotation_transform.rotation;
+                                    transform.scale *= rotation_transform.scale;
                                 }
                             }
-
-                            transform.translation += side_transform.translation;
-                            transform.rotation *= side_transform.rotation;
-                            transform.scale *= side_transform.scale;
                         }
 
                         entity_commands.insert(ModelBundle {
@@ -501,10 +503,15 @@ fn handle_chunk_loading_tasks(
 }
 
 fn unload_chunks(
+    mut commands: Commands,
     mut world_map: ResMut<WorldMap>,
     mut unload_chunk_events: EventReader<ChunkUnloadEvent>,
 ) {
     for event in unload_chunk_events.read() {
-        world_map.remove_chunk(&event.0);
+        let chunk = world_map.remove_chunk(&event.0).unwrap();
+
+        for entity in chunk.block_entities.values() {
+            commands.entity(*entity).despawn_recursive();
+        }
     }
 }

@@ -38,8 +38,8 @@ impl WorldMap {
         self.chunks.insert(chunk_position, value);
     }
 
-    pub fn remove_chunk(&mut self, chunk_position: &IVec3) {
-        self.chunks.remove(chunk_position);
+    pub fn remove_chunk(&mut self, chunk_position: &IVec3) -> Option<Chunk> {
+        self.chunks.remove(chunk_position)
     }
 
     pub fn get_block(&self, position: IVec3) -> Option<BlockId> {

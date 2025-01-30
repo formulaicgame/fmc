@@ -200,13 +200,16 @@ fn handle_block_updates(
                         let mut transform = Transform::from_translation(
                             position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
                         );
-                        if let Some(mut side_transform) = block_config.placement.side_transform {
-                            if let Some(block_state) = block_state {
-                                if let Some(rotation) = block_state.rotation() {
-                                    side_transform.rotate_around(DVec3::ZERO, rotation.as_quat());
-                                    transform.translation += side_transform.translation;
-                                    transform.rotation *= side_transform.rotation;
-                                    transform.scale *= side_transform.scale;
+                        if let Some(block_state) = block_state {
+                            if let Some(rotation) = block_state.rotation() {
+                                if let Some(mut rotation_transform) =
+                                    block_config.placement.rotation_transform
+                                {
+                                    rotation_transform
+                                        .rotate_around(DVec3::ZERO, rotation.as_quat());
+                                    transform.translation += rotation_transform.translation;
+                                    transform.rotation *= rotation_transform.rotation;
+                                    transform.scale *= rotation_transform.scale;
                                 }
                             }
                         }

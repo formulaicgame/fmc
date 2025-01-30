@@ -756,7 +756,7 @@ pub struct BlockPlacement {
     /// the Top or Bottom face of a block.
     pub centered: bool,
     /// Set if a transform should be applied when rotated.
-    pub side_transform: Option<Transform>,
+    pub rotation_transform: Option<Transform>,
 }
 
 impl Default for BlockPlacement {
@@ -767,7 +767,7 @@ impl Default for BlockPlacement {
             sides: true,
             rotatable: false,
             centered: true,
-            side_transform: None,
+            rotation_transform: None,
         }
     }
 }
@@ -809,7 +809,7 @@ impl BlockFace {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Friction {
-    /// Friction for solid blocks.
+    /// For solid blocks.
     Static {
         front: f64,
         back: f64,
@@ -818,7 +818,7 @@ pub enum Friction {
         top: f64,
         bottom: f64,
     },
-    /// For non-collidable blocks, the friction is instead drag on the player movement.
+    /// For non-solid blocks
     Drag(DVec3),
 }
 
@@ -844,12 +844,12 @@ impl BlockState {
     }
 
     pub fn set_centered(&mut self, centered: bool) {
-        self.0 &= !1 << 3;
-        self.0 |= (centered as u16) << 3;
+        self.0 &= !0b100;
+        self.0 |= (centered as u16) << 2;
     }
 
     pub fn is_centered(&self) -> bool {
-        self.0 & (1 << 3) != 0
+        self.0 & 0b100 != 0
     }
 
     pub fn set_rotation(&mut self, rotation: BlockRotation) {
