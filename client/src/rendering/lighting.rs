@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     ops::{Index, IndexMut},
 };
 
@@ -351,9 +351,23 @@ impl IndexMut<usize> for LightChunk {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct LightUpdate {
     index: usize,
     light: Light,
+}
+
+impl Ord for LightUpdate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.light.artificial() + self.light.sunlight())
+            .cmp(&(other.light.artificial() + other.light.sunlight()))
+    }
+}
+
+impl PartialOrd for LightUpdate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(Resource, Default, DerefMut, Deref)]
@@ -372,7 +386,7 @@ struct LightUpdateQueue {
     // This is a ring buffer to allow for prioritization of propagations. Direct sunlight for
     // example will be put at the end of the queue to have it processed first.
     propagation: VecDeque<LightUpdate>,
-    removal: VecDeque<LightUpdate>,
+    removal: BinaryHeap<LightUpdate>,
 }
 
 impl LightUpdateQueue {
@@ -381,7 +395,7 @@ impl LightUpdateQueue {
             sunlit: false,
             timer: std::time::Instant::now().checked_sub(QUEUE_DELAY).unwrap(),
             propagation: VecDeque::with_capacity(Chunk::SIZE.pow(2) * 6),
-            removal: VecDeque::new(),
+            removal: BinaryHeap::new(),
         }
     }
 
@@ -586,7 +600,7 @@ fn handle_block_updates(
                 *light = Light::new(1, 1);
             }
 
-            queue.removal.push_front(LightUpdate {
+            queue.removal.push(LightUpdate {
                 index: *index,
                 light: *light,
             });
@@ -640,7 +654,13 @@ fn propagate_light(
     mut light_update_queues: ResMut<Queues>,
     mut light_map: ResMut<LightMap>,
     mut chunk_mesh_events: EventWriter<TestFinishedLightingEvent>,
+    mut debug: Local<bool>,
+    key_input: Res<ButtonInput<KeyCode>>,
 ) {
+    if key_input.just_pressed(KeyCode::F5) {
+        *debug = !*debug;
+    }
+
     let blocks = Blocks::get();
 
     for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
@@ -671,7 +691,10 @@ fn propagate_light(
         //         .collect::<Vec<_>>());
         // }
 
-        while let Some(removal) = update_queue.removal.pop_back() {
+        if *debug {
+            dbg!(&update_queue.removal);
+        }
+        while let Some(removal) = update_queue.removal.pop() {
             let light = match &mut light_chunk.light {
                 LightStorage::Uniform(uniform_light) => {
                     if uniform_light.sunlight() != 0 {
@@ -728,7 +751,7 @@ fn propagate_light(
                         &mut update_queue
                     };
 
-                    update_queue.removal.push_front(LightUpdate {
+                    update_queue.removal.push(LightUpdate {
                         index,
                         light: removed_light
                             .decrement_sun(
