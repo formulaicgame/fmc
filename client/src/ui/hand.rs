@@ -340,6 +340,8 @@ fn remove_finished_animations(mut animation_player: Query<&mut AnimationPlayer, 
 
 fn play_use_animation(
     models: Res<Models>,
+    animation_graphs: Res<Assets<AnimationGraph>>,
+    animation_clips: Res<Assets<AnimationClip>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut hand_query: Query<(&mut AnimationPlayer, &Hand)>,
@@ -371,7 +373,17 @@ fn play_use_animation(
     } else if mouse_button_input.pressed(MouseButton::Left) {
         // Keep playing from current position if the mouse buttton is held
         let animation = animation_player.play(left_click);
-        if animation.is_finished() {
+        let animation_graph = animation_graphs
+            .get(model_config.animation_graph.as_ref().unwrap())
+            .unwrap();
+        let AnimationNodeType::Clip(clip_handle) =
+            &animation_graph.get(left_click).as_ref().unwrap().node_type
+        else {
+            unreachable!()
+        };
+        let clip = animation_clips.get(clip_handle).unwrap();
+
+        if animation.elapsed() / clip.duration() > 0.65 {
             animation.replay();
         }
     } else if mouse_button_input.just_pressed(MouseButton::Right) {
