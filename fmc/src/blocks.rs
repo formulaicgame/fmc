@@ -797,10 +797,10 @@ impl BlockFace {
 
     pub fn to_rotation(&self) -> BlockRotation {
         match self {
-            Self::Front => BlockRotation::None,
-            Self::Right => BlockRotation::Once,
-            Self::Back => BlockRotation::Twice,
-            Self::Left => BlockRotation::Thrice,
+            Self::Front => BlockRotation::Front,
+            Self::Right => BlockRotation::Right,
+            Self::Back => BlockRotation::Back,
+            Self::Left => BlockRotation::Left,
             _ => unreachable!(),
         }
     }
@@ -888,13 +888,15 @@ impl BlockPosition {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// The rotation of a block, the variants correspond to which way the block will face when rotated,
+/// but it is still a CCW rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum BlockRotation {
-    None = 0,
-    Once,
-    Twice,
-    Thrice,
+    Front = 0,
+    Right,
+    Back,
+    Left,
 }
 
 impl From<u16> for BlockRotation {
@@ -907,10 +909,10 @@ impl From<u16> for BlockRotation {
 impl BlockRotation {
     pub fn as_quat(self) -> DQuat {
         match self {
-            Self::None => DQuat::from_rotation_y(0.0),
-            Self::Once => DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2),
-            Self::Twice => DQuat::from_rotation_y(std::f64::consts::PI),
-            Self::Thrice => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
+            Self::Front => DQuat::from_rotation_y(0.0),
+            Self::Right => DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2),
+            Self::Back => DQuat::from_rotation_y(std::f64::consts::PI),
+            Self::Left => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
         }
     }
 }

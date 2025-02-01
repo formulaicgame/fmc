@@ -362,6 +362,16 @@ fn handle_chunk_loading_tasks(
     for (entity, mut task) in chunks.iter_mut() {
         if let Some((new_chunk_position, chunk)) = future::block_on(future::poll_once(&mut task.0))
         {
+            commands.entity(entity).despawn();
+
+            let Some(subscribers) = chunk_subscriptions
+                .chunk_to_subscribers
+                .get(&new_chunk_position)
+            else {
+                // Discard the chunk if it got unsubscribed to while loading
+                continue;
+            };
+
             world_map.insert(new_chunk_position, chunk);
 
             // TODO: This seems to be a common operation? Maybe create some combination iterator
@@ -476,28 +486,21 @@ fn handle_chunk_loading_tasks(
                 }
             }
 
-            if let Some(subscribers) = chunk_subscriptions
-                .chunk_to_subscribers
-                .get(&new_chunk_position)
-            {
-                // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
-                // where it last stopped.
-                let mut iter = origin_query.iter_many_mut(subscribers.iter());
-                while let Some(mut origin) = iter.fetch_next() {
-                    origin.set_changed();
-                }
-
-                net.send_many(
-                    subscribers,
-                    messages::Chunk {
-                        position: new_chunk_position,
-                        blocks: chunk.blocks.clone(),
-                        block_state: chunk.block_state.clone(),
-                    },
-                );
+            // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
+            // where it last stopped.
+            let mut iter = origin_query.iter_many_mut(subscribers.iter());
+            while let Some(mut origin) = iter.fetch_next() {
+                origin.set_changed();
             }
 
-            commands.entity(entity).despawn();
+            net.send_many(
+                subscribers,
+                messages::Chunk {
+                    position: new_chunk_position,
+                    blocks: chunk.blocks.clone(),
+                    block_state: chunk.block_state.clone(),
+                },
+            );
         }
     }
 }
@@ -508,7 +511,11 @@ fn unload_chunks(
     mut unload_chunk_events: EventReader<ChunkUnloadEvent>,
 ) {
     for event in unload_chunk_events.read() {
-        let chunk = world_map.remove_chunk(&event.0).unwrap();
+        let Some(chunk) = world_map.remove_chunk(&event.0) else {
+            // A chunk might be unsubscribed to in the space of time it takes to generate it, so it
+            // will never be added to the world map.
+            continue;
+        };
 
         for entity in chunk.block_entities.values() {
             commands.entity(*entity).despawn_recursive();
