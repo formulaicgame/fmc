@@ -71,7 +71,7 @@ fn setup(
                         MeshMaterial3d(sky_materials.add(materials::SkyMaterial::sun(
                             asset_server.load("server_assets/active/textures/sun.png"),
                         ))),
-                        Transform::from_xyz(RADIUS - 100.0, 0.0, 0.0)
+                        Transform::from_xyz(RADIUS - 25.0, 0.0, 0.0)
                             .with_rotation(
                                 Quat::from_rotation_y(PI / 6.0) * Quat::from_rotation_z(PI / 6.0),
                             )
