@@ -56,11 +56,11 @@ impl Plugin for ServerPlugin {
                     // Chained for these properties:
                     // 1. Player entities are removed a tick after they are disconnected. Lets you
                     //    save player data.
-                    // 2. Disconnecting before sending so accumulated buffers are ignored. Not
-                    //    really important, but saves some execution time.
+                    // 2. Sending before disconnecting so that the disconnection reason is
+                    //    sent.
                     remove_disconnected_player_entities,
-                    disconnect_players,
                     send_messages,
+                    disconnect_players,
                 )
                     .chain(),
             );
@@ -581,7 +581,7 @@ fn log_connections(
     }
 }
 
-#[derive(Event, Deref)]
+#[derive(Event, Deref, Debug)]
 pub struct NetworkMessage<T> {
     pub player_entity: Entity,
     #[deref]

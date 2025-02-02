@@ -654,13 +654,7 @@ fn propagate_light(
     mut light_update_queues: ResMut<Queues>,
     mut light_map: ResMut<LightMap>,
     mut chunk_mesh_events: EventWriter<TestFinishedLightingEvent>,
-    mut debug: Local<bool>,
-    key_input: Res<ButtonInput<KeyCode>>,
 ) {
-    if key_input.just_pressed(KeyCode::F5) {
-        *debug = !*debug;
-    }
-
     let blocks = Blocks::get();
 
     for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
@@ -683,17 +677,6 @@ fn propagate_light(
             continue;
         };
 
-        // if update_queue.removal.len() > 10 && chunk_position.y == 16 {
-        //     dbg!(&update_queue
-        //         .removal
-        //         .iter()
-        //         .map(|u| u.light)
-        //         .collect::<Vec<_>>());
-        // }
-
-        if *debug {
-            dbg!(&update_queue.removal);
-        }
         while let Some(removal) = update_queue.removal.pop() {
             let light = match &mut light_chunk.light {
                 LightStorage::Uniform(uniform_light) => {
@@ -707,8 +690,6 @@ fn propagate_light(
                 }
                 LightStorage::Normal(light_chunk) => &mut light_chunk[removal.index],
             };
-
-            let block_config = blocks.get_config(chunk[removal.index]);
 
             let mut removed_light = Light::new(0, 0);
 

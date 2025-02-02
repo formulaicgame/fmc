@@ -626,7 +626,7 @@ fn handle_node_visibility_updates(
                 Some(i) => i,
                 None => {
                     net.disconnect(&format!(
-                        "Server sent a visibility update for the interface node: '{}', but there is no node by that name.",
+                        "Server sent a visibility update for the interface node: '{}', but there is no node with that name.",
                         &interface_path
                     ));
                     return;
@@ -658,7 +658,7 @@ fn handle_interface_visibility_updates(
             Some(e) => e,
             None => {
                 net.disconnect(&format!(
-                    "Server sent open request for an interface with name: '{}', but there is no interface known by this name.",
+                    "Server sent open request for an interface with name: '{}', but there is no interface with that name.",
                     event.interface_path
                 ));
                 return;
