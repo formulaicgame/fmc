@@ -42,6 +42,10 @@ fn launch_singleplayer_server(
     mut launch_events: EventReader<LaunchSinglePlayer>,
 ) {
     for _ in launch_events.read() {
+        if server_process.0.is_some() {
+            return;
+        }
+
         let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
 
         if !std::path::Path::new(&path).exists() {
