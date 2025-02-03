@@ -113,7 +113,7 @@ pub fn load_materials(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(format!(
-                    "Failed to read material configuration, path: {}\nError: {}",
+                    "Failed to read material configuration, path: {} Error: {}",
                     file_path.to_string_lossy(),
                     e
                 ));

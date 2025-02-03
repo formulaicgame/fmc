@@ -52,6 +52,7 @@ fn launch_singleplayer_server(
         info!("Starting single player server");
         match std::process::Command::new(&std::fs::canonicalize(path).unwrap())
             .current_dir("fmc_server")
+            .env_clear()
             .stdin(Stdio::piped())
             .spawn()
         {
