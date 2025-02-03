@@ -1,7 +1,7 @@
 use std::{
     io::{Read, Write},
     net::{Shutdown, SocketAddr, TcpStream},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use bevy::{
@@ -152,9 +152,8 @@ impl NetworkClient {
             return;
         }
 
-        dbg!(message.as_ref());
         // Disconnect might be called many times as errors cascade, but only the first message will
-        // register as that will be the primary cause. The event queue is only has capacity for one
+        // register as that will be the primary cause. The event queue only has capacity for one
         // element.
         self.disconnect_events
             .push(message.as_ref().to_string())
@@ -163,10 +162,6 @@ impl NetworkClient {
 
     fn is_connected(&self) -> bool {
         return self.connection.is_some();
-    }
-
-    fn is_connecting(&self) -> bool {
-        return self.connection_task.is_some();
     }
 
     fn read_packets(&mut self) {
@@ -459,10 +454,6 @@ fn disconnect(
     mut disconnect_events: EventReader<messages::Disconnect>,
 ) {
     for _ in disconnect_events.read() {
-        if !net.is_connected() && !net.is_connecting() {
-            continue;
-        }
-
         if let Some(connection) = net.connection.take() {
             connection.shutdown(Shutdown::Both).ok();
         }
