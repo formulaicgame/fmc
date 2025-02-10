@@ -191,7 +191,7 @@ impl PartialEq for Item {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct ItemStack {
     // The item occupying the stack
     item: Option<Item>,
@@ -217,11 +217,17 @@ impl ItemStack {
         return self.item.as_ref();
     }
 
-    pub fn capacity(&self) -> u32 {
+    /// Returns the total capacity minus its current size
+    pub fn remaining_capacity(&self) -> u32 {
         return self
             .custom_capacity
             .unwrap_or(self.capacity)
             .saturating_sub(self.size);
+    }
+
+    /// Return the total capacity
+    pub fn capacity(&self) -> u32 {
+        return self.custom_capacity.unwrap_or(self.capacity);
     }
 
     pub fn size(&self) -> u32 {
@@ -254,7 +260,7 @@ impl ItemStack {
             panic!();
         }
 
-        let amount = other.size.min(self.capacity() - self.size);
+        let amount = other.size.min(self.remaining_capacity());
         self.size += amount;
         other.take(amount);
 
