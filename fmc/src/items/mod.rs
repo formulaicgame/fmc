@@ -254,7 +254,7 @@ impl ItemStack {
             panic!();
         }
 
-        let amount = other.size.min(self.capacity - self.size);
+        let amount = other.size.min(self.capacity() - self.size);
         self.size += amount;
         other.take(amount);
 
@@ -272,8 +272,7 @@ impl ItemStack {
 
         self.size -= taken.size;
         if self.size == 0 {
-            self.item = None;
-            self.capacity = 0;
+            *self = ItemStack::default();
         }
 
         taken
