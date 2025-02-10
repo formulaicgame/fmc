@@ -2,15 +2,17 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     bevy::math::DVec3,
-    blocks::{BlockFace, BlockId, BlockRotation, BlockState, Blocks},
+    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks},
     prelude::*,
     utils,
     world::{chunk::Chunk, terrain_generation::TerrainGenerator},
 };
 
+use super::chunk::ChunkPosition;
+
 #[derive(Resource)]
 pub struct WorldMap {
-    chunks: HashMap<IVec3, Chunk>,
+    chunks: HashMap<ChunkPosition, Chunk>,
     pub terrain_generator: Arc<dyn TerrainGenerator>,
 }
 
@@ -22,40 +24,42 @@ impl WorldMap {
         }
     }
 
-    pub fn contains_chunk(&self, chunk_position: &IVec3) -> bool {
+    pub fn contains_chunk(&self, chunk_position: &ChunkPosition) -> bool {
         return self.chunks.contains_key(chunk_position);
     }
 
-    pub fn get_chunk(&self, position: &IVec3) -> Option<&Chunk> {
-        return self.chunks.get(&position);
+    pub fn get_chunk(&self, chunk_position: &ChunkPosition) -> Option<&Chunk> {
+        return self.chunks.get(chunk_position);
     }
 
-    pub fn get_chunk_mut(&mut self, chunk_position: &IVec3) -> Option<&mut Chunk> {
-        return self.chunks.get_mut(&chunk_position);
+    pub fn get_chunk_mut(&mut self, chunk_position: &ChunkPosition) -> Option<&mut Chunk> {
+        return self.chunks.get_mut(chunk_position);
     }
 
-    pub fn insert(&mut self, chunk_position: IVec3, value: Chunk) {
+    pub fn insert(&mut self, chunk_position: ChunkPosition, value: Chunk) {
         self.chunks.insert(chunk_position, value);
     }
 
-    pub fn remove_chunk(&mut self, chunk_position: &IVec3) -> Option<Chunk> {
+    pub fn remove_chunk(&mut self, chunk_position: &ChunkPosition) -> Option<Chunk> {
         self.chunks.remove(chunk_position)
     }
 
-    pub fn get_block(&self, position: IVec3) -> Option<BlockId> {
-        let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
+    pub fn get_block(&self, position: BlockPosition) -> Option<BlockId> {
+        let chunk_position = ChunkPosition::from(*position);
 
-        if let Some(chunk) = self.get_chunk(&chunk_pos) {
+        if let Some(chunk) = self.get_chunk(&chunk_position) {
+            let index = position.as_chunk_index();
             Some(chunk[index])
         } else {
             None
         }
     }
 
-    pub fn get_block_state(&self, position: IVec3) -> Option<BlockState> {
-        let (chunk_pos, index) = utils::world_position_to_chunk_position_and_block_index(position);
+    pub fn get_block_state(&self, position: BlockPosition) -> Option<BlockState> {
+        let chunk_position = ChunkPosition::from(position);
 
-        if let Some(chunk) = self.get_chunk(&chunk_pos) {
+        if let Some(chunk) = self.get_chunk(&chunk_position) {
+            let index = position.as_chunk_index();
             return chunk.get_block_state(&index);
         } else {
             return None;
@@ -74,7 +78,7 @@ pub struct WorldMapRayCast<'a> {
     forward: DVec3,
     distance_next: DVec3,
     distance_increment: DVec3,
-    current_block_position: IVec3,
+    current_block_position: BlockPosition,
     step: IVec3,
 }
 
@@ -106,7 +110,7 @@ impl<'a> WorldMapRayCast<'a> {
         // +/-1 to shift block_pos when it hits the grid
         let step = direction.as_ivec3();
 
-        let current_block_position = ray_transform.translation.floor().as_ivec3();
+        let current_block_position = BlockPosition::from(ray_transform.translation);
 
         Self {
             world_map,
@@ -119,7 +123,7 @@ impl<'a> WorldMapRayCast<'a> {
         }
     }
 
-    pub fn position(&self) -> IVec3 {
+    pub fn position(&self) -> BlockPosition {
         self.current_block_position
     }
 

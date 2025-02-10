@@ -483,7 +483,9 @@ impl Database {
             .unwrap();
 
         for name in block_names.into_iter() {
-            stmt.execute(rusqlite::params![name]).unwrap();
+            if let Err(e) = stmt.execute(rusqlite::params![name]) {
+                panic!("Couldn't write the {name} block to the database, this is most likely because of a duplicate block with the same name.\nError: {e}");
+            }
         }
 
         stmt.finalize().unwrap();

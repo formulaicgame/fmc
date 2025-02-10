@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    assets::AssetSet,
     blocks::{BlockConfig, BlockId},
     database::Database,
     models::ModelId,
@@ -15,7 +16,7 @@ pub const ITEM_CONFIG_PATH: &str = "assets/client/items/configurations/";
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_items);
+        app.add_systems(PreStartup, load_items.in_set(AssetSet::Items));
     }
 }
 
@@ -72,6 +73,7 @@ fn load_items(mut commands: Commands, database: Res<Database>) {
         items.configs.insert(
             *id,
             ItemConfig {
+                id: *id,
                 name: json.name,
                 block,
                 model_id,
@@ -87,6 +89,8 @@ fn load_items(mut commands: Commands, database: Res<Database>) {
 }
 
 pub struct ItemConfig {
+    /// The id of the item's ItemConfig
+    pub id: ItemId,
     /// Name shown in interfaces
     pub name: String,
     /// Block placed by the item
@@ -147,6 +151,11 @@ impl Items {
         return self.configs.get(item_id).unwrap();
     }
 
+    pub fn get_config_by_name(&self, item_name: &str) -> Option<&ItemConfig> {
+        let id = self.ids.get(item_name)?;
+        return self.configs.get(id);
+    }
+
     pub fn get_id(&self, name: &str) -> Option<ItemId> {
         return self.ids.get(name).cloned();
     }
@@ -156,9 +165,9 @@ impl Items {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Item {
-    /// Id assigned to this item type, can be used to lookup properties specific to the item type.
+    /// Id of item in [`Items`]
     pub id: ItemId,
     /// Unique properties of the item. Separate from the shared properties of the ItemConfig.
     pub properties: serde_json::Value,
@@ -173,26 +182,34 @@ impl Item {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+// Items with unique properties are incapabale of being equal to other items.
+impl PartialEq for Item {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.properties == serde_json::Value::Null
+            && other.properties == serde_json::Value::Null
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct ItemStack {
-    // TODO: This Option makes the erognomics horrible. Instead reserve the item id 0, and have it
-    // be the default. This item can be defined by the server in assets as "default" to customize
-    // the look of it, currently it's hard coded client side.
-    //
-    /// The item occupying the stack
+    // The item occupying the stack
     item: Option<Item>,
-    /// Current stack size.
+    // Current stack size.
     size: u32,
-    /// Maximum amount storable in the stack.
+    // Maximum amount storable in the stack.
     capacity: u32,
+    // Override the capacity set by the item's ItemConfig
+    custom_capacity: Option<u32>,
 }
 
 impl ItemStack {
-    pub fn new(item: Item, size: u32, capacity: u32) -> Self {
+    pub fn new(item_config: &ItemConfig, size: u32) -> Self {
         return Self {
-            item: Some(item),
+            capacity: item_config.max_stack_size,
+            custom_capacity: None,
+            item: Some(Item::new(item_config.id)),
             size,
-            capacity,
         };
     }
 
@@ -201,11 +218,29 @@ impl ItemStack {
     }
 
     pub fn capacity(&self) -> u32 {
-        return self.capacity;
+        return self
+            .custom_capacity
+            .unwrap_or(self.capacity)
+            .saturating_sub(self.size);
     }
 
     pub fn size(&self) -> u32 {
         return self.size;
+    }
+
+    pub fn set_size(mut self, size: u32) -> Self {
+        if size == 0 {
+            return Self::default();
+        }
+        self.size = size;
+        self
+    }
+
+    /// Set a custom capacity. The item stack's initial capacity will be preserved if transfered to
+    /// an empty stack.
+    pub fn set_capacity(mut self, capacity: u32) -> Self {
+        self.custom_capacity = Some(capacity);
+        self
     }
 
     /// Combine two item stacks, returns the leftover
@@ -232,6 +267,7 @@ impl ItemStack {
             item: self.item.clone(),
             size: amount.min(self.size),
             capacity: self.capacity,
+            custom_capacity: None,
         };
 
         self.size -= taken.size;

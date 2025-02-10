@@ -5,16 +5,16 @@ use bevy::{
     math::DVec3,
     tasks::{futures_lite::future, IoTaskPool},
 };
+use chunk::ChunkPosition;
 use fmc_protocol::messages;
 
 use crate::{
     bevy_extensions::f64_transform::TransformSystem,
     blocks::{BlockFace, BlockId, BlockPosition, BlockState, Blocks},
     database::Database,
-    models::{Model, ModelAnimations, ModelBundle, ModelVisibility},
+    models::Model,
     networking::{NetworkMessage, Server},
     prelude::*,
-    utils,
 };
 
 pub mod chunk;
@@ -99,7 +99,7 @@ fn change_player_render_distance(
 /// Event sent in response to a block update.
 #[derive(Event)]
 pub struct ChangedBlockEvent {
-    pub position: IVec3,
+    pub position: BlockPosition,
     pub to: (BlockId, Option<BlockState>),
     pub top: Option<(BlockId, Option<BlockState>)>,
     pub bottom: Option<(BlockId, Option<BlockState>)>,
@@ -149,7 +149,7 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
 pub enum BlockUpdate {
     /// Change one block to another. Fields are position/block id/block state
     Change {
-        position: IVec3,
+        position: BlockPosition,
         block_id: BlockId,
         block_state: Option<BlockState>,
     },
@@ -163,7 +163,7 @@ fn handle_block_updates(
     chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
     mut world_map: ResMut<WorldMap>,
     mut block_events: EventReader<BlockUpdate>,
-    mut chunked_updates: Local<HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>>,
+    mut chunked_updates: Local<HashMap<ChunkPosition, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
     for event in block_events.read() {
         match event {
@@ -172,10 +172,10 @@ fn handle_block_updates(
                 block_id,
                 block_state,
             } => {
-                let (chunk_pos, block_index) =
-                    utils::world_position_to_chunk_position_and_block_index(*position);
+                let chunk_position = ChunkPosition::from(*position);
+                let block_index = position.as_chunk_index();
 
-                let chunk = if let Some(c) = world_map.get_chunk_mut(&chunk_pos) {
+                let chunk = if let Some(c) = world_map.get_chunk_mut(&chunk_position) {
                     c
                 } else {
                     panic!("Tried to change block in non-existing chunk");
@@ -190,7 +190,7 @@ fn handle_block_updates(
 
                 let block_config = Blocks::get().get_config(block_id);
                 if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
-                    let mut entity_commands = commands.spawn(BlockPosition(*position));
+                    let mut entity_commands = commands.spawn(*position);
 
                     if let Some(spawn_fn) = block_config.spawn_entity_fn {
                         (spawn_fn)(&mut entity_commands, None);
@@ -214,13 +214,7 @@ fn handle_block_updates(
                             }
                         }
 
-                        entity_commands.insert(ModelBundle {
-                            model: Model::Asset(model_id),
-                            animations: ModelAnimations::default(),
-                            visibility: ModelVisibility::default(),
-                            global_transform: GlobalTransform::default(),
-                            transform,
-                        });
+                        entity_commands.insert((Model::Asset(model_id), transform));
                     }
 
                     chunk
@@ -232,8 +226,9 @@ fn handle_block_updates(
                 chunk.check_visible_faces();
 
                 // TODO: Need to remove entries when chunks unload
-                let chunked_block_updates =
-                    chunked_updates.entry(chunk_pos).or_insert(Vec::default());
+                let chunked_block_updates = chunked_updates
+                    .entry(chunk_position)
+                    .or_insert(Vec::default());
 
                 chunked_block_updates.push((
                     block_index,
@@ -249,7 +244,7 @@ fn handle_block_updates(
             net.send_many(
                 subscribers,
                 messages::BlockUpdates {
-                    chunk_position,
+                    chunk_position: *chunk_position,
                     blocks,
                 },
             );
@@ -262,7 +257,7 @@ struct DatabaseSyncTimer(Timer);
 
 async fn save_blocks(
     database: Database,
-    block_updates: Vec<(IVec3, (BlockId, Option<BlockState>))>,
+    block_updates: Vec<(BlockPosition, (BlockId, Option<BlockState>))>,
 ) {
     let mut conn = database.get_connection();
     let transaction = conn.transaction().unwrap();
@@ -300,7 +295,7 @@ fn save_block_updates_to_database(
     mut block_events: EventReader<BlockUpdate>,
     mut sync_timer: ResMut<DatabaseSyncTimer>,
     exit_events: EventReader<AppExit>,
-    mut block_updates: Local<HashMap<IVec3, (BlockId, Option<BlockState>)>>,
+    mut block_updates: Local<HashMap<BlockPosition, (BlockId, Option<BlockState>)>>,
 ) {
     for event in block_events.read() {
         match event {

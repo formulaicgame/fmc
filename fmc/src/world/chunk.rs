@@ -1,9 +1,10 @@
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::ops::{Index, IndexMut};
+use std::ops::{Add, Index, IndexMut, Sub};
 use std::sync::Arc;
 
-use crate::blocks::BlockData;
+use crate::blocks::{BlockData, BlockPosition};
 use crate::{
     blocks::{BlockId, BlockState, Blocks},
     database::Database,
@@ -43,13 +44,13 @@ impl Chunk {
     pub const SIZE: usize = 16;
 
     pub async fn load(
-        position: IVec3,
+        chunk_position: ChunkPosition,
         terrain_generator: Arc<dyn TerrainGenerator>,
         database: Database,
-    ) -> (IVec3, Chunk) {
-        let mut chunk = terrain_generator.generate_chunk(position);
+    ) -> (ChunkPosition, Chunk) {
+        let mut chunk = terrain_generator.generate_chunk(chunk_position);
 
-        let changed_blocks = database.load_chunk_blocks(&position);
+        let changed_blocks = database.load_chunk_blocks(&chunk_position);
         for (index, (block_id, maybe_block_state, maybe_block_data)) in changed_blocks {
             chunk.changed_blocks.insert(index);
             chunk[index] = block_id;
@@ -63,7 +64,7 @@ impl Chunk {
 
         chunk.check_visible_faces();
 
-        return (position, chunk);
+        return (chunk_position, chunk);
     }
 
     pub fn make_uniform(&mut self, block_id: BlockId) {
@@ -135,9 +136,9 @@ impl Chunk {
         for i in 0..Self::SIZE as i32 {
             for j in 0..Self::SIZE as i32 {
                 for k in (0..Self::SIZE as i32).step_by(Self::SIZE - 1) {
-                    let front_back = IVec3::new(i, j, k);
-                    let left_right = IVec3::new(k, i, j);
-                    let top_bottom = IVec3::new(i, k, j);
+                    let front_back = BlockPosition::new(i, j, k);
+                    let left_right = BlockPosition::new(k, i, j);
+                    let top_bottom = BlockPosition::new(i, k, j);
                     for source_position in [front_back, left_right, top_bottom] {
                         stack.push(source_position);
 
@@ -155,7 +156,7 @@ impl Chunk {
                                 }
                             }
 
-                            let index = utils::world_position_to_block_index(position);
+                            let index = position.as_chunk_index();
                             if !visited[index] && blocks.get_config(&self[index]).is_transparent() {
                                 visited[index] = true;
                                 for offset in [
@@ -229,6 +230,80 @@ impl IndexMut<usize> for Chunk {
     }
 }
 
+#[derive(Deref, DerefMut, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkPosition(pub IVec3);
+
+impl ChunkPosition {
+    pub fn new(x: i32, y: i32, z: i32) -> Self {
+        let block_position = BlockPosition::new(x, y, z);
+        Self::from(block_position)
+    }
+
+    pub fn neighbourhood(&self) -> [Self; 27] {
+        let mut neighbourhood = [ChunkPosition::from(IVec3::ZERO); 27];
+        let index = 0;
+        for x_offset in &[IVec3::X, IVec3::NEG_X, IVec3::ZERO] {
+            for y_offset in &[IVec3::Y, IVec3::NEG_Y, IVec3::ZERO] {
+                for z_offset in &[IVec3::Z, IVec3::NEG_Z, IVec3::ZERO] {
+                    neighbourhood[index] = ChunkPosition::from(
+                        self.0
+                            + x_offset * Chunk::SIZE as i32
+                            + y_offset * Chunk::SIZE as i32
+                            + z_offset * Chunk::SIZE as i32,
+                    );
+                }
+            }
+        }
+
+        neighbourhood
+    }
+}
+
+impl From<BlockPosition> for ChunkPosition {
+    fn from(mut value: BlockPosition) -> Self {
+        // Removing bits_of(Chunk::SIZE) - 1 is rounding down to nearest CHUNK_SIZE divisible.
+        *value = value.0 & !(Chunk::SIZE - 1) as i32;
+        return Self(*value);
+    }
+}
+
+impl From<&BlockPosition> for ChunkPosition {
+    fn from(value: &BlockPosition) -> Self {
+        // Removing bits_of(Chunk::SIZE) - 1 is rounding down to nearest CHUNK_SIZE divisible.
+        return Self(value.0 & !(Chunk::SIZE - 1) as i32);
+    }
+}
+
+impl From<DVec3> for ChunkPosition {
+    fn from(value: DVec3) -> Self {
+        let block_position = BlockPosition::from(value);
+        Self::from(block_position)
+    }
+}
+
+impl From<IVec3> for ChunkPosition {
+    fn from(value: IVec3) -> Self {
+        // Removing bits_of(Chunk::SIZE) - 1 is rounding down to nearest CHUNK_SIZE divisible.
+        Self(value & !(Chunk::SIZE - 1) as i32)
+    }
+}
+
+impl Add<ChunkPosition> for ChunkPosition {
+    type Output = ChunkPosition;
+
+    fn add(self, rhs: ChunkPosition) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub<ChunkPosition> for ChunkPosition {
+    type Output = ChunkPosition;
+
+    fn sub(self, rhs: ChunkPosition) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ChunkFace {
     Top,
@@ -255,7 +330,7 @@ impl ChunkFace {
     }
 
     /// Moves the position a chunk's length in the direction of the face.
-    pub fn shift_position(&self, mut chunk_position: IVec3) -> IVec3 {
+    pub fn shift_position(&self, mut chunk_position: ChunkPosition) -> ChunkPosition {
         match self {
             ChunkFace::Front => chunk_position.z += Chunk::SIZE as i32,
             ChunkFace::Back => chunk_position.z -= Chunk::SIZE as i32,

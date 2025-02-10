@@ -4,6 +4,7 @@
 //       missing, and update the database if a config has been changed.
 use std::{
     collections::{HashMap, HashSet},
+    ops::{Add, AddAssign, Sub, SubAssign},
     path::Path,
 };
 
@@ -15,13 +16,14 @@ use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::Deserialize;
 
 use crate::{
+    assets::AssetSet,
     database::Database,
-    items::{ItemConfig, ItemId},
+    items::{ItemConfig, ItemId, Items},
     models::{ModelId, Models},
     physics::{shapes::Aabb, Collider},
     prelude::*,
     utils::Rng,
-    world::chunk::Chunk,
+    world::chunk::{Chunk, ChunkPosition},
 };
 
 pub type BlockId = u16;
@@ -41,15 +43,17 @@ static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::ne
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PreStartup,
-            load_blocks_to_resource.after(crate::models::load_models),
-        )
-        .add_systems(PostStartup, move_blocks_resource_to_static);
+        app.add_systems(PreStartup, load_blocks_to_resource.in_set(AssetSet::Blocks))
+            .add_systems(PostStartup, move_blocks_resource_to_static);
     }
 }
 
-fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, models: Res<Models>) {
+fn load_blocks_to_resource(
+    mut commands: Commands,
+    database: Res<Database>,
+    models: Res<Models>,
+    items: Res<Items>,
+) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
 
@@ -78,8 +82,6 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
         ids: database.load_block_ids(),
     };
 
-    let item_ids = database.load_item_ids();
-
     let mut block_ids = blocks.asset_ids();
     let mut maybe_blocks = Vec::new();
     maybe_blocks.resize_with(block_ids.len(), Option::default);
@@ -94,7 +96,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
 
         let drop = match block_config_json.drop {
             Some(drop) => {
-                let kind = match BlockDropKind::from_json(&drop.drop, &item_ids) {
+                let kind = match BlockDropKind::from_json(&drop.drop, &items) {
                     Ok(d) => d,
                     Err(e) => {
                         panic!(
@@ -178,6 +180,7 @@ fn load_blocks_to_resource(mut commands: Commands, database: Res<Database>, mode
                 name: block_config_json.name,
                 model: model_id,
                 friction: block_config_json.friction,
+                drag: block_config_json.drag,
                 hardness: block_config_json.hardness,
                 replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
@@ -342,7 +345,7 @@ struct BlockDropJson {
 #[serde(untagged)]
 enum BlockDropKindJson {
     Single(String),
-    Multiple { item: String, count: u32 },
+    Multiple { item_name: String, count: u32 },
     Chance(Vec<(f64, Self)>),
 }
 
@@ -366,7 +369,7 @@ impl BlockDrop {
 enum BlockDropKind {
     Single(ItemId),
     Multiple {
-        item: ItemId,
+        item_id: ItemId,
         count: u32,
     },
     // TODO: There's no way to define something that drops only one thing n% of the time.
@@ -378,21 +381,18 @@ enum BlockDropKind {
 }
 
 impl BlockDropKind {
-    fn from_json(
-        json: &BlockDropKindJson,
-        items: &HashMap<String, ItemId>,
-    ) -> Result<BlockDropKind, String> {
+    fn from_json(json: &BlockDropKindJson, items: &Items) -> Result<BlockDropKind, String> {
         match json {
-            BlockDropKindJson::Single(item_name) => match items.get(item_name) {
-                Some(id) => Ok(Self::Single(*id)),
+            BlockDropKindJson::Single(item_name) => match items.get_id(item_name) {
+                Some(id) => Ok(Self::Single(id)),
                 None => Err(format!("No item by the name {}", item_name)),
             },
-            BlockDropKindJson::Multiple { item, count } => match items.get(item) {
-                Some(id) => Ok(Self::Multiple {
-                    item: *id,
+            BlockDropKindJson::Multiple { item_name, count } => match items.get_id(item_name) {
+                Some(item_id) => Ok(Self::Multiple {
+                    item_id,
                     count: *count,
                 }),
-                None => Err(format!("No item by the name {}", item)),
+                None => Err(format!("No item by the name {}", item_name)),
             },
             BlockDropKindJson::Chance(list) => {
                 let mut weights = Vec::with_capacity(list.len());
@@ -416,8 +416,8 @@ impl BlockDropKind {
 
     fn drop(&self) -> (ItemId, u32) {
         match &self {
-            BlockDropKind::Single(item) => (*item, 1),
-            BlockDropKind::Multiple { item, count } => (*item, *count),
+            BlockDropKind::Single(item_id) => (*item_id, 1),
+            BlockDropKind::Multiple { item_id, count } => (*item_id, *count),
             BlockDropKind::Chance { weights, drops } => {
                 drops[weights.sample(&mut rand::thread_rng())].drop()
             }
@@ -517,8 +517,11 @@ impl Sounds {
 struct BlockConfigJson {
     // Name of the block
     name: String,
-    // The friction/drag.
-    friction: Friction,
+    // The surface friction.
+    friction: Option<Friction>,
+    // The drag when inside the block
+    #[serde(default)]
+    drag: DVec3,
     // How long it takes to break the block without a tool
     hardness: Option<f32>,
     #[serde(default)]
@@ -611,8 +614,10 @@ pub struct BlockConfig {
     pub name: String,
     /// If a model is used to represent this block, this contains its model id
     pub model: Option<ModelId>,
-    /// The friction or drag.
-    pub friction: Friction,
+    /// The friction of the block's surfaces.
+    pub friction: Option<Friction>,
+    /// The frictional drag when inside the block.
+    pub drag: DVec3,
     // TODO: Not needed
     /// How long it takes to break the block without a tool in seconds, None if the block should
     /// not be breakable. e.g. water, air
@@ -627,7 +632,7 @@ pub struct BlockConfig {
     drop: Option<BlockDrop>,
     // The rendering material for the block, if it uses one.
     pub material: Option<BlockMaterial>,
-    /// Aabb used for physics and hit detection.
+    /// Collider used for physics and hit detection.
     pub hitbox: Option<Collider>,
     /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
@@ -665,10 +670,7 @@ impl BlockConfig {
     }
 
     pub fn is_solid(&self) -> bool {
-        match self.friction {
-            Friction::Static { .. } => true,
-            Friction::Drag(_) => false,
-        }
+        self.friction.is_some()
     }
 
     pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {
@@ -784,7 +786,7 @@ pub enum BlockFace {
 }
 
 impl BlockFace {
-    pub fn shift_position(&self, position: IVec3) -> IVec3 {
+    pub fn shift_position(&self, position: BlockPosition) -> BlockPosition {
         match self {
             Self::Front => position + IVec3::Z,
             Self::Back => position - IVec3::Z,
@@ -806,20 +808,14 @@ impl BlockFace {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum Friction {
-    /// For solid blocks.
-    Static {
-        front: f64,
-        back: f64,
-        right: f64,
-        left: f64,
-        top: f64,
-        bottom: f64,
-    },
-    /// For non-solid blocks
-    Drag(DVec3),
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct Friction {
+    pub front: f64,
+    pub back: f64,
+    pub right: f64,
+    pub left: f64,
+    pub top: f64,
+    pub bottom: f64,
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -876,15 +872,103 @@ impl BlockState {
 }
 
 // TODO: Replace all occurences of IVec3 with this
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct BlockPosition(pub IVec3);
 
 impl BlockPosition {
-    pub fn to_index(&self) -> usize {
+    pub fn new(x: i32, y: i32, z: i32) -> Self {
+        Self(IVec3::new(x, y, z))
+    }
+
+    pub fn as_chunk_index(&self) -> usize {
         // Getting the last 4 bits will output 0->Chunk::SIZE for both positive and negative numbers
         // because of two's complement.
         let position = self.0 & (Chunk::SIZE - 1) as i32;
         return (position.x << 8 | position.z << 4 | position.y) as usize;
+    }
+}
+
+impl From<DVec3> for BlockPosition {
+    fn from(value: DVec3) -> Self {
+        Self(value.floor().as_ivec3())
+    }
+}
+
+impl From<usize> for BlockPosition {
+    fn from(index: usize) -> Self {
+        assert!(index < Chunk::SIZE.pow(3));
+        const MASK: usize = Chunk::SIZE - 1;
+        BlockPosition(IVec3 {
+            x: index as i32 >> 8,
+            z: (index >> 4 & MASK) as i32,
+            y: (index & MASK) as i32,
+        })
+    }
+}
+
+impl From<ChunkPosition> for BlockPosition {
+    fn from(chunk_position: ChunkPosition) -> Self {
+        BlockPosition(chunk_position.0)
+    }
+}
+
+impl Add<BlockPosition> for BlockPosition {
+    type Output = BlockPosition;
+
+    fn add(self, rhs: BlockPosition) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Add<IVec3> for BlockPosition {
+    type Output = BlockPosition;
+
+    fn add(self, rhs: IVec3) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl AddAssign<BlockPosition> for BlockPosition {
+    #[inline]
+    fn add_assign(&mut self, rhs: BlockPosition) {
+        self.0.add_assign(rhs.0);
+    }
+}
+
+impl AddAssign<IVec3> for BlockPosition {
+    #[inline]
+    fn add_assign(&mut self, rhs: IVec3) {
+        self.0.add_assign(rhs);
+    }
+}
+
+impl Sub<BlockPosition> for BlockPosition {
+    type Output = BlockPosition;
+
+    fn sub(self, rhs: BlockPosition) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl Sub<IVec3> for BlockPosition {
+    type Output = BlockPosition;
+
+    fn sub(self, rhs: IVec3) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
+impl SubAssign<BlockPosition> for BlockPosition {
+    #[inline]
+    fn sub_assign(&mut self, rhs: BlockPosition) {
+        self.0.sub_assign(rhs.0);
+    }
+}
+
+impl SubAssign<IVec3> for BlockPosition {
+    #[inline]
+    fn sub_assign(&mut self, rhs: IVec3) {
+        self.0.sub_assign(rhs);
     }
 }
 

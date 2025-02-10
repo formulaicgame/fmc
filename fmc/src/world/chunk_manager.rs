@@ -8,16 +8,17 @@ use fmc_protocol::messages;
 use crate::{
     blocks::{BlockPosition, BlockState, Blocks},
     database::Database,
-    models::{Model, ModelAnimations, ModelBundle, ModelVisibility},
+    models::Model,
     networking::{NetworkEvent, Server},
     players::Player,
     prelude::*,
-    utils,
     world::{
         chunk::{Chunk, ChunkFace},
         RenderDistance, WorldMap,
     },
 };
+
+use super::chunk::ChunkPosition;
 
 // Handles loading/unloading, generation and sending chunks to the players.
 pub struct ChunkManagerPlugin;
@@ -47,15 +48,18 @@ impl Plugin for ChunkManagerPlugin {
 
 /// The position of the chunk the player is currently in.
 #[derive(Component)]
-struct PlayerChunkOrigin(IVec3);
+struct PlayerChunkOrigin(ChunkPosition);
 
 fn add_player_chunk_origin(
     mut commands: Commands,
     player_query: Query<(Entity, &GlobalTransform), Added<Player>>,
 ) {
     for (entity, transform) in player_query.iter() {
-        let position = transform.translation().as_ivec3();
-        commands.entity(entity).insert(PlayerChunkOrigin(position));
+        commands
+            .entity(entity)
+            .insert(PlayerChunkOrigin(ChunkPosition::from(
+                transform.translation(),
+            )));
     }
 }
 
@@ -63,8 +67,7 @@ fn update_player_chunk_origin(
     mut player_query: Query<(&mut PlayerChunkOrigin, &GlobalTransform), Changed<GlobalTransform>>,
 ) {
     for (mut chunk_origin, transform) in player_query.iter_mut() {
-        let position = transform.translation().as_ivec3();
-        let chunk_position = utils::world_position_to_chunk_position(position);
+        let chunk_position = ChunkPosition::from(transform.translation());
         if chunk_origin.0 != chunk_position {
             chunk_origin.0 = chunk_position;
         }
@@ -75,23 +78,23 @@ fn update_player_chunk_origin(
 #[derive(Event)]
 pub struct ChunkSubscriptionEvent {
     pub player_entity: Entity,
-    pub chunk_position: IVec3,
+    pub chunk_position: ChunkPosition,
 }
 
 // Event sent when the server should unload a chunk and its associated entities.
 #[derive(Event)]
-pub struct ChunkUnloadEvent(pub IVec3);
+pub struct ChunkUnloadEvent(pub ChunkPosition);
 
 // Keeps track of which players are subscribed to which chunks. Clients will get updates for
 // everything that happens within a chunk it is subscribed to.
 #[derive(Resource, Default)]
 pub struct ChunkSubscriptions {
-    chunk_to_subscribers: HashMap<IVec3, HashSet<Entity>>,
-    subscriber_to_chunks: HashMap<Entity, HashSet<IVec3>>,
+    chunk_to_subscribers: HashMap<ChunkPosition, HashSet<Entity>>,
+    subscriber_to_chunks: HashMap<Entity, HashSet<ChunkPosition>>,
 }
 
 impl ChunkSubscriptions {
-    pub fn get_subscribers(&self, chunk_position: &IVec3) -> Option<&HashSet<Entity>> {
+    pub fn get_subscribers(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
         return self.chunk_to_subscribers.get(chunk_position);
     }
 }
@@ -159,7 +162,7 @@ fn handle_chunk_subscription_events(
                 net.send_one(
                     event.player_entity,
                     messages::Chunk {
-                        position: event.chunk_position,
+                        position: *event.chunk_position,
                         blocks: chunk.blocks.clone(),
                         block_state: chunk.block_state.clone(),
                     },
@@ -228,7 +231,7 @@ fn unsubscribe_from_chunks(
 }
 
 #[derive(Component)]
-struct ChunkLoadingTask(Task<(IVec3, Chunk)>);
+struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 
 // TODO: This is too expensive to accommodate many players. I'm thinking chunks can be sorted into
 // columns. If it is a chunk that contains blocks, it would be considered a column base. All chunks
@@ -259,8 +262,8 @@ fn subscribe_to_visible_chunks(
         Changed<PlayerChunkOrigin>,
     >,
     mut subscription_events: EventWriter<ChunkSubscriptionEvent>,
-    mut queue: Local<Vec<(IVec3, ChunkFace, ChunkFace)>>,
-    mut already_visited: Local<HashSet<IVec3>>,
+    mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
+    mut already_visited: Local<HashSet<ChunkPosition>>,
 ) {
     for (player_entity, chunk_origin, render_distance) in changed_origin_query.iter() {
         already_visited.clear();
@@ -325,7 +328,7 @@ fn subscribe_to_visible_chunks(
             for to_face in surrounding {
                 let adjacent_position = to_face.shift_position(chunk_position);
                 let distance_to_adjacent =
-                    (adjacent_position - chunk_origin.0) / Chunk::SIZE as i32;
+                    *(adjacent_position - chunk_origin.0) / Chunk::SIZE as i32;
                 if distance_to_adjacent
                     .abs()
                     .cmpgt(IVec3::splat(render_distance.chunks as i32))
@@ -374,65 +377,59 @@ fn handle_chunk_loading_tasks(
 
             world_map.insert(new_chunk_position, chunk);
 
-            // TODO: This seems to be a common operation? Maybe create some combination iterator
-            // utility to fight the drift. moore_neigbourhood(n) or something more friendly
-            //
             // XXX: Terrain features that fit within the chunk should be applied at generation!
-            for x in -1..=1 {
-                for y in -1..=1 {
-                    for z in -1..=1 {
-                        let adjacent_chunk_position =
-                            new_chunk_position + IVec3::new(x, y, z) * Chunk::SIZE as i32;
+            for adjacent_chunk_position in new_chunk_position.neighbourhood() {
+                if adjacent_chunk_position == new_chunk_position {
+                    continue;
+                }
 
-                        let chunk = match world_map.get_chunk_mut(&adjacent_chunk_position) {
-                            Some(c) => c,
-                            // x,y,z = 0, ignored here
-                            None => continue,
-                        };
+                let chunk = match world_map.get_chunk_mut(&adjacent_chunk_position) {
+                    Some(c) => c,
+                    // x,y,z = 0, ignored here
+                    None => continue,
+                };
 
-                        // Since we need mutable access to all chunks to apply terrain features we
-                        // need to temporarily remove them to satisfy the borrow checker.
-                        let terrain_features =
-                            std::mem::replace(&mut chunk.terrain_features, Vec::default());
+                // Since we need mutable access to all chunks to apply terrain features we
+                // need to temporarily remove them to satisfy the borrow checker.
+                let terrain_features =
+                    std::mem::replace(&mut chunk.terrain_features, Vec::default());
 
-                        for terrain_feature in terrain_features.iter() {
-                            if !terrain_feature.applies_to_chunk(&new_chunk_position)
-                                || terrain_feature.fits_in_chunk(new_chunk_position)
-                            {
-                                // Skip if the feature doesn't apply to the generated chunk or if
-                                // it is one of the features that fit within the chunk and has thus
-                                // already been placed.
-                                continue;
-                            }
+                for terrain_feature in terrain_features.iter() {
+                    if !terrain_feature.applies_to_chunk(&new_chunk_position)
+                        || terrain_feature.fits_in_chunk(new_chunk_position)
+                    {
+                        // Skip if the feature doesn't apply to the generated chunk or if
+                        // it is one of the features that fit within the chunk and has thus
+                        // already been placed.
+                        continue;
+                    }
 
-                            for (chunk_position, blocks) in
-                                terrain_feature.apply_edge_feature(&mut world_map)
-                            {
-                                if chunk_position == new_chunk_position {
-                                    // No need to send a block updates for the new chunk as it
-                                    // hasn't been sent yet.
-                                    continue;
-                                }
-
-                                if let Some(subscribers) =
-                                    chunk_subscriptions.get_subscribers(&chunk_position)
-                                {
-                                    net.send_many(
-                                        subscribers,
-                                        messages::BlockUpdates {
-                                            chunk_position,
-                                            blocks,
-                                        },
-                                    );
-                                }
-                            }
+                    for (chunk_position, blocks) in
+                        terrain_feature.apply_edge_feature(&mut world_map)
+                    {
+                        if chunk_position == new_chunk_position {
+                            // No need to send a block updates for the new chunk as it
+                            // hasn't been sent yet.
+                            continue;
                         }
 
-                        // And we move the terrain features back
-                        let chunk = world_map.get_chunk_mut(&adjacent_chunk_position).unwrap();
-                        chunk.terrain_features = terrain_features;
+                        if let Some(subscribers) =
+                            chunk_subscriptions.get_subscribers(&chunk_position)
+                        {
+                            net.send_many(
+                                subscribers,
+                                messages::BlockUpdates {
+                                    chunk_position: *chunk_position,
+                                    blocks,
+                                },
+                            );
+                        }
                     }
                 }
+
+                // And we move the terrain features back
+                let chunk = world_map.get_chunk_mut(&adjacent_chunk_position).unwrap();
+                chunk.terrain_features = terrain_features;
             }
 
             let chunk = world_map.get_chunk_mut(&new_chunk_position).unwrap();
@@ -443,8 +440,9 @@ fn handle_chunk_loading_tasks(
                 if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
                     let mut entity_commands = commands.spawn_empty();
 
-                    let block_position = new_chunk_position + utils::block_index_to_position(index);
-                    entity_commands.insert(BlockPosition(block_position));
+                    let block_position =
+                        BlockPosition::from(new_chunk_position) + BlockPosition::from(index);
+                    entity_commands.insert(block_position);
 
                     if let Some(function) = block_config.spawn_entity_fn {
                         let block_data = chunk.block_data.remove(&index);
@@ -473,13 +471,7 @@ fn handle_chunk_loading_tasks(
                             }
                         }
 
-                        entity_commands.insert(ModelBundle {
-                            model: Model::Asset(model_id),
-                            animations: ModelAnimations::default(),
-                            visibility: ModelVisibility::default(),
-                            global_transform: GlobalTransform::default(),
-                            transform,
-                        });
+                        entity_commands.insert((Model::Asset(model_id), transform));
                     }
 
                     chunk.block_entities.insert(index, entity_commands.id());
@@ -496,7 +488,7 @@ fn handle_chunk_loading_tasks(
             net.send_many(
                 subscribers,
                 messages::Chunk {
-                    position: new_chunk_position,
+                    position: *new_chunk_position,
                     blocks: chunk.blocks.clone(),
                     block_state: chunk.block_state.clone(),
                 },

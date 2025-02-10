@@ -5,23 +5,23 @@ use std::{
 
 use bevy::prelude::*;
 
-use crate::{
-    blocks::{BlockId, BlockState, Blocks},
-    utils,
-};
+use crate::blocks::{BlockId, BlockPosition, BlockState, Blocks};
 
-use super::{chunk::Chunk, WorldMap};
+use super::{
+    chunk::{Chunk, ChunkPosition},
+    WorldMap,
+};
 
 pub mod blueprints;
 
 pub trait TerrainGenerator: Send + Sync {
-    fn generate_chunk(&self, position: IVec3) -> Chunk;
+    fn generate_chunk(&self, position: ChunkPosition) -> Chunk;
 }
 
 #[derive(Default)]
 pub struct TerrainFeature {
     /// The blocks the feature consists of partitioned into the chunks they are a part of.
-    pub blocks: HashMap<IVec3, Vec<(usize, BlockId, Option<u16>)>>,
+    pub blocks: HashMap<ChunkPosition, Vec<(usize, BlockId, Option<u16>)>>,
     // TODO: Replacement rules should be more granular. Blueprints may consist of many
     // sub-blueprints that each have their own replacement rules that should be followed only for
     // that blueprint.
@@ -41,37 +41,37 @@ pub struct TerrainFeature {
     // Terrain feautres may supply a set of bounding boxes that will restrict the
     // feature so that it is only placed where all blocks within the bounding boxes are
     // replaceable.
-    pub bounding_boxes: Vec<(IVec3, IVec3)>,
+    pub bounding_boxes: Vec<(BlockPosition, BlockPosition)>,
 }
 
 impl TerrainFeature {
-    fn insert_block(&mut self, position: IVec3, block_id: BlockId) {
-        let (chunk_position, block_index) =
-            utils::world_position_to_chunk_position_and_block_index(position);
+    fn insert_block(&mut self, position: BlockPosition, block_id: BlockId) {
+        let chunk_position = ChunkPosition::from(position);
+        let index = position.as_chunk_index();
         self.blocks
             .entry(chunk_position)
             .or_insert(Vec::new())
-            .push((block_index, block_id, None));
+            .push((index, block_id, None));
     }
 
-    fn add_bounding_box(&mut self, min: IVec3, max: IVec3) {
-        assert!(min.cmple(max).all());
+    fn add_bounding_box(&mut self, min: BlockPosition, max: BlockPosition) {
+        assert!(min.cmple(max.0).all());
         self.bounding_boxes.push((min, max));
     }
 
-    pub fn applies_to_chunk(&self, chunk_position: &IVec3) -> bool {
+    pub fn applies_to_chunk(&self, chunk_position: &ChunkPosition) -> bool {
         return self.blocks.contains_key(chunk_position);
     }
 
     // Check if the blocks of the feature, and its bounding boxes fit inside a single chunk.
-    pub fn fits_in_chunk(&self, chunk_position: IVec3) -> bool {
+    pub fn fits_in_chunk(&self, chunk_position: ChunkPosition) -> bool {
         if self.blocks.len() != 1 || !self.blocks.contains_key(&chunk_position) {
             return false;
         }
 
         for (min, max) in self.bounding_boxes.iter() {
-            let min_chunk_position = utils::world_position_to_chunk_position(*min);
-            let max_chunk_position = utils::world_position_to_chunk_position(*max);
+            let min_chunk_position = ChunkPosition::from(*min);
+            let max_chunk_position = ChunkPosition::from(*max);
             if min_chunk_position != chunk_position || max_chunk_position != chunk_position {
                 return false;
             }
@@ -80,15 +80,15 @@ impl TerrainFeature {
         return true;
     }
 
-    fn check_bounds(&self, chunk_position: IVec3, chunk: &Chunk, blocks: &Blocks) -> bool {
+    fn check_bounds(&self, chunk_position: ChunkPosition, chunk: &Chunk, blocks: &Blocks) -> bool {
         // Check against already placed blocks
         for (min, max) in self.bounding_boxes.iter().cloned() {
             for x in min.x..=max.x {
                 for z in min.z..=max.z {
                     for y in min.y..=max.y {
-                        let block_position = IVec3::new(x, y, z);
-                        let (bounds_chunk_position, block_index) =
-                            utils::world_position_to_chunk_position_and_block_index(block_position);
+                        let block_position = BlockPosition::new(x, y, z);
+                        let bounds_chunk_position = ChunkPosition::from(block_position);
+                        let block_index = block_position.as_chunk_index();
 
                         if bounds_chunk_position != chunk_position {
                             continue;
@@ -106,7 +106,7 @@ impl TerrainFeature {
 
             for terrain_feature in chunk.terrain_features.iter() {
                 for (other_min, other_max) in terrain_feature.bounding_boxes.iter() {
-                    if other_max.cmpge(min).all() && other_min.cmple(max).all() {
+                    if other_max.cmpge(*min).all() && other_min.cmple(*max).all() {
                         return false;
                     }
                 }
@@ -120,7 +120,7 @@ impl TerrainFeature {
     pub fn apply_edge_feature(
         &self,
         world_map: &mut WorldMap,
-    ) -> Vec<(IVec3, Vec<(usize, BlockId, Option<u16>)>)> {
+    ) -> Vec<(ChunkPosition, Vec<(usize, BlockId, Option<u16>)>)> {
         let mut placed_blocks = Vec::new();
 
         // First we check that all the chunks are available. We eat the extra lookup time so that
@@ -163,7 +163,7 @@ impl TerrainFeature {
         return placed_blocks;
     }
 
-    pub fn apply(self, chunk_position: IVec3, chunk: &mut Chunk) {
+    pub fn apply(self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
         if !self.fits_in_chunk(chunk_position) {
             // The feature is part of many chunks, have to wait until they are loaded.
             chunk.terrain_features.push(self);

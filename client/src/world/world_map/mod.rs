@@ -109,97 +109,97 @@ impl WorldMap {
     }
 
     /// Find which block the transform is looking at, if any.
-    pub fn raycast_to_block(
-        &self,
-        transform: &Transform,
-        origin: IVec3,
-        distance: f32,
-    ) -> Option<(IVec3, BlockId, BlockFace)> {
-        let blocks = Blocks::get();
-        let forward = *transform.forward();
-        let direction = forward.signum();
-
-        // How far along the forward vector you need to go to hit the next block in each direction.
-        // This makes more sense if you mentally align it with the block grid.
-        //
-        // This relies on some peculiar behaviour where normally f32.fract() would retain the
-        // sign of the number, Vec3.fract() instead does self - self.floor(). This results in
-        // having the correct value for the negative direction, but it has to be flipped for the
-        // positive direction, which is the vec3::select.
-        let mut distance_next = transform.translation.fract_gl();
-        distance_next = Vec3::select(
-            direction.cmpeq(Vec3::ONE),
-            1.0 - distance_next,
-            distance_next,
-        );
-        distance_next = distance_next / forward.abs();
-
-        // How much you need to advance along the forward vector to traverse one block in each direction.
-        let t_block = 1.0 / forward.abs();
-        // +/-1 to shift block_pos when it hits the grid
-        let step = direction.as_ivec3();
-
-        // The origin of the ray.
-        let mut block_pos = transform.translation.floor().as_ivec3() + origin;
-
-        while (distance_next.min_element() * forward).length_squared() < distance.powi(2) {
-            if distance_next.x < distance_next.y && distance_next.x < distance_next.z {
-                block_pos.x += step.x;
-                distance_next.x += t_block.x;
-
-                if let Some(block_id) = self.get_block(&block_pos) {
-                    // TODO: Function needs to take a flag for if it should pass through blocks
-                    // with drag. Or maybe return both position of first drag block and first
-                    // solid. Do this for server too.
-                    if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
-                        continue;
-                    }
-
-                    let block_side = if direction.x == 1.0 {
-                        BlockFace::Left
-                    } else {
-                        BlockFace::Right
-                    };
-
-                    return Some((block_pos, block_id, block_side));
-                }
-            } else if distance_next.z < distance_next.x && distance_next.z < distance_next.y {
-                block_pos.z += step.z;
-                distance_next.z += t_block.z;
-
-                if let Some(block_id) = self.get_block(&block_pos) {
-                    if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
-                        continue;
-                    }
-
-                    let block_side = if direction.z == 1.0 {
-                        BlockFace::Back
-                    } else {
-                        BlockFace::Front
-                    };
-                    return Some((block_pos, block_id, block_side));
-                }
-            } else {
-                block_pos.y += step.y;
-                distance_next.y += t_block.y;
-
-                if let Some(block_id) = self.get_block(&block_pos) {
-                    if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
-                        continue;
-                    }
-
-                    let block_face = if direction.y == 1.0 {
-                        BlockFace::Bottom
-                    } else {
-                        BlockFace::Top
-                    };
-
-                    return Some((block_pos, block_id, block_face));
-                }
-            }
-        }
-        return None;
-    }
+    // pub fn raycast_to_block(
+    //     &self,
+    //     transform: &Transform,
+    //     origin: IVec3,
+    //     distance: f32,
+    // ) -> Option<(IVec3, BlockId, BlockFace)> {
+    //     let blocks = Blocks::get();
+    //     let forward = *transform.forward();
+    //     let direction = forward.signum();
+    //
+    //     // How far along the forward vector you need to go to hit the next block in each direction.
+    //     // This makes more sense if you mentally align it with the block grid.
+    //     //
+    //     // This relies on some peculiar behaviour where normally f32.fract() would retain the
+    //     // sign of the number, Vec3.fract() instead does self - self.floor(). This results in
+    //     // having the correct value for the negative direction, but it has to be flipped for the
+    //     // positive direction, which is the vec3::select.
+    //     let mut distance_next = transform.translation.fract_gl();
+    //     distance_next = Vec3::select(
+    //         direction.cmpeq(Vec3::ONE),
+    //         1.0 - distance_next,
+    //         distance_next,
+    //     );
+    //     distance_next = distance_next / forward.abs();
+    //
+    //     // How much you need to advance along the forward vector to traverse one block in each direction.
+    //     let t_block = 1.0 / forward.abs();
+    //     // +/-1 to shift block_pos when it hits the grid
+    //     let step = direction.as_ivec3();
+    //
+    //     // The origin of the ray.
+    //     let mut block_pos = transform.translation.floor().as_ivec3() + origin;
+    //
+    //     while (distance_next.min_element() * forward).length_squared() < distance.powi(2) {
+    //         if distance_next.x < distance_next.y && distance_next.x < distance_next.z {
+    //             block_pos.x += step.x;
+    //             distance_next.x += t_block.x;
+    //
+    //             if let Some(block_id) = self.get_block(&block_pos) {
+    //                 // TODO: Function needs to take a flag for if it should pass through blocks
+    //                 // with drag. Or maybe return both position of first drag block and first
+    //                 // solid. Do this for server too.
+    //                 if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
+    //                     continue;
+    //                 }
+    //
+    //                 let block_side = if direction.x == 1.0 {
+    //                     BlockFace::Left
+    //                 } else {
+    //                     BlockFace::Right
+    //                 };
+    //
+    //                 return Some((block_pos, block_id, block_side));
+    //             }
+    //         } else if distance_next.z < distance_next.x && distance_next.z < distance_next.y {
+    //             block_pos.z += step.z;
+    //             distance_next.z += t_block.z;
+    //
+    //             if let Some(block_id) = self.get_block(&block_pos) {
+    //                 if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
+    //                     continue;
+    //                 }
+    //
+    //                 let block_side = if direction.z == 1.0 {
+    //                     BlockFace::Back
+    //                 } else {
+    //                     BlockFace::Front
+    //                 };
+    //                 return Some((block_pos, block_id, block_side));
+    //             }
+    //         } else {
+    //             block_pos.y += step.y;
+    //             distance_next.y += t_block.y;
+    //
+    //             if let Some(block_id) = self.get_block(&block_pos) {
+    //                 if let Friction::Drag(_) = blocks.get_config(block_id).friction() {
+    //                     continue;
+    //                 }
+    //
+    //                 let block_face = if direction.y == 1.0 {
+    //                     BlockFace::Bottom
+    //                 } else {
+    //                     BlockFace::Top
+    //                 };
+    //
+    //                 return Some((block_pos, block_id, block_face));
+    //             }
+    //         }
+    //     }
+    //     return None;
+    // }
 
     // Given a chunk position, returns the blocks in that chunk as well as the blocks one past the
     // edge on all sides.

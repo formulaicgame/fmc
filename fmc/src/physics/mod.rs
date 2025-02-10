@@ -4,10 +4,9 @@ use bevy::math::DVec3;
 use serde::Deserialize;
 
 use crate::{
-    blocks::{BlockFace, Blocks, Friction},
+    blocks::{BlockFace, BlockPosition, Blocks},
     prelude::*,
-    utils,
-    world::{BlockUpdate, WorldMap},
+    world::{chunk::ChunkPosition, BlockUpdate, WorldMap},
 };
 
 pub mod shapes;
@@ -22,9 +21,8 @@ impl Plugin for PhysicsPlugin {
         app.insert_resource(ObjectMap::default()).add_systems(
             Update,
             (
-                simulate_aabb_physics.in_set(PhysicsSystems),
-                apply_acceleration.before(simulate_aabb_physics),
-                gravity.before(apply_acceleration),
+                simulate_physics.in_set(PhysicsSystems),
+                apply_acceleration.before(simulate_physics),
                 buoyancy.before(apply_acceleration),
                 update_object_map,
                 trigger_update_on_block_change,
@@ -34,7 +32,7 @@ impl Plugin for PhysicsPlugin {
 }
 
 // TODO: Make Aabb available only through this? Either way need to replace all current occurences
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Component, Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Collider {
     Aabb(Aabb),
@@ -42,6 +40,84 @@ pub enum Collider {
 }
 
 impl Collider {
+    // pub fn transform(&self, transform: &Transform) -> Self {
+    //     let mut new = self.clone();
+    //     for aabb in new.iter_mut() {
+    //         aabb.transf
+    //     }
+    //     match self {
+    //         Self::Aabb(aabb) => Collider::Aabb(aabb.transform(transform)),
+    //         Self::Compound(aabbs) => {
+    //             for aabb in aabbs {
+    //                 aabb.center = transform.transform_point(aabb.center)
+    //             }
+    //         }
+    //     }
+    // }
+
+    pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
+        Self::Aabb(Aabb::from_min_max(min, max))
+    }
+
+    pub fn min_max(&self, transform: &Transform) -> (DVec3, DVec3) {
+        let mut min = DVec3::MAX;
+        let mut max = DVec3::MIN;
+        for aabb in self.iter() {
+            let aabb = aabb.transform(transform);
+            min = min.min(aabb.min());
+            max = max.max(aabb.max());
+        }
+        (min, max)
+    }
+
+    fn iter(&self) -> &[Aabb] {
+        match self {
+            Self::Aabb(aabb) => std::slice::from_ref(aabb),
+            Self::Compound(aabbs) => aabbs.as_slice(),
+        }
+    }
+
+    // fn iter_mut(&mut self) -> &mut [Aabb] {
+    //     match self {
+    //         Self::Aabb(aabb) => std::slice::from_mut(aabb),
+    //         Self::Compound(aabbs) => aabbs.as_mut_slice(),
+    //     }
+    // }
+
+    pub fn intersection(
+        &self,
+        self_transform: &Transform,
+        other: &Collider,
+        other_transform: &Transform,
+    ) -> Option<DVec3> {
+        fn max_intersection(lhs: Option<DVec3>, rhs: Option<DVec3>) -> Option<DVec3> {
+            let Some(lhs) = lhs else {
+                return rhs;
+            };
+
+            let Some(rhs) = rhs else {
+                return Some(lhs);
+            };
+
+            // TODO: I don't know how to properly handle the sign here. The idea of combining the
+            // intersections might not even be possible. This will certainly not work if the aabbs
+            // are more than a negligible distance from each other.
+            Some(lhs.abs().max(rhs.abs()).copysign(lhs))
+        }
+
+        let mut intersection = None;
+        for aabb in self.iter() {
+            for other_aabb in other.iter() {
+                let aabb = aabb.transform(self_transform);
+                let other_aabb = other_aabb.transform(other_transform);
+                let new_intersection = aabb.intersection(&other_aabb);
+                intersection = max_intersection(intersection, new_intersection);
+            }
+        }
+
+        return intersection;
+    }
+
     pub fn ray_intersection(
         &self,
         collider_transform: &Transform,
@@ -72,24 +148,32 @@ impl Collider {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub struct PhysicsSystems;
 
-/// Marker componenet, enables physics for an entity
-#[derive(Component, Default)]
-pub struct Mass;
+#[derive(Component)]
+pub struct Physics {
+    pub enabled: bool,
+    pub acceleration: DVec3,
+    pub velocity: DVec3,
+    pub buoyancy: Option<Buoyancy>,
+}
 
-#[derive(Component, Default, Deref, DerefMut)]
-pub struct Acceleration(pub DVec3);
-
-#[derive(Component, Default, Deref, DerefMut)]
-pub struct Velocity(pub DVec3);
-
-impl Velocity {
-    pub fn is_moving(&self) -> bool {
-        self.0 != DVec3::ZERO
+impl Default for Physics {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            acceleration: DVec3::default(),
+            velocity: DVec3::default(),
+            buoyancy: None,
+        }
     }
 }
 
+#[derive(Bundle)]
+pub struct PhysicsBundle {
+    physics: Physics,
+    collider: Collider,
+}
+
 // Makes objects float (they sink by default)
-#[derive(Component)]
 pub struct Buoyancy {
     // Floats if this is lower than the block's Y-direction drag
     pub density: f64,
@@ -106,28 +190,20 @@ impl Default for Buoyancy {
     }
 }
 
-#[derive(Bundle, Default)]
-pub struct PhysicsBundle {
-    pub mass: Mass,
-    pub accelection: Acceleration,
-    pub velocity: Velocity,
-    pub aabb: Aabb,
-}
-
 // Keeps track of which entities are in which chunks. To efficiently trigger physics updates for a
 // subset of entities when a chunk's blocks change.
 #[derive(Resource, Default)]
 struct ObjectMap {
-    objects: HashMap<IVec3, HashSet<Entity>>,
-    reverse: HashMap<Entity, IVec3>,
+    objects: HashMap<ChunkPosition, HashSet<Entity>>,
+    reverse: HashMap<Entity, ChunkPosition>,
 }
 
 impl ObjectMap {
-    pub fn get_entities(&self, chunk_position: &IVec3) -> Option<&HashSet<Entity>> {
+    pub fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
         return self.objects.get(chunk_position);
     }
 
-    fn insert_or_move(&mut self, chunk_position: IVec3, entity: Entity) {
+    fn insert_or_move(&mut self, chunk_position: ChunkPosition, entity: Entity) {
         if let Some(current_chunk_pos) = self.reverse.get(&entity) {
             // Move model from one chunk to another
             if current_chunk_pos == &chunk_position {
@@ -163,40 +239,38 @@ impl ObjectMap {
 //
 // Moves all entities with an aabb along their velocity vector and resolves any collisions that
 // occur with the terrain.
-fn simulate_aabb_physics(
+fn simulate_physics(
     world_map: Res<WorldMap>,
     time: Res<Time>,
-    mut entities: Query<(&mut Transform, &mut Velocity, &Aabb), With<Mass>>,
+    mut entities: Query<(&mut Transform, &mut Physics, &Collider)>,
 ) {
-    for (mut transform, mut velocity, aabb) in entities.iter_mut() {
-        if velocity.0 == DVec3::ZERO {
+    for (mut transform, mut physics, entity_collider) in entities.iter_mut() {
+        if physics.velocity == DVec3::ZERO {
             continue;
         }
 
+        let blocks = Blocks::get();
+
         let mut friction = DVec3::ZERO;
+
         for directional_velocity in [
-            DVec3::new(0.0, velocity.y, 0.0),
-            DVec3::new(velocity.x, 0.0, 0.0),
-            DVec3::new(0.0, 0.0, velocity.z),
+            DVec3::new(0.0, physics.velocity.y, 0.0),
+            DVec3::new(physics.velocity.x, 0.0, 0.0),
+            DVec3::new(0.0, 0.0, physics.velocity.z),
         ] {
-            let pos_after_move =
-                transform.translation + directional_velocity * time.delta_secs_f64();
-
-            let entity_aabb = Aabb {
-                center: aabb.center + pos_after_move,
-                half_extents: aabb.half_extents,
-            };
-
-            let blocks = Blocks::get();
+            let pos_after_move = transform.with_translation(
+                transform.translation + directional_velocity * time.delta_secs_f64(),
+            );
 
             // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();
-            let start = entity_aabb.min().floor().as_ivec3();
-            let stop = entity_aabb.max().floor().as_ivec3();
+            let (min, max) = entity_collider.min_max(&pos_after_move);
+            let start = BlockPosition::from(min);
+            let stop = BlockPosition::from(max);
             for x in start.x..=stop.x {
                 for y in start.y..=stop.y {
                     for z in start.z..=stop.z {
-                        let block_pos = IVec3::new(x, y, z);
+                        let block_pos = BlockPosition::new(x, y, z);
                         // TODO: This looks up chunk through hashmap each time, is too bad?
                         let block_id = match world_map.get_block(block_pos) {
                             Some(id) => id,
@@ -205,19 +279,24 @@ fn simulate_aabb_physics(
                             None => continue,
                         };
 
-                        let block_aabb = Aabb {
-                            center: block_pos.as_dvec3() + 0.5,
-                            half_extents: DVec3::splat(0.5),
+                        let block_config = blocks.get_config(&block_id);
+
+                        friction = friction.max(block_config.drag);
+
+                        let block_collider = match &block_config.hitbox {
+                            Some(c) => c,
+                            None => continue,
                         };
 
-                        let distance = entity_aabb.center - block_aabb.center;
-                        let overlap =
-                            entity_aabb.half_extents + block_aabb.half_extents - distance.abs();
-
-                        if overlap.cmpgt(DVec3::ZERO).all() {
-                            //collisions.push((overlap, block_id));
-                            collisions.push((DVec3::from(overlap.copysign(distance)), block_id));
-                        }
+                        if let Some(intersection) = entity_collider.intersection(
+                            &pos_after_move,
+                            &block_collider,
+                            &Transform::from_translation(block_pos.as_dvec3()),
+                        ) {
+                            collisions.push((intersection, block_config));
+                        } else {
+                            continue;
+                        };
                     }
                 }
             }
@@ -228,7 +307,7 @@ fn simulate_aabb_physics(
             let delta_time = DVec3::splat(time.delta_secs_f64());
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
-            for (collision, block_id) in collisions {
+            for (collision, block_config) in collisions {
                 let backwards_time = collision / -directional_velocity;
                 // Small epsilon to delta time because of precision.
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
@@ -236,108 +315,95 @@ fn simulate_aabb_physics(
                 let resolution_axis =
                     DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
 
-                match blocks.get_config(&block_id).friction {
-                    Friction::Static {
-                        front,
-                        back,
-                        right,
-                        left,
-                        top,
-                        bottom,
-                    } => {
-                        if resolution_axis == backwards_time.y {
-                            if velocity.y.is_sign_positive() {
-                                friction = friction.max(DVec3::splat(bottom));
-                            } else {
-                                friction = friction.max(DVec3::splat(top));
-                            }
+                let Some(block_friction) = &block_config.friction else {
+                    continue;
+                };
 
-                            move_back.y = collision.y + collision.y / 100.0;
-                            velocity.y = 0.0;
-                        } else if resolution_axis == backwards_time.x {
-                            if velocity.x.is_sign_positive() {
-                                friction = friction.max(DVec3::splat(left));
-                            } else {
-                                friction = friction.max(DVec3::splat(right));
-                            }
-
-                            move_back.x = collision.x + collision.x / 100.0;
-                            velocity.x = 0.0;
-                        } else if resolution_axis == backwards_time.z {
-                            if velocity.z.is_sign_positive() {
-                                friction = friction.max(DVec3::splat(back));
-                            } else {
-                                friction = friction.max(DVec3::splat(front));
-                            }
-
-                            move_back.z = collision.z + collision.z / 100.0;
-                            velocity.z = 0.0;
-                        } else {
-                            // When velocity is really small there's numerical precision problems. Since a
-                            // resolution is guaranteed. Move it back by whatever the smallest resolution
-                            // direction is.
-                            let valid_axes = DVec3::select(
-                                backwards_time.cmpgt(DVec3::ZERO)
-                                    & backwards_time.cmplt(delta_time * 2.0),
-                                backwards_time,
-                                DVec3::NAN,
-                            );
-                            if valid_axes.x.is_finite()
-                                || valid_axes.y.is_finite()
-                                || valid_axes.z.is_finite()
-                            {
-                                let valid_axes = DVec3::select(
-                                    valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
-                                    valid_axes,
-                                    DVec3::ZERO,
-                                );
-                                move_back +=
-                                    (valid_axes + valid_axes / 100.0) * -directional_velocity;
-                            }
-                        }
+                if resolution_axis == backwards_time.y {
+                    if physics.velocity.y.is_sign_positive() {
+                        friction = friction.max(DVec3::splat(block_friction.bottom));
+                    } else {
+                        friction = friction.max(DVec3::splat(block_friction.top));
                     }
-                    Friction::Drag(drag) => {
-                        friction = friction.max(drag);
+
+                    move_back.y = collision.y + collision.y / 100.0;
+                    physics.velocity.y = 0.0;
+                } else if resolution_axis == backwards_time.x {
+                    if physics.velocity.x.is_sign_positive() {
+                        friction = friction.max(DVec3::splat(block_friction.left));
+                    } else {
+                        friction = friction.max(DVec3::splat(block_friction.right));
+                    }
+
+                    move_back.x = collision.x + collision.x / 100.0;
+                    physics.velocity.x = 0.0;
+                } else if resolution_axis == backwards_time.z {
+                    if physics.velocity.z.is_sign_positive() {
+                        friction = friction.max(DVec3::splat(block_friction.back));
+                    } else {
+                        friction = friction.max(DVec3::splat(block_friction.front));
+                    }
+
+                    move_back.z = collision.z + collision.z / 100.0;
+                    physics.velocity.z = 0.0;
+                } else {
+                    // When physics.velocity is really small there's numerical precision problems. Since a
+                    // resolution is guaranteed. Move it back by whatever the smallest resolution
+                    // direction is.
+                    let valid_axes = DVec3::select(
+                        backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                        backwards_time,
+                        DVec3::NAN,
+                    );
+                    if valid_axes.x.is_finite()
+                        || valid_axes.y.is_finite()
+                        || valid_axes.z.is_finite()
+                    {
+                        let valid_axes = DVec3::select(
+                            valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
+                            valid_axes,
+                            DVec3::ZERO,
+                        );
+                        move_back += (valid_axes + valid_axes / 100.0) * -directional_velocity;
                     }
                 }
             }
 
-            if (transform.translation - (pos_after_move + move_back))
+            if (transform.translation - (pos_after_move.translation + move_back))
                 .abs()
                 .cmpgt(DVec3::splat(0.0001))
                 .any()
             {
-                transform.translation = pos_after_move + move_back;
+                transform.translation = pos_after_move.translation + move_back;
             }
         }
 
         // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
-        // should be parsed as 'velocity *= friction^time'
-        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_secs_f64());
-        // Clamp the velocity when it is close to 0
-        velocity.0 = DVec3::select(
-            velocity.0.abs().cmplt(DVec3::splat(0.01)),
+        // should be parsed as 'physics.velocity *= friction^time'
+        physics.velocity =
+            physics.velocity * (1.0 - friction).powf(4.0).powf(time.delta_secs_f64());
+        // Clamp the physics.velocity when it is close to 0
+        physics.velocity = DVec3::select(
+            physics.velocity.abs().cmplt(DVec3::splat(0.01)),
             DVec3::ZERO,
-            velocity.0,
+            physics.velocity,
         );
     }
 }
 
 fn update_object_map(
     mut object_map: ResMut<ObjectMap>,
-    object_query: Query<(Entity, &GlobalTransform), (With<Mass>, Changed<GlobalTransform>)>,
+    object_query: Query<(Entity, &GlobalTransform), (With<Physics>, Changed<GlobalTransform>)>,
 ) {
-    for (entity, global_transform) in object_query.iter() {
-        let transform = global_transform.compute_transform();
-        let chunk_position =
-            utils::world_position_to_chunk_position(transform.translation.as_ivec3());
+    for (entity, transform) in object_query.iter() {
+        let chunk_position = ChunkPosition::from(transform.translation());
         object_map.insert_or_move(chunk_position, entity)
     }
 }
 
 fn trigger_update_on_block_change(
     object_map: Res<ObjectMap>,
-    mut object_query: Query<&mut Transform, With<Mass>>,
+    mut object_query: Query<&mut Transform, With<Physics>>,
     mut block_updates: EventReader<BlockUpdate>,
 ) {
     for block_update in block_updates.read() {
@@ -345,7 +411,7 @@ fn trigger_update_on_block_change(
             BlockUpdate::Change { position, .. } => *position,
             _ => continue,
         };
-        let chunk_position = utils::world_position_to_chunk_position(position);
+        let chunk_position = ChunkPosition::from(position);
         if let Some(item_entities) = object_map.get_entities(&chunk_position) {
             for entity in item_entities.iter() {
                 if let Ok(mut transform) = object_query.get_mut(*entity) {
@@ -355,7 +421,7 @@ fn trigger_update_on_block_change(
         }
 
         let above_position = position + IVec3::Y;
-        let above_chunk_position = utils::world_position_to_chunk_position(above_position);
+        let above_chunk_position = ChunkPosition::from(above_position);
         if above_chunk_position != chunk_position {
             if let Some(item_entities) = object_map.get_entities(&above_chunk_position) {
                 for entity in item_entities.iter() {
@@ -368,58 +434,53 @@ fn trigger_update_on_block_change(
     }
 }
 
-fn apply_acceleration(
-    time: Res<Time>,
-    mut objects: Query<(Ref<GlobalTransform>, &mut Acceleration, &mut Velocity), With<Mass>>,
-) {
-    for (transform, mut acceleration, mut velocity) in objects.iter_mut() {
-        if !transform.is_changed() && acceleration.0 == DVec3::ZERO && velocity.0 == DVec3::ZERO {
-            // If the transform isn't modified and the object has no acceleration and
-            // velocity it is considered stationary. Stationary objects are skipped until some
-            // external force is applied to them.
+fn apply_acceleration(time: Res<Time>, mut objects: Query<(Ref<GlobalTransform>, &mut Physics)>) {
+    for (transform, mut physics) in objects.iter_mut() {
+        if !transform.is_changed() {
+            // If the transform isn't modified it is considered stationary. Stationary objects are
+            // skipped until some external force is applied to them or a block around them changes.
             continue;
         }
-        velocity.0 += acceleration.0 * time.delta_secs_f64();
-        acceleration.0 = DVec3::ZERO;
-    }
-}
 
-fn gravity(mut objects: Query<&mut Acceleration, (With<Mass>, Changed<GlobalTransform>)>) {
-    for mut acceleration in objects.iter_mut() {
-        acceleration.0 += GRAVITY;
+        let acceleration = physics.acceleration + GRAVITY;
+
+        physics.velocity += acceleration * time.delta_secs_f64();
+        physics.acceleration = DVec3::ZERO;
     }
 }
 
 fn buoyancy(
     world_map: Res<WorldMap>,
-    mut objects: Query<
-        (&GlobalTransform, &mut Acceleration, &Buoyancy),
-        (With<Mass>, Changed<GlobalTransform>),
-    >,
+    mut objects: Query<(&GlobalTransform, &mut Physics), Changed<GlobalTransform>>,
 ) {
-    for (transform, mut acceleration, buoyancy) in objects.iter_mut() {
+    for (transform, mut physics) in objects.iter_mut() {
+        let Some(buoyancy) = &mut physics.buoyancy else {
+            continue;
+        };
+
         let mut waterline_position = transform.translation();
         waterline_position.y += buoyancy.waterline;
 
-        let block_position = waterline_position.floor().as_ivec3();
+        let block_position = BlockPosition::from(waterline_position);
         let Some(block_id) = world_map.get_block(block_position) else {
             continue;
         };
         let block_config = Blocks::get().get_config(&block_id);
 
-        let friction = match block_config.friction {
-            Friction::Static { .. } => continue,
-            Friction::Drag(f) => f,
-        };
+        if block_config.is_solid() {
+            continue;
+        }
 
         // We want to let the object bob a little when it enters the water, but when it has
         // stabilized
         //let offset_from_top_of_block = 1.0 - (waterline_position.y - block_position.y as f64);
-        if buoyancy.density < friction.y && waterline_position.y < block_position.y as f64 + 1.0 {
+        if buoyancy.density < block_config.drag.y
+            && waterline_position.y < block_position.y as f64 + 1.0
+        {
             //if offset_from_top_of_block < 0.05 {
             //    acceleration.0 += -GRAVITY;
             //} else {
-            acceleration.0 += -GRAVITY + DVec3::new(0.0, 1.0, 0.0);
+            physics.acceleration += -GRAVITY + DVec3::new(0.0, 1.0, 0.0);
             //}
         }
     }

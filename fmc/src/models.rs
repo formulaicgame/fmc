@@ -5,13 +5,13 @@ use fmc_protocol::messages;
 use indexmap::IndexMap;
 
 use crate::{
+    assets::AssetSet,
     bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystem},
     database::Database,
     networking::Server,
-    physics::{shapes::Aabb, PhysicsSystems, Velocity},
+    physics::{shapes::Aabb, Collider},
     players::Player,
-    utils,
-    world::{ChunkSubscriptionEvent, ChunkSubscriptions},
+    world::{chunk::ChunkPosition, ChunkSubscriptionEvent, ChunkSubscriptions},
 };
 
 // TODO use super::world_map::chunk_manager::ChunkUnloadEvent;
@@ -25,7 +25,7 @@ pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ModelMap::default())
-            .add_systems(PreStartup, load_models)
+            .add_systems(PreStartup, load_models.in_set(AssetSet::Models))
             .add_systems(
                 PostUpdate,
                 (
@@ -33,13 +33,10 @@ impl Plugin for ModelPlugin {
                     //update_model_assets,
                     play_move_animation
                         .before(send_animations)
-                        // Make sure the velocity has been applied so we know whether to play the
-                        // animation
-                        .after(PhysicsSystems),
+                        .after(TransformSystem::TransformPropagate),
                     send_animations,
                     remove_models,
                     update_model_transform,
-                    // Wait for propagation so GlobalTransform is updated
                     update_visibility.after(TransformSystem::TransformPropagate),
                 ),
             );
@@ -156,17 +153,9 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // TODO: Setting the default move animation is almost always something you want to do, but only on
 // initial spawn. Maybe introduce a transient component in this bundle that can be removed when
 // added.
-#[derive(Bundle)]
-pub struct ModelBundle {
-    pub model: Model,
-    pub animations: ModelAnimations,
-    pub visibility: ModelVisibility,
-    pub global_transform: GlobalTransform,
-    pub transform: Transform,
-}
-
-// TODO: With "custom" this is almost 200 bytes, can't accomodate
+// TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
+#[require(ModelVisibility, ModelAnimations, Transform)]
 pub enum Model {
     Asset(ModelId),
     Custom {
@@ -190,17 +179,21 @@ pub enum Model {
         material_alpha_cutoff: f32,
         /// Render mesh from both sides
         material_double_sided: bool,
+        /// Collider
+        collider: Option<Collider>,
     },
 }
 
-#[derive(Component)]
-pub struct ModelVisibility {
-    pub is_visible: bool,
+#[derive(Component, Default)]
+pub enum ModelVisibility {
+    Hidden,
+    #[default]
+    Visible,
 }
 
-impl Default for ModelVisibility {
-    fn default() -> Self {
-        Self { is_visible: true }
+impl ModelVisibility {
+    pub fn is_visible(&self) -> bool {
+        matches!(self, Self::Visible)
     }
 }
 
@@ -214,6 +207,7 @@ enum Animation {
 pub struct ModelAnimations {
     move_animation: Option<u32>,
     playing_move_animation: bool,
+    last_position: DVec3,
     repeating: HashSet<u32>,
     animation_queue: Vec<Animation>,
 }
@@ -284,16 +278,16 @@ impl Models {
 /// Keeps track of which chunk every entity with a model is currently in.
 #[derive(Default, Resource)]
 pub struct ModelMap {
-    position2entity: HashMap<IVec3, HashSet<Entity>>,
-    entity2position: HashMap<Entity, IVec3>,
+    position2entity: HashMap<ChunkPosition, HashSet<Entity>>,
+    entity2position: HashMap<Entity, ChunkPosition>,
 }
 
 impl ModelMap {
-    pub fn get_entities(&self, chunk_position: &IVec3) -> Option<&HashSet<Entity>> {
+    pub fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
         return self.position2entity.get(chunk_position);
     }
 
-    fn insert_or_move(&mut self, chunk_position: IVec3, entity: Entity) {
+    fn insert_or_move(&mut self, chunk_position: ChunkPosition, entity: Entity) {
         if let Some(current_chunk_pos) = self.entity2position.get(&entity) {
             // Move model from one chunk to another
             if current_chunk_pos == &chunk_position {
@@ -363,12 +357,11 @@ fn update_model_transform(
 ) {
     for (entity, global_transform, visibility, change_tracker) in model_query.iter() {
         let transform = global_transform.compute_transform();
-        let chunk_position =
-            utils::world_position_to_chunk_position(transform.translation.as_ivec3());
+        let chunk_position = ChunkPosition::from(transform.translation);
 
         model_map.insert_or_move(chunk_position, entity);
 
-        if !visibility.is_visible || change_tracker.is_added() {
+        if !visibility.is_visible() || change_tracker.is_added() {
             continue;
         }
 
@@ -389,22 +382,22 @@ fn update_model_transform(
     }
 }
 
-// TODO: Requiring models to have a Velocity seems unfortunate, as you might not want them to be
-// physics enabled. Maybe have a separate component to keep track of the velocity through
-// difference in changes to the transform, with some lower and higher bound for stopping/starting
-// the animation.
 fn play_move_animation(
-    mut moved_models: Query<(&mut ModelAnimations, &Velocity), Changed<GlobalTransform>>,
+    mut moved_models: Query<(&mut ModelAnimations, &GlobalTransform), Changed<GlobalTransform>>,
 ) {
-    for (mut animations, velocity) in moved_models.iter_mut() {
+    for (mut animations, transform) in moved_models.iter_mut() {
         let Some(move_animation) = animations.move_animation else {
             continue;
         };
 
-        if !animations.playing_move_animation && velocity.is_moving() {
+        let difference = transform
+            .translation()
+            .distance_squared(animations.last_position);
+
+        if !animations.playing_move_animation && difference > 0.25 {
             animations.playing_move_animation = true;
             animations.play_repeating(move_animation);
-        } else if animations.playing_move_animation && !velocity.is_moving() {
+        } else if animations.playing_move_animation && difference < 0.25 {
             animations.playing_move_animation = false;
             animations.stop(move_animation);
         }
@@ -415,10 +408,10 @@ fn play_move_animation(
 fn update_model_assets(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    model_query: Query<(Entity, Ref<Model>, &Transform, &ModelVisibility), Changed<Model>>,
+    model_query: Query<(Entity, Ref<Model>, &GlobalTransform, &ModelVisibility), Changed<Model>>,
 ) {
     for (entity, model, transform, visibility) in model_query.iter() {
-        if !visibility.is_visible || model.is_added() {
+        if !visibility.is_visible() || model.is_added() {
             continue;
         }
 
@@ -426,7 +419,7 @@ fn update_model_assets(
             continue;
         };
 
-        let chunk_pos = utils::world_position_to_chunk_position(transform.translation.as_ivec3());
+        let chunk_pos = ChunkPosition::from(transform.translation());
 
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
             Some(subs) => subs,
@@ -455,14 +448,13 @@ fn update_visibility(
     for (entity, model, visibility, transform) in model_query.iter() {
         let transform = transform.compute_transform();
 
-        let chunk_pos = utils::world_position_to_chunk_position(transform.translation.as_ivec3());
-
+        let chunk_pos = ChunkPosition::from(transform.translation);
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
             Some(subs) => subs,
             None => continue,
         };
 
-        if visibility.is_visible {
+        if visibility.is_visible() {
             match model {
                 Model::Asset(model_id) => {
                     net.send_many(
@@ -488,6 +480,8 @@ fn update_visibility(
                     material_alpha_mode,
                     material_alpha_cutoff,
                     material_double_sided,
+                    // TODO: Collider must be sent to clients
+                    collider: _collider,
                 } => net.send_many(
                     subs,
                     messages::SpawnCustomModel {
@@ -537,7 +531,7 @@ fn send_models_on_chunk_subscription(
                     continue;
                 };
 
-                if !visibility.is_visible {
+                if !visibility.is_visible() {
                     continue;
                 }
 
@@ -576,6 +570,8 @@ fn send_models_on_chunk_subscription(
                         material_alpha_mode,
                         material_alpha_cutoff,
                         material_double_sided,
+                        // TODO: Collider must be sent to clients
+                        collider: _collider,
                     } => net.send_one(
                         chunk_sub.player_entity,
                         messages::SpawnCustomModel {
@@ -634,8 +630,7 @@ fn send_animations(
     >,
 ) {
     for (entity, mut model_animations, transform) in animation_query.iter_mut() {
-        let chunk_position =
-            utils::world_position_to_chunk_position(transform.translation().floor().as_ivec3());
+        let chunk_position = ChunkPosition::from(transform.translation());
 
         let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
             model_animations.animation_queue.clear();

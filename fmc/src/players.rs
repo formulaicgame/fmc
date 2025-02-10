@@ -8,9 +8,12 @@ use crate::{
     interfaces::InterfaceNodes,
     models::ModelMap,
     networking::{NetworkMessage, Server},
-    physics::{shapes::Aabb, Velocity},
+    physics::{shapes::Aabb, Collider},
     utils,
-    world::{chunk::Chunk, RenderDistance, WorldMap},
+    world::{
+        chunk::{Chunk, ChunkPosition},
+        RenderDistance, WorldMap,
+    },
 };
 
 pub struct PlayersPlugin;
@@ -68,10 +71,9 @@ pub struct DefaultPlayerBundle {
     render_distance: RenderDistance,
     global_transform: GlobalTransform,
     transform: Transform,
-    velocity: Velocity,
     camera: Camera,
     targets: Targets,
-    aabb: Aabb,
+    aabb: Collider,
     interfaces: InterfaceNodes,
 }
 
@@ -84,15 +86,21 @@ impl DefaultPlayerBundle {
             transform: Transform::default(),
             camera: Camera::default(),
             targets: Targets::default(),
-            velocity: Velocity::default(),
-            aabb: Aabb::from_min_max(DVec3::new(-0.3, 0.0, -0.3), DVec3::new(0.3, 1.8, 0.3)),
+            aabb: Collider::from_min_max(DVec3::new(-0.3, 0.0, -0.3), DVec3::new(0.3, 1.8, 0.3)),
             interfaces: InterfaceNodes::default(),
         }
     }
 }
 
-fn send_aabb(net: Res<Server>, aabb_query: Query<(Entity, &Aabb), (Changed<Aabb>, With<Player>)>) {
-    for (entity, aabb) in aabb_query.iter() {
+fn send_aabb(
+    net: Res<Server>,
+    aabb_query: Query<(Entity, &Collider), (Changed<Collider>, With<Player>)>,
+) {
+    for (entity, collider) in aabb_query.iter() {
+        let Collider::Aabb(aabb) = collider else {
+            panic!();
+        };
+
         net.send_one(
             entity,
             messages::PlayerAabb {
@@ -104,7 +112,7 @@ fn send_aabb(net: Res<Server>, aabb_query: Query<(Entity, &Aabb), (Changed<Aabb>
 }
 
 fn handle_player_position_updates(
-    mut player_query: Query<(&mut Transform, &mut Velocity), With<Player>>,
+    mut player_query: Query<&mut Transform, With<Player>>,
     mut position_events: EventReader<NetworkMessage<messages::PlayerPosition>>,
 ) {
     for position_update in position_events.read() {
@@ -112,10 +120,8 @@ fn handle_player_position_updates(
             continue;
         }
 
-        let (mut player_position, mut player_velocity) =
-            player_query.get_mut(position_update.player_entity).unwrap();
-        player_position.translation = position_update.position;
-        player_velocity.0 = position_update.velocity;
+        let mut transform = player_query.get_mut(position_update.player_entity).unwrap();
+        transform.translation = position_update.position;
     }
 }
 
@@ -168,7 +174,7 @@ pub enum Target {
         entity: Entity,
     },
     Block {
-        block_position: IVec3,
+        block_position: BlockPosition,
         block_id: BlockId,
         /// Distance to the target from the camera
         distance: f64,
@@ -200,7 +206,7 @@ fn find_target(
     model_map: Res<ModelMap>,
     model_query: Query<(
         Entity,
-        Option<&Aabb>,
+        Option<&Collider>,
         Option<&BlockPosition>,
         &GlobalTransform,
     )>,
@@ -220,70 +226,57 @@ fn find_target(
         let mut min_distance = f64::MAX;
         let mut model_target = None;
 
-        let chunk_position =
-            utils::world_position_to_chunk_position(transform.translation.floor().as_ivec3());
-        // TODO: When ChunkPosition is implemented, this type of iteration should have its own
-        // function.
-        for x_offset in [IVec3::X, IVec3::NEG_X, IVec3::ZERO] {
-            for y_offset in [IVec3::Y, IVec3::NEG_Y, IVec3::ZERO] {
-                for z_offset in [IVec3::Z, IVec3::NEG_Z, IVec3::ZERO] {
-                    let chunk_position = chunk_position
-                        + x_offset * Chunk::SIZE as i32
-                        + y_offset * Chunk::SIZE as i32
-                        + z_offset * Chunk::SIZE as i32;
-                    let Some(model_entities) = model_map.get_entities(&chunk_position) else {
+        let chunk_position = ChunkPosition::from(transform.translation);
+        for chunk_position in chunk_position.neighbourhood() {
+            let Some(model_entities) = model_map.get_entities(&chunk_position) else {
+                continue;
+            };
+            for (entity, maybe_aabb, maybe_block, model_transform) in
+                model_query.iter_many(model_entities)
+            {
+                let new_target = if let Some(block_position) = maybe_block {
+                    let Some(block_id) = world_map.get_block(*block_position) else {
                         continue;
                     };
-                    for (entity, maybe_aabb, maybe_block, model_transform) in
-                        model_query.iter_many(model_entities)
-                    {
-                        let new_target = if let Some(block_position) = maybe_block {
-                            let Some(block_id) = world_map.get_block(block_position.0) else {
-                                continue;
-                            };
 
-                            let block_config = blocks.get_config(&block_id);
+                    let block_config = blocks.get_config(&block_id);
 
-                            let Some(hitbox) = &block_config.hitbox else {
-                                continue;
-                            };
+                    let Some(hitbox) = &block_config.hitbox else {
+                        continue;
+                    };
 
-                            let Some((distance, block_face)) = hitbox.ray_intersection(
-                                &model_transform.compute_transform(),
-                                &camera_transform,
-                            ) else {
-                                continue;
-                            };
+                    let Some((distance, block_face)) = hitbox
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                    else {
+                        continue;
+                    };
 
-                            Target::Block {
-                                block_position: block_position.0,
-                                block_id,
-                                block_face,
-                                distance,
-                                entity: Some(entity),
-                            }
-                        } else if let Some(aabb) = maybe_aabb {
-                            let Some((distance, face)) = aabb.ray_intersection(
-                                &model_transform.compute_transform(),
-                                &camera_transform,
-                            ) else {
-                                continue;
-                            };
-
-                            Target::Entity {
-                                distance,
-                                face,
-                                entity,
-                            }
-                        } else {
-                            continue;
-                        };
-
-                        if new_target.distance() < min_distance {
-                            min_distance = new_target.distance();
-                            model_target = Some(new_target);
-                        }
+                    Target::Block {
+                        block_position: *block_position,
+                        block_id,
+                        block_face,
+                        distance,
+                        entity: Some(entity),
                     }
+                } else if let Some(aabb) = maybe_aabb {
+                    let Some((distance, face)) = aabb
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                    else {
+                        continue;
+                    };
+
+                    Target::Entity {
+                        distance,
+                        face,
+                        entity,
+                    }
+                } else {
+                    continue;
+                };
+
+                if new_target.distance() < min_distance {
+                    min_distance = new_target.distance();
+                    model_target = Some(new_target);
                 }
             }
         }
@@ -320,8 +313,8 @@ fn find_target(
                 hitbox.ray_intersection(&block_transform, &camera_transform)
             {
                 // TODO: it will add blocks with entities twice if the model is hit
-                let (chunk_position, block_index) =
-                    utils::world_position_to_chunk_position_and_block_index(block_position);
+                let chunk_position = ChunkPosition::from(block_position);
+                let block_index = block_position.as_chunk_index();
                 let entity = world_map
                     .get_chunk(&chunk_position)
                     .map(|chunk| chunk.block_entities.get(&block_index).cloned())
@@ -336,7 +329,7 @@ fn find_target(
                 });
             };
 
-            if matches!(block_config.friction, Friction::Static { .. }) {
+            if block_config.is_solid() {
                 break;
             }
         }

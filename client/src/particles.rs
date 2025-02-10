@@ -294,10 +294,15 @@ pub fn simulate_physics(
                             None => continue,
                         };
 
+                        let block_config = blocks.get_config(block_id);
+
+                        friction = friction.max(block_config.drag());
+
+                        // TODO: Implement colliders client side
                         let block_aabb = Aabb::block(Vec3::new(x as f32, y as f32, z as f32));
 
                         if let Some(overlap) = particle_aabb.intersects(&block_aabb) {
-                            collisions.push((overlap, block_id));
+                            collisions.push((overlap, block_config));
                         }
                     }
                 }
@@ -309,7 +314,7 @@ pub fn simulate_physics(
             let delta_time = Vec3::splat(time.delta_secs());
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
-            for (collision, block_id) in collisions {
+            for (collision, block_config) in collisions {
                 let backwards_time = collision / directional_velocity;
                 // Small epsilon to delta time because of precision.
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
@@ -318,68 +323,56 @@ pub fn simulate_physics(
                     Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element(),
                 ));
 
-                match *blocks.get_config(block_id).friction() {
-                    Friction::Static {
-                        front,
-                        back,
-                        right,
-                        left,
-                        top,
-                        bottom,
-                    } => {
-                        if resolution_axis.y {
-                            if velocity.y.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(bottom));
-                            } else {
-                                friction = friction.max(Vec3::splat(top));
-                            }
+                let Some(block_friction) = block_config.friction() else {
+                    continue;
+                };
 
-                            move_back.y = collision.y + collision.y / 100.0;
-                            velocity.y = 0.0;
-                        } else if resolution_axis.x {
-                            if velocity.x.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(left));
-                            } else {
-                                friction = friction.max(Vec3::splat(right));
-                            }
-
-                            move_back.x = collision.x + collision.x / 100.0;
-                            velocity.x = 0.0;
-                        } else if resolution_axis.z {
-                            if velocity.z.is_sign_positive() {
-                                friction = friction.max(Vec3::splat(back));
-                            } else {
-                                friction = friction.max(Vec3::splat(front));
-                            }
-
-                            move_back.z = collision.z + collision.z / 100.0;
-                            velocity.z = 0.0;
-                        } else {
-                            // When velocity is really small there's numerical precision problems. Since a
-                            // resolution is guaranteed. Move it back by whatever the smallest resolution
-                            // direction is.
-                            let valid_axes = Vec3::select(
-                                backwards_time.cmpgt(Vec3::ZERO)
-                                    & backwards_time.cmplt(delta_time * 2.0),
-                                backwards_time,
-                                Vec3::NAN,
-                            );
-                            if valid_axes.x.is_finite()
-                                || valid_axes.y.is_finite()
-                                || valid_axes.z.is_finite()
-                            {
-                                let valid_axes = Vec3::select(
-                                    valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
-                                    valid_axes,
-                                    Vec3::ZERO,
-                                );
-                                move_back +=
-                                    (valid_axes + valid_axes / 100.0) * -directional_velocity;
-                            }
-                        }
+                if resolution_axis.y {
+                    if velocity.y.is_sign_positive() {
+                        friction = friction.max(Vec3::splat(block_friction.bottom));
+                    } else {
+                        friction = friction.max(Vec3::splat(block_friction.top));
                     }
-                    Friction::Drag(drag) => {
-                        friction = friction.max(drag);
+
+                    move_back.y = collision.y + collision.y / 100.0;
+                    velocity.y = 0.0;
+                } else if resolution_axis.x {
+                    if velocity.x.is_sign_positive() {
+                        friction = friction.max(Vec3::splat(block_friction.left));
+                    } else {
+                        friction = friction.max(Vec3::splat(block_friction.right));
+                    }
+
+                    move_back.x = collision.x + collision.x / 100.0;
+                    velocity.x = 0.0;
+                } else if resolution_axis.z {
+                    if velocity.z.is_sign_positive() {
+                        friction = friction.max(Vec3::splat(block_friction.back));
+                    } else {
+                        friction = friction.max(Vec3::splat(block_friction.front));
+                    }
+
+                    move_back.z = collision.z + collision.z / 100.0;
+                    velocity.z = 0.0;
+                } else {
+                    // When velocity is really small there's numerical precision problems. Since a
+                    // resolution is guaranteed. Move it back by whatever the smallest resolution
+                    // direction is.
+                    let valid_axes = Vec3::select(
+                        backwards_time.cmpgt(Vec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                        backwards_time,
+                        Vec3::NAN,
+                    );
+                    if valid_axes.x.is_finite()
+                        || valid_axes.y.is_finite()
+                        || valid_axes.z.is_finite()
+                    {
+                        let valid_axes = Vec3::select(
+                            valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
+                            valid_axes,
+                            Vec3::ZERO,
+                        );
+                        move_back += (valid_axes + valid_axes / 100.0) * -directional_velocity;
                     }
                 }
             }

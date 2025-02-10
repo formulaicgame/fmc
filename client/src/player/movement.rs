@@ -238,6 +238,8 @@ fn simulate_player_physics(
             half_extents: player_aabb.half_extents,
         };
 
+        let blocks = Blocks::get();
+
         // Check for collisions for all blocks within the player's aabb.
         let mut collisions = Vec::new();
         let start = player_aabb.min().floor().as_ivec3() + origin.0;
@@ -253,6 +255,10 @@ fn simulate_player_physics(
                         None => continue,
                     };
 
+                    let block_config = blocks.get_config(block_id);
+
+                    friction = friction.max(block_config.drag());
+
                     let block_aabb = Aabb {
                         center: (block_pos - origin.0).as_vec3a() + 0.5,
                         half_extents: Vec3A::new(0.5, 0.5, 0.5),
@@ -264,7 +270,7 @@ fn simulate_player_physics(
 
                     if overlap.cmpgt(Vec3A::ZERO).all() {
                         // Keep sign to differentiate which side of the block was collided with.
-                        collisions.push((Vec3::from(overlap.copysign(distance)), block_id));
+                        collisions.push((Vec3::from(overlap.copysign(distance)), block_config));
                     }
                 }
             }
@@ -273,80 +279,65 @@ fn simulate_player_physics(
         let mut move_back = Vec3::ZERO;
         let delta_time = Vec3::splat(delta_time);
 
-        let blocks = Blocks::get();
-
         // TODO: Some of this is leftover from converting from another system that didn't work as
         // as planned.
-        for (collision, block_id) in collisions.clone() {
+        for (collision, block_config) in collisions.clone() {
             let backwards_time = collision / -velocity;
             let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
                 & backwards_time.cmpgt(Vec3::splat(0.0));
             let resolution_axis = Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element();
 
-            match blocks.get_config(block_id).friction() {
-                Friction::Static {
-                    front,
-                    back,
-                    right,
-                    left,
-                    top,
-                    bottom,
-                } => {
-                    if resolution_axis == backwards_time.y {
-                        move_back.y = collision.y + collision.y / 100.0;
-                        player.is_grounded.y = true;
-                        player.velocity.y = 0.0;
+            let Some(block_friction) = block_config.friction() else {
+                continue;
+            };
 
-                        if velocity.y.is_sign_positive() {
-                            friction = friction.max(Vec3::splat(*bottom));
-                        } else {
-                            friction = friction.max(Vec3::splat(*top));
-                        }
-                    } else if resolution_axis == backwards_time.x {
-                        move_back.x = collision.x + collision.x / 100.0;
-                        player.is_grounded.x = true;
-                        player.velocity.x = 0.0;
+            if resolution_axis == backwards_time.y {
+                move_back.y = collision.y + collision.y / 100.0;
+                player.is_grounded.y = true;
+                player.velocity.y = 0.0;
 
-                        if velocity.x.is_sign_positive() {
-                            friction = friction.max(Vec3::splat(*left));
-                        } else {
-                            friction = friction.max(Vec3::splat(*right));
-                        }
-                    } else if resolution_axis == backwards_time.z {
-                        move_back.z = collision.z + collision.z / 100.0;
-                        player.is_grounded.z = true;
-                        player.velocity.z = 0.0;
-
-                        if velocity.z.is_sign_positive() {
-                            friction = friction.max(Vec3::splat(*back));
-                        } else {
-                            friction = friction.max(Vec3::splat(*front));
-                        }
-                    } else {
-                        // When velocity is really small there's numerical precision problems. Since a
-                        // resolution is guaranteed. Move it back by whatever the smallest resolution
-                        // direction is.
-                        let valid_axes = Vec3::select(
-                            backwards_time.cmpgt(Vec3::ZERO)
-                                & backwards_time.cmplt(delta_time * 2.0),
-                            backwards_time,
-                            Vec3::NAN,
-                        );
-                        if valid_axes.x.is_finite()
-                            || valid_axes.y.is_finite()
-                            || valid_axes.z.is_finite()
-                        {
-                            let valid_axes = Vec3::select(
-                                valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
-                                valid_axes,
-                                Vec3::ZERO,
-                            );
-                            move_back += (valid_axes + valid_axes / 100.0) * -velocity;
-                        }
-                    }
+                if velocity.y.is_sign_positive() {
+                    friction = friction.max(Vec3::splat(block_friction.bottom));
+                } else {
+                    friction = friction.max(Vec3::splat(block_friction.top));
                 }
-                Friction::Drag(drag) => {
-                    friction = friction.max(*drag);
+            } else if resolution_axis == backwards_time.x {
+                move_back.x = collision.x + collision.x / 100.0;
+                player.is_grounded.x = true;
+                player.velocity.x = 0.0;
+
+                if velocity.x.is_sign_positive() {
+                    friction = friction.max(Vec3::splat(block_friction.left));
+                } else {
+                    friction = friction.max(Vec3::splat(block_friction.right));
+                }
+            } else if resolution_axis == backwards_time.z {
+                move_back.z = collision.z + collision.z / 100.0;
+                player.is_grounded.z = true;
+                player.velocity.z = 0.0;
+
+                if velocity.z.is_sign_positive() {
+                    friction = friction.max(Vec3::splat(block_friction.back));
+                } else {
+                    friction = friction.max(Vec3::splat(block_friction.front));
+                }
+            } else {
+                // When velocity is really small there's numerical precision problems. Since a
+                // resolution is guaranteed. Move it back by whatever the smallest resolution
+                // direction is.
+                let valid_axes = Vec3::select(
+                    backwards_time.cmpgt(Vec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                    backwards_time,
+                    Vec3::NAN,
+                );
+                if valid_axes.x.is_finite() || valid_axes.y.is_finite() || valid_axes.z.is_finite()
+                {
+                    let valid_axes = Vec3::select(
+                        valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
+                        valid_axes,
+                        Vec3::ZERO,
+                    );
+                    move_back += (valid_axes + valid_axes / 100.0) * -velocity;
                 }
             }
         }
@@ -376,7 +367,8 @@ fn swimming(
         half_extents: player_aabb.half_extents,
     };
 
-    let mut collisions = Vec::new();
+    let blocks = Blocks::get();
+
     let start = player_aabb.min().floor().as_ivec3() + origin.0;
     let stop = player_aabb.max().floor().as_ivec3() + origin.0;
     for x in start.x..=stop.x {
@@ -399,20 +391,10 @@ fn swimming(
                 let overlap = player_aabb.half_extents + block_aabb.half_extents - distance.abs();
 
                 if overlap.cmpgt(Vec3A::ZERO).all() {
-                    collisions.push(block_id);
-                }
-            }
-        }
-    }
-
-    let blocks = Blocks::get();
-
-    for block_id in collisions.clone() {
-        match blocks.get_config(block_id).friction() {
-            Friction::Static { .. } => (),
-            Friction::Drag(drag) => {
-                if !player.is_swimming {
-                    player.is_swimming = drag.y > 0.4;
+                    if !player.is_swimming {
+                        let block_config = blocks.get_config(block_id);
+                        player.is_swimming = block_config.drag().y > 0.4
+                    }
                 }
             }
         }

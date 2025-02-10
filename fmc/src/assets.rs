@@ -6,7 +6,21 @@ pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PreStartup, make_asset_tarball);
+        app.configure_sets(
+            PreStartup,
+            AssetSet::Blocks
+                .after(AssetSet::Items)
+                .after(AssetSet::Models),
+        );
     }
+}
+
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum AssetSet {
+    Models,
+    Items,
+    // Blocks rely on Models, and Items
+    Blocks,
 }
 
 #[derive(Resource)]

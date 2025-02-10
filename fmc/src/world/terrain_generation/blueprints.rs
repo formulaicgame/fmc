@@ -5,9 +5,9 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    blocks::{BlockId, Blocks, BLOCK_CONFIG_PATH},
+    blocks::{BlockId, BlockPosition, Blocks, BLOCK_CONFIG_PATH},
     utils,
-    world::chunk::Chunk,
+    world::chunk::{Chunk, ChunkPosition},
 };
 
 use super::{Surface, TerrainFeature};
@@ -37,7 +37,7 @@ pub enum Blueprint {
         vertical_range: Option<[i32; 2]>,
     },
     // A function that generates a feature
-    Generator(fn(position: IVec3, chunk: &mut Chunk)),
+    Generator(fn(position: BlockPosition, chunk: &mut Chunk)),
     // Places a single block
     Decoration {
         decoration_block: BlockId,
@@ -173,7 +173,7 @@ impl Blueprint {
     // faces be it floor, roof or wall, below or above ground. Idk how to do it.
     pub fn construct(
         &self,
-        origin: IVec3,
+        origin: BlockPosition,
         chunk: &mut Chunk,
         surface: &Surface,
         rng: &mut rand::rngs::StdRng,
@@ -197,8 +197,7 @@ impl Blueprint {
 
                 let distribution = rand::distributions::Uniform::new(0, Chunk::SIZE.pow(3));
                 for _ in 0..*count {
-                    let position =
-                        origin + utils::block_index_to_position(rng.sample(distribution));
+                    let position = origin + BlockPosition::from(rng.sample(distribution));
                     blueprint.construct(position, chunk, surface, rng);
                 }
             }
@@ -210,8 +209,8 @@ impl Blueprint {
                 let mut terrain_feature = TerrainFeature::default();
                 terrain_feature.can_replace.extend(can_replace);
 
-                let (chunk_position, index) =
-                    utils::world_position_to_chunk_position_and_block_index(origin);
+                let chunk_position = ChunkPosition::from(origin);
+                let index = origin.as_chunk_index();
                 let index = index >> 4;
                 let (surface_y, surface_block) = match &surface[index] {
                     Some(s) => s,
@@ -248,8 +247,8 @@ impl Blueprint {
 
                 // The distribution goes over a 3d space, so we convert it to 2d and set the y to
                 // whatever the surface height is at that position.
-                let (chunk_position, index) =
-                    utils::world_position_to_chunk_position_and_block_index(origin);
+                let chunk_position = ChunkPosition::from(origin);
+                let index = origin.as_chunk_index();
                 let index = index >> 4;
                 let (surface_y, surface_block) = match &surface[index] {
                     Some(s) => s,
@@ -280,11 +279,7 @@ impl Blueprint {
                                 continue;
                             }
                             terrain_feature.insert_block(
-                                IVec3 {
-                                    x: position.x + x,
-                                    y: position.y + y,
-                                    z: position.z + z,
-                                },
+                                BlockPosition::new(position.x + x, position.y + y, position.z + z),
                                 *leaf_block,
                             );
                         }
@@ -302,11 +297,7 @@ impl Blueprint {
                                 continue;
                             }
                             terrain_feature.insert_block(
-                                IVec3 {
-                                    x: position.x + x,
-                                    y: position.y + y,
-                                    z: position.z + z,
-                                },
+                                BlockPosition::new(position.x + x, position.y + y, position.z + z),
                                 *leaf_block,
                             );
                         }
@@ -352,7 +343,7 @@ impl Blueprint {
 
                 terrain_feature.can_replace.extend(can_replace);
 
-                terrain_feature.apply(utils::world_position_to_chunk_position(origin), chunk);
+                terrain_feature.apply(ChunkPosition::from(origin), chunk);
             }
         }
     }

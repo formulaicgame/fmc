@@ -1,7 +1,6 @@
 // Yoinked this from bevy::render::Primitives so the render feature doesn't have to be
 // added.
 
-use bevy::ecs::{component::Component, reflect::ReflectComponent};
 use bevy::math::{DMat3, DVec3};
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
@@ -10,8 +9,7 @@ use crate::blocks::BlockFace;
 use crate::prelude::Transform;
 
 /// An Axis-Aligned Bounding Box
-#[derive(Component, Clone, Debug, Default, Reflect, Serialize, Deserialize)]
-#[reflect(Component)]
+#[derive(Clone, Debug, Default, Reflect, Serialize, Deserialize)]
 pub struct Aabb {
     pub center: DVec3,
     pub half_extents: DVec3,
@@ -61,16 +59,15 @@ impl Aabb {
             rot_mat.y_axis.abs(),
             rot_mat.z_axis.abs(),
         );
-        let half_extents = abs_rot_mat * self.half_extents;
 
         Self {
-            center: rot_mat * self.center + transform.translation,
-            half_extents,
+            center: rot_mat * self.center * transform.scale + transform.translation,
+            half_extents: abs_rot_mat * self.half_extents * transform.scale,
         }
     }
 
-    pub fn intersects(&self, other: &Self) -> Option<DVec3> {
-        let distance = other.center - self.center;
+    pub fn intersection(&self, other: &Self) -> Option<DVec3> {
+        let distance = self.center - other.center;
         let overlap = self.half_extents + other.half_extents - distance.abs();
 
         if overlap.cmpgt(DVec3::ZERO).all() {

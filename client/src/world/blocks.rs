@@ -180,6 +180,7 @@ pub fn load_blocks(
                 faces,
                 quads,
                 friction,
+                drag,
                 material,
                 only_cull_self,
                 interactable,
@@ -360,6 +361,7 @@ pub fn load_blocks(
                     material_handle,
                     quads: mesh_primitives,
                     friction,
+                    drag,
                     interactable,
                     cull_method,
                     cull_delimiters,
@@ -375,6 +377,7 @@ pub fn load_blocks(
                 name,
                 model,
                 friction,
+                drag,
                 interactable,
                 sound,
                 light,
@@ -390,6 +393,7 @@ pub fn load_blocks(
                     name,
                     model,
                     friction,
+                    drag,
                     interactable,
                     sound,
                     light: light.min(15),
@@ -463,8 +467,10 @@ pub struct Cube {
     pub material_handle: Handle<materials::BlockMaterial>,
     // List of squares meshes that make up the block.
     pub quads: Vec<QuadPrimitive>,
-    // Friction value for player contact.
-    friction: Friction,
+    // The friction of the block's surfaces.
+    friction: Option<Friction>,
+    // The drag when inside the block
+    drag: Vec3,
     // If when the player uses their equipped item on this block it should count as an
     // interaction(true), or if it should count as trying to place its associated block(false).
     interactable: bool,
@@ -506,8 +512,10 @@ pub struct BlockModel {
     name: String,
     /// Model used when centered in the block
     pub model: Handle<Scene>,
-    // Friction or drag, applied by closest normal of the textures.
-    friction: Friction,
+    // The friction of the block's surfaces, applied by closest normal of the textures.
+    friction: Option<Friction>,
+    // The drag when inside the block
+    drag: Vec3,
     // If when the player uses their equipped item on this block, it should count as an
     // interaction, or it should count as trying to place a block.
     interactable: bool,
@@ -580,10 +588,17 @@ impl Block {
         }
     }
 
-    pub fn friction(&self) -> &Friction {
+    pub fn friction(&self) -> Option<&Friction> {
         match self {
-            Block::Cube(cube) => &cube.friction,
-            Block::Model(model) => &model.friction,
+            Block::Cube(cube) => cube.friction.as_ref(),
+            Block::Model(model) => model.friction.as_ref(),
+        }
+    }
+
+    pub fn drag(&self) -> Vec3 {
+        match self {
+            Block::Cube(cube) => cube.drag,
+            Block::Model(model) => model.drag,
         }
     }
 
@@ -711,8 +726,11 @@ enum BlockConfig {
         faces: Option<CubeMeshTextureNames>,
         /// List of quads that make up a mesh.
         quads: Option<Vec<QuadPrimitiveJson>>,
-        /// The friction or drag.
-        friction: Friction,
+        /// The friction of the block's surfaces.
+        friction: Option<Friction>,
+        // The drag when inside the block
+        #[serde(default)]
+        drag: Vec3,
         /// Material that should be used to render the block.
         material: String,
         /// If the block should only cull quads from blocks of the same type.
@@ -740,8 +758,11 @@ enum BlockConfig {
         name: String,
         /// Name of the model file
         model: String,
-        /// The friction or drag.
-        friction: Friction,
+        /// The friction of the block's surfaces.
+        friction: Option<Friction>,
+        // The drag when inside the block
+        #[serde(default)]
+        drag: Vec3,
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
@@ -967,17 +988,11 @@ impl BlockFace {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Friction {
-    /// Friction for solid blocks.
-    Static {
-        front: f32,
-        back: f32,
-        right: f32,
-        left: f32,
-        top: f32,
-        bottom: f32,
-    },
-    /// For non-collidable blocks, the friction is instead drag on the player movement.
-    Drag(Vec3),
+pub struct Friction {
+    pub front: f32,
+    pub back: f32,
+    pub right: f32,
+    pub left: f32,
+    pub top: f32,
+    pub bottom: f32,
 }
