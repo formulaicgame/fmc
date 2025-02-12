@@ -75,11 +75,12 @@ fn change_player_render_distance(
             .unwrap();
 
         if render_distance.chunks > max_render_distance.chunks {
-            error!(
-                "Player tried to set their render distance to {}, but the max allowed is {}, disconnecting.",
-                render_distance_update.chunks, max_render_distance.chunks
-            );
-            net.disconnect(render_distance_update.player_entity);
+            if net.disconnect(render_distance_update.player_entity) {
+                error!(
+                    "Player tried to set their render distance to {}, but the max allowed is {}, disconnecting.",
+                    render_distance_update.chunks, max_render_distance.chunks
+                );
+            }
         }
 
         render_distance.chunks = render_distance_update.chunks;

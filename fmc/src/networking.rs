@@ -1,13 +1,15 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
     ops::{Range, RangeFrom, RangeTo},
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Mutex,
+    },
 };
 
 use bevy::{ecs::system::SystemParam, utils::syncunsafecell::SyncUnsafeCell};
-use concurrent_queue::ConcurrentQueue;
 use fmc_protocol::{messages, ClientBound, MessageType};
 use serde::Serialize;
 
@@ -23,8 +25,11 @@ use crate::{
 
 // Size of each connection's read/write buffer
 const MESSAGE_BUFFER_SIZE: usize = 1024 * 1024;
+const MESSAGE_BUFFER_MAX_SIZE: usize = 32 * 1024 * 1024;
 // MessageType (1 byte) + message length (4 bytes)
 const HEADER_SIZE: usize = 5;
+// message length (4 bytes)
+const COMPRESSION_HEADER: usize = 4;
 
 pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
@@ -76,7 +81,7 @@ fn server_setup(mut commands: Commands) {
     let server = Server {
         listener,
         connections: HashMap::new(),
-        to_disconnect: ConcurrentQueue::unbounded(),
+        to_disconnect: Disconnections::default(),
         compression_buffer: vec![0; MESSAGE_BUFFER_SIZE],
         safe: AtomicBool::new(false),
     };
@@ -86,14 +91,21 @@ fn server_setup(mut commands: Commands) {
     info!("Started listening for new connections!");
 }
 
+// This is wrapped to allow for split borrowing
+#[derive(Default, Deref, DerefMut)]
+struct Disconnections(Mutex<HashSet<Entity>>);
+
+impl Disconnections {
+    fn insert(&self, connection_entity: Entity) -> bool {
+        self.lock().unwrap().insert(connection_entity)
+    }
+}
+
 #[derive(Resource)]
 pub struct Server {
     listener: std::net::TcpListener,
     connections: HashMap<Entity, Connection>,
-    // TODO: Rust's mpsc Receiver is !sync, but there's an rfc for
-    // mpmc's(https://github.com/rust-lang/rust/pull/126839) when available this can be replaced
-    // and the dependency removed.
-    to_disconnect: ConcurrentQueue<Entity>,
+    to_disconnect: Disconnections,
     compression_buffer: Vec<u8>,
     safe: AtomicBool,
 }
@@ -102,22 +114,7 @@ impl Server {
     /// Send a message to one client
     #[track_caller]
     pub fn send_one<T: ClientBound + Serialize>(&self, connection_entity: Entity, message: T) {
-        let Some(connection) = self.connections.get(&connection_entity) else {
-            return;
-        };
-
-        if self.safe.load(Ordering::Relaxed) != true {
-            panic!();
-        }
-
-        if connection.write_message(&message).is_err() {
-            error!(
-                "Failed to send message, the player's message buffer is at capacity. Server is \
-                sending too much, or the connection is too slow. Disconnecting to prevent the \
-                client from being left in an unsynchronised state."
-            );
-            self.disconnect(connection_entity);
-        };
+        self.send_many(&[connection_entity], message);
     }
 
     /// Send a message to many clients
@@ -127,84 +124,45 @@ impl Server {
         connection_entities: impl IntoIterator<Item = &'a Entity>,
         message: T,
     ) {
-        let mut connection_entities = connection_entities.into_iter();
-
         if self.safe.load(Ordering::Relaxed) != true {
             panic!();
         }
 
-        // We serialize and write the message to the first connection, then just copy all the bytes
-        // to the other connections.
-        while let Some(connection_entity) = connection_entities.next() {
-            let Some(first_connection) = self.connections.get(connection_entity) else {
-                continue;
-            };
+        for connection_entity in connection_entities.into_iter().cloned() {
+            let connection = self.connections.get(&connection_entity).unwrap();
 
-            if let Ok((start, end)) = first_connection.write_message(&message) {
-                let size = end - start;
-
-                while let Some(entity) = connection_entities.next() {
-                    let connection = &self.connections[entity];
-
-                    let cursor = connection.write_cursor.fetch_add(size, Ordering::Relaxed);
-
-                    if cursor + size > connection.message_buffer.len() {
-                        error!("Failed to send message, the player's message buffer is at capacity. Disconnecting \
-                            to prevent the client from being left in an unsynchronised state.");
-                        self.disconnect(*entity);
-                        continue;
-                    }
-
-                    connection
-                        .message_buffer
-                        .range(cursor..cursor + size)
-                        .copy_from_slice(&first_connection.message_buffer.range(start..end));
-                }
-
-                return;
-            } else {
-                error!("Failed to send message, the player's message buffer is at capacity. Disconnecting \
-                    to prevent the client from being left in an unsynchronised state.");
-                self.disconnect(*connection_entity);
+            if connection.write_message(&message).is_err() {
+                if self.disconnect(connection_entity) {
+                    error!(
+                        "Failed to send message, the player's message buffer is at capacity. Server is \
+                        sending too much, or the connection is too slow. Disconnecting to prevent the \
+                        client from being left in an unsynchronised state."
+                    );
+                };
             };
         }
     }
 
     #[track_caller]
     pub fn broadcast<'a, T: ClientBound + Serialize>(&self, message: T) {
-        if self.safe.load(Ordering::Relaxed) != true {
-            panic!();
-        }
         self.send_many(self.connections.keys(), message);
     }
 
-    pub fn disconnect(&self, connection_entity: Entity) {
-        self.to_disconnect.push(connection_entity).unwrap();
+    pub fn disconnect(&self, connection_entity: Entity) -> bool {
+        self.to_disconnect.insert(connection_entity)
     }
 }
 
-// TODO: I'm undetermined whether this was a good idea.
-// Pros:
-//  1. Small allocation size per connection
-//  2. Single syscall even though there are many messages sent
-//  3. Collecting many messages together probably gives better compression
-// Cons:
-//  1. Very easy to mess up, someone who doesn't know the system might end up writing when it is
-//     illegal. Could alleviate with an AtomicBool to signal, but that starts to look dumb.
-//  2. Complexity
-//  3. Messages won't be sent until the tick is over, latency
+// TODO: There's no reason to share between read and write buffers. The read buffer can be ~1kb
+// large and it will likely be more than enough.
 //
 // To save memory each connection gets only one buffer allocation for read/writes.
-// Since it is shared, we need to be careful of when we read and write as they cannot be allowed to
-// happen at the same time. Reads will therefore only happen in the First schedule, you are able to
-// write to the buffer in PreUpdate, Update, and PostUpdate, and messages are sent to the server in
-// Last. This is not enforced in any way, if you write to the buffer in Last you will corrupt the
-// buffer.
+// Since it is shared, we need to be careful when we read and write as they cannot be allowed to
+// happen at the same time.
 //
-// 1. The buffer is only used to read from the socket in the First schedule
-// 2. The buffer is only written to in the PreUpdate, Update or PostUpdate schedule. An AtomicUsize
-//    is used to track the spans that can be written to.
-// 3. The messages are written to socket in the PostUpdate schedule
+// 1. The buffer is only used to read from the socket in the 'First' schedule
+// 2. The buffer is only written to in the 'PreUpdate', 'Update' or 'PostUpdate' schedules.
+// 3. The messages are written to socket in the 'Last' schedule
 struct MessageBuffer(SyncUnsafeCell<Vec<u8>>);
 
 impl MessageBuffer {
@@ -212,12 +170,28 @@ impl MessageBuffer {
         Self(SyncUnsafeCell::new(vec![0; MESSAGE_BUFFER_SIZE]))
     }
 
-    fn len(&self) -> usize {
-        unsafe { (*(self.0.get())).len() }
+    fn capacity(&self) -> usize {
+        unsafe { (*(self.0.get())).capacity() }
+    }
+
+    fn shrink(&self, amount: usize) {
+        unsafe {
+            let buf = &mut *(self.0.get());
+            buf.resize(amount, 0);
+            buf.shrink_to_fit();
+        }
+    }
+
+    fn grow(&self, amount: usize) {
+        unsafe {
+            let buf = &mut *(self.0.get());
+            let new_cap = buf.capacity() * 2;
+            buf.resize(new_cap.max(amount), 0);
+        }
     }
 
     // TODO: This could be implemented with SliceIndex I think, but it requires an unstable flag
-    // and I somehwat prefer having all the methods, makes you aware you are doing something
+    // and I somewhat prefer having all the methods, makes you aware you are doing something
     // dangerous.
     fn index(&self, index: usize) -> &mut u8 {
         unsafe { &mut (*self.0.get())[index] }
@@ -227,6 +201,7 @@ impl MessageBuffer {
         unsafe { &mut (*self.0.get())[index] }
     }
 
+    #[track_caller]
     fn range_to(&self, index: RangeTo<usize>) -> &mut [u8] {
         unsafe { &mut (*self.0.get())[index] }
     }
@@ -243,10 +218,11 @@ struct Connection {
     read_cursor: usize,
     read_bytes: usize,
     write_cursor: AtomicUsize,
+    is_growing: AtomicBool,
     // (length, data) of a partially received message. When the message buffer is used for writing,
     // partially read messages are stored here, and then moved back into the buffer when it's time
     // to read again.
-    partially_read_message: (usize, [u8; HEADER_SIZE + 1024]),
+    partially_read_message: (usize, [u8; 1024]),
 }
 
 impl Connection {
@@ -258,7 +234,8 @@ impl Connection {
             read_cursor: 0,
             read_bytes: 0,
             write_cursor: AtomicUsize::new(0),
-            partially_read_message: (0, [0; HEADER_SIZE + 1024]),
+            is_growing: AtomicBool::new(false),
+            partially_read_message: (0, [0; 1024]),
         }
     }
 
@@ -277,14 +254,43 @@ impl Connection {
         }
     }
 
-    fn write_message<T: ClientBound + Serialize>(&self, message: &T) -> Result<(usize, usize), ()> {
+    fn write_message<T: ClientBound + Serialize>(&self, message: &T) -> Result<(), ()> {
         let size = bincode::serialized_size(message).unwrap() as usize;
         let mut cursor = self
             .write_cursor
             .fetch_add(size + HEADER_SIZE, Ordering::Relaxed);
 
-        if cursor + size + HEADER_SIZE > self.message_buffer.len() {
-            return Err(());
+        // TODO: It's very likely that reading the messsage buffer len while it is being grown is
+        // bad.
+        //
+        // This is for surge protection, it should happen rarely. The MESSAGE_BUFFER_SIZE should be
+        // set to a value that covers 99% of operation. Happens for example when a player gets
+        // spawned at a spot where all the chunks are already loaded, and get sent at the same
+        // time.
+        // The allocated memory is freed again when reading messages the next tick.
+        let final_len = cursor + size + HEADER_SIZE;
+        if final_len > self.message_buffer.capacity() {
+            if self.message_buffer.capacity() >= MESSAGE_BUFFER_MAX_SIZE {
+                return Err(());
+            }
+
+            // Another write function may already be in the process of growing the buffer.
+            let currently_growing = self
+                .is_growing
+                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .is_err();
+            if currently_growing {
+                // If there is, loop until it finishes growing
+                while cursor + size + HEADER_SIZE > self.message_buffer.capacity() {}
+            } else {
+                // The first capacity check is done before the atomic exchange. In this timespan
+                // another write function might finish growing it, so we check again so it doesn't
+                // grow it again.
+                if final_len > self.message_buffer.capacity() {
+                    self.message_buffer.grow(size + HEADER_SIZE);
+                }
+                self.is_growing.store(false, Ordering::Relaxed);
+            }
         }
 
         *self.message_buffer.index(cursor) = T::TYPE as u8;
@@ -301,7 +307,7 @@ impl Connection {
         )
         .unwrap();
 
-        Ok((cursor - 5, cursor + size))
+        Ok(())
     }
 
     fn next_message(&mut self) -> Option<(MessageType, &[u8])> {
@@ -463,13 +469,6 @@ fn handle_new_connections(
         }
 
         if let Some(progress) = uninitialized.asset_download_progress {
-            if progress == 0 {
-                let length = assets.asset_message.len() as u32;
-                if connection.socket.write(&length.to_le_bytes()).is_err() {
-                    return false;
-                }
-            }
-
             let Ok(sent) = connection.socket.write(&assets.asset_message[progress..]) else {
                 return false;
             };
@@ -538,7 +537,7 @@ fn disconnect_players(mut network_events: EventWriter<NetworkEvent>, server: Res
     // Can't split borrows when behind a ResMut
     let server = server.into_inner();
 
-    for connection_entity in server.to_disconnect.try_iter() {
+    for connection_entity in server.to_disconnect.lock().unwrap().drain() {
         if server.connections.remove(&connection_entity).is_some() {
             network_events.send(NetworkEvent::Disconnected {
                 entity: connection_entity,
@@ -603,18 +602,18 @@ struct EventWriters<'w> {
 
 fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
     let server = server.into_inner();
+
+    // During the last tick the message/compression buffer might have grown. This growth is for surge
+    // protection and shouldn't be permanent. So we reset it each read.
+    server.compression_buffer.resize(MESSAGE_BUFFER_SIZE, 0);
+    server.compression_buffer.shrink_to_fit();
+
     for (entity, connection) in server.connections.iter_mut() {
+        connection.message_buffer.shrink(MESSAGE_BUFFER_SIZE);
         if connection.read_from_socket().is_err() {
-            server.to_disconnect.push(*entity).unwrap();
+            server.to_disconnect.insert(*entity);
             continue;
         };
-
-        if connection.write_cursor.load(Ordering::Relaxed) != 0 {
-            panic!(
-                "This guards against having sent a message in a schedule you shouldn't have.\
-                You can only send messages in Update and PostUpdate"
-            );
-        }
 
         while let Some((message_type, message_data)) = connection.next_message() {
             match message_type {
@@ -625,7 +624,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -638,7 +637,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -651,7 +650,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -664,7 +663,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -677,7 +676,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -690,7 +689,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -703,7 +702,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
@@ -716,14 +715,14 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                             message,
                         });
                     } else {
-                        server.to_disconnect.push(*entity).unwrap();
+                        server.to_disconnect.insert(*entity);
                         error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
                             message_type, connection.address);
                         break;
                     }
                 }
                 _ => {
-                    server.to_disconnect.push(*entity).unwrap();
+                    server.to_disconnect.insert(*entity);
                     error!(
                         "Received invalid message type {:?} from {}, disconnecting client.",
                         message_type, connection.address
@@ -746,8 +745,14 @@ fn send_messages(server: ResMut<Server>) {
             continue;
         }
 
-        // Save first 4 bytes to store the size of the compressed bytes
-        let mut encoder = zstd::Encoder::new(&mut server.compression_buffer[4..], 5).unwrap();
+        // The message buffer might have grown so the compression buffer must also
+        server
+            .compression_buffer
+            .resize(connection.message_buffer.capacity(), 0);
+
+        // Reserve first bytes to store the compression header
+        let mut encoder =
+            zstd::Encoder::new(&mut server.compression_buffer[COMPRESSION_HEADER..], 5).unwrap();
 
         encoder.set_pledged_src_size(Some(len as u64)).unwrap();
         std::io::copy(
@@ -756,11 +761,10 @@ fn send_messages(server: ResMut<Server>) {
         )
         .unwrap();
 
-        // Use how much was left of the compression_buffer slice to determine length of what was
-        // written.
+        // Use how much was left of the compression_buffer to determine length of what was written.
         let remaining = encoder.finish().unwrap().len();
         let encoded_len = (server.compression_buffer.len() - remaining - 4) as u32;
-        server.compression_buffer[..4].copy_from_slice(&encoded_len.to_le_bytes());
+        server.compression_buffer[..COMPRESSION_HEADER].copy_from_slice(&encoded_len.to_le_bytes());
 
         match connection
             .socket
@@ -771,12 +775,14 @@ fn send_messages(server: ResMut<Server>) {
                 // hold a couple of megabytes so it will optimistically never occur, but if it does the
                 // client has to be disconnected as continuing would cause loss of data when the
                 // message buffer is rotated.
-                error!("Connection to player too slow, write buffer at capacity, disconnecting player.");
-                server.to_disconnect.push(*entity).unwrap();
+                if server.to_disconnect.insert(*entity) {
+                    error!("Connection to player too slow, write buffer at capacity, disconnecting player.");
+                }
             }
             Err(e) => {
-                error!("Encountered error while sending messages to player: {}", e);
-                server.to_disconnect.push(*entity).unwrap();
+                if server.to_disconnect.insert(*entity) {
+                    error!("Encountered error while sending messages to player: {}", e);
+                }
             }
             Ok(_) => (),
         }

@@ -93,11 +93,9 @@ pub struct NetworkClient {
     // buffer for connection reads, compressed
     read_buffer: Vec<u8>,
     read_cursor: usize,
-    read_bytes: usize,
     // Buffer for decompressed messages
     message_buffer: Vec<u8>,
     message_cursor: usize,
-    message_bytes: usize,
 }
 
 impl NetworkClient {
@@ -106,12 +104,10 @@ impl NetworkClient {
             connection: None,
             connection_task: None,
             disconnect_events: ConcurrentQueue::new(),
-            read_buffer: vec![0; 1024 * 1024],
+            read_buffer: Vec::new(),
             read_cursor: 0,
-            read_bytes: 0,
-            message_buffer: vec![0; 1024 * 1024],
+            message_buffer: Vec::new(),
             message_cursor: 0,
-            message_bytes: 0,
         }
     }
 
@@ -167,26 +163,34 @@ impl NetworkClient {
 
     fn read_packets(&mut self) {
         // Move the remaning content of the read buffer to the beginning.
+        self.read_buffer.copy_within(self.read_cursor.., 0);
         self.read_buffer
-            .copy_within(self.read_cursor..self.read_bytes, 0);
-        self.read_bytes -= self.read_cursor;
+            .truncate(self.read_buffer.len() - self.read_cursor);
         self.read_cursor = 0;
 
+        let mut buf = [0u8; 65536];
         let connection = self.connection.as_mut().unwrap();
-        let size = match connection.read(&mut self.read_buffer[self.read_bytes..]) {
-            Ok(size) => size,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return,
-            Err(e) => {
-                self.disconnect(e.kind().to_string());
-                return;
+        loop {
+            let size = match connection.read(&mut buf) {
+                Ok(size) => size,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => {
+                    self.disconnect(e.kind().to_string());
+                    break;
+                }
+            };
+
+            if size == 0 {
+                break;
+            } else {
+                self.read_buffer.extend_from_slice(&buf[..size]);
             }
-        };
-        self.read_bytes += size;
+        }
     }
 
     // Try to decompress a packet if there aren't any messages already available
     fn try_decompress_packet(&mut self) -> bool {
-        if self.message_bytes - self.message_cursor > MESSAGE_HEADER_SIZE {
+        if self.message_buffer.len() - self.message_cursor > MESSAGE_HEADER_SIZE {
             let message_size = u32::from_le_bytes(
                 self.message_buffer
                     [self.message_cursor + 1..self.message_cursor + MESSAGE_HEADER_SIZE]
@@ -195,12 +199,13 @@ impl NetworkClient {
             ) as usize;
 
             // There is already a message available
-            if message_size < self.message_bytes - self.message_cursor + MESSAGE_HEADER_SIZE {
+            if message_size < self.message_buffer.len() - self.message_cursor + MESSAGE_HEADER_SIZE
+            {
                 return true;
             }
         }
 
-        if self.read_bytes - self.read_cursor <= COMPRESSION_HEADER_SIZE {
+        if self.read_buffer.len() - self.read_cursor <= COMPRESSION_HEADER_SIZE {
             return false;
         }
 
@@ -211,48 +216,32 @@ impl NetworkClient {
         ) as usize;
 
         // Return if the packet hasn't arrived yet
-        if packet_length > self.read_bytes - self.read_cursor + COMPRESSION_HEADER_SIZE {
+        if packet_length > self.read_buffer.len() - self.read_cursor + COMPRESSION_HEADER_SIZE {
             return false;
         }
 
-        // Shift remaining message bytes to beginning to prepare for writing
-        self.message_buffer
-            .copy_within(self.message_cursor..self.message_bytes, 0);
-        self.message_bytes -= self.message_cursor;
-        self.message_cursor = 0;
-
         self.read_cursor += COMPRESSION_HEADER_SIZE;
 
-        // This is a copy of zstd::stream::copy_decode, but it returns how many bytes were written
-        fn decode_all(from: &[u8], mut to: &mut [u8]) -> std::io::Result<usize> {
-            let mut decoder = zstd::Decoder::new(from)?;
-            let written = std::io::copy(&mut decoder, &mut to)?;
-            return Ok(written as usize);
+        let packet = &self.read_buffer[self.read_cursor..self.read_cursor + packet_length];
+
+        if let Err(e) = zstd::stream::copy_decode(packet, &mut self.message_buffer) {
+            error!("{}", e);
+            self.disconnect("Corrupt network packet, failed to decompress");
+            return false;
         }
 
-        let packet = &self.read_buffer[self.read_cursor..self.read_cursor + packet_length];
-        let message_buffer = &mut self.message_buffer[self.message_cursor..];
-        let decoded_size = match decode_all(packet, message_buffer) {
-            Ok(size) => size,
-            Err(e) => {
-                error!("{}", e);
-                self.disconnect("Corrupted network packet, failed to decompress");
-                return false;
-            }
-        };
         self.read_cursor += packet_length;
-        self.message_bytes += decoded_size;
 
         return true;
     }
 
     // Extract a message from the message buffer
     fn extract_message<'a>(&'a mut self) -> Option<(MessageType, &'a [u8])> {
-        if self.message_bytes - self.message_cursor <= MESSAGE_HEADER_SIZE {
+        if self.message_buffer.len() - self.message_cursor <= MESSAGE_HEADER_SIZE {
             // Move the partial message to the beginning of the buffer to make room for more bytes.
+            self.message_buffer.copy_within(self.message_cursor.., 0);
             self.message_buffer
-                .copy_within(self.message_cursor..self.message_bytes, 0);
-            self.message_bytes -= self.message_cursor;
+                .truncate(self.message_buffer.len() - self.message_cursor);
             self.message_cursor = 0;
             return None;
         }
@@ -270,10 +259,10 @@ impl NetworkClient {
                 .unwrap(),
         ) as usize;
 
-        if message_length > self.message_bytes - self.message_cursor + MESSAGE_HEADER_SIZE {
+        if message_length > self.message_buffer.len() - self.message_cursor + MESSAGE_HEADER_SIZE {
+            self.message_buffer.copy_within(self.message_cursor.., 0);
             self.message_buffer
-                .copy_within(self.message_cursor..self.message_bytes, 0);
-            self.message_bytes -= self.message_cursor;
+                .truncate(self.message_buffer.len() - self.message_cursor);
             self.message_cursor = 0;
             return None;
         }
@@ -321,91 +310,42 @@ fn connect(mut net: ResMut<NetworkClient>, identity: Res<Identity>) {
     }
 }
 
-#[derive(Default)]
-struct AssetDownload {
-    // Total size of the compressed assets, first thing the server sends
-    size: usize,
-    // How much has been downloaded
-    downloaded: usize,
-    // Buffer for downloaded data
-    data: Option<Vec<u8>>,
-}
-
 // After the client identifies itself, the server will send a server config. If we already have the
 // assets the server config points to, we immediately start to load, else we request them from the
 // server.
 fn initialize_connection(
     mut commands: Commands,
     mut net: ResMut<NetworkClient>,
-    mut asset_download: Local<AssetDownload>,
     mut asset_state: ResMut<NextState<AssetState>>,
+    server_config: Option<Res<messages::ServerConfig>>,
+    mut downloading_assets: Local<bool>,
 ) {
     if net.connection.is_none() {
         return;
     }
     net.read_packets();
 
-    if net.read_bytes < MESSAGE_HEADER_SIZE {
+    if net.read_buffer.len() < COMPRESSION_HEADER_SIZE {
         return;
     }
 
-    if asset_download.data.is_some() {
-        let mut cursor = 0;
-        if asset_download.size == 0 {
-            asset_download.size =
-                u32::from_le_bytes(net.read_buffer[..4].try_into().unwrap()) as usize;
-            cursor = 4;
-        }
-
-        asset_download
-            .data
-            .as_mut()
-            .unwrap()
-            .write(&net.read_buffer[cursor..net.read_bytes])
-            .unwrap();
-        asset_download.downloaded += net.read_bytes - cursor;
-        net.read_bytes = 0;
-
-        if asset_download.size == asset_download.downloaded {
-            let data = asset_download.data.take().unwrap();
-            let decoder = zstd::Decoder::new(&data[..]).unwrap();
-            let mut archive = tar::Archive::new(decoder);
-
-            if let Err(e) = archive.unpack("./server_assets/active") {
-                net.disconnect(e.to_string());
-                return;
-            }
-
-            asset_state.set(AssetState::Loading);
-        } else if asset_download.size < asset_download.downloaded {
-            net.disconnect(format!(
-                "Server sent too much asset data, expected {} bytes, but got {}",
-                asset_download.size, asset_download.downloaded
-            ));
-        }
-    } else {
+    if *downloading_assets {
         if let Some((message_type, message_data)) = net.next_message() {
-            let Ok(server_config) = bincode::deserialize::<messages::ServerConfig>(message_data)
+            *downloading_assets = false;
+
+            let Ok(asset_response) = bincode::deserialize::<messages::AssetResponse>(message_data)
             else {
                 net.disconnect(format!(
-                    "The server sent a {:?} message, when it should have sent a server config.",
+                    "The server sent a {:?} message, when it should have sent an AssetResponse message.",
                     message_type
                 ));
                 return;
             };
-            net.read_bytes = 0;
-            net.read_cursor = 0;
 
-            // Convert u64 hash to hex so it's more manageable as a file path
+            let server_config = server_config.unwrap();
+
             let asset_hash_hex = format!("{:x}", server_config.assets_hash);
             let path = PathBuf::from("./server_assets").join(&asset_hash_hex);
-
-            if path.exists() {
-                asset_state.set(AssetState::Loading);
-            } else {
-                asset_download.data = Some(Vec::new());
-                net.send_message(messages::AssetRequest);
-            }
 
             // Create directories, silently fails if they already exist
             std::fs::create_dir("./server_assets").ok();
@@ -430,6 +370,37 @@ fn initialize_connection(
             {
                 // This is available as a nightly api under std::os::wasi
                 compile_error!("Not implemented for wasm yet");
+            }
+
+            let mut archive = tar::Archive::new(asset_response.file.as_slice());
+
+            if let Err(e) = archive.unpack(LINK_PATH) {
+                net.disconnect(e.to_string());
+                return;
+            }
+
+            asset_state.set(AssetState::Loading);
+        }
+    } else {
+        if let Some((message_type, message_data)) = net.next_message() {
+            let Ok(server_config) = bincode::deserialize::<messages::ServerConfig>(message_data)
+            else {
+                net.disconnect(format!(
+                    "The server sent a {:?} message, when it should have sent a ServerConfig message.",
+                    message_type
+                ));
+                return;
+            };
+
+            // convert u64 hash to hex so it's more manageable as a file path
+            let asset_hash_hex = format!("{:x}", server_config.assets_hash);
+            let path = PathBuf::from("./server_assets").join(&asset_hash_hex);
+
+            if path.exists() {
+                asset_state.set(AssetState::Loading);
+            } else {
+                *downloading_assets = true;
+                net.send_message(messages::AssetRequest);
             }
 
             commands.insert_resource(server_config);

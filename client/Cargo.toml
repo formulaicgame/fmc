@@ -39,6 +39,7 @@ debug-assertions = false
 
 [profile.release]
 strip = true
+lto = true
 
 # flamegraph
 #[profile.release]

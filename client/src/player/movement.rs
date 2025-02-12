@@ -240,6 +240,7 @@ fn simulate_player_physics(
 
         let blocks = Blocks::get();
 
+        // TODO: Collisions require allocation, but it's unneeded. It's just for the right drift
         // Check for collisions for all blocks within the player's aabb.
         let mut collisions = Vec::new();
         let start = player_aabb.min().floor().as_ivec3() + origin.0;
