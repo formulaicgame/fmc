@@ -129,7 +129,11 @@ impl Server {
         }
 
         for connection_entity in connection_entities.into_iter().cloned() {
-            let connection = self.connections.get(&connection_entity).unwrap();
+            let Some(connection) = self.connections.get(&connection_entity) else {
+                // TODO: Server isn't supposed to have access to removed connection entities?
+                // Continue added to deal with later
+                continue;
+            };
 
             if connection.write_message(&message).is_err() {
                 if self.disconnect(connection_entity) {

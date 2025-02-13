@@ -202,7 +202,7 @@ fn download_progress_text(
 }
 
 fn download_default_game(mut commands: Commands) {
-    let server_path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
+    let server_path = String::from("fmc_server/server") + std::env::consts::EXE_SUFFIX;
     if std::path::Path::new(&server_path).exists() {
         return;
     }

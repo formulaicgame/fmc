@@ -13,6 +13,7 @@ impl Mod {
     pub fn new(name: String, version: String) -> Self {
         Self { name, version }
     }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -165,28 +166,10 @@ fn get_rust() {
         Err(_) => return,
     };
 
-    let bytes = match response.into_string() {
-        Ok(b) => b,
-        Err(_) => return,
+    let mut buf = Vec::with_capacity(10 * 1024 * 1024);
+    if response.into_reader().read_to_end(&mut buf).is_err() {
+        return;
     };
-
-    let mut path = std::env::temp_dir().join("fmc");
-    std::fs::create_dir(&path).ok();
-    path.push("rustup-init");
-    path.set_extension(std::env::consts::EXE_EXTENSION);
-    std::fs::write(&path, bytes).ok();
-
-    if std::env::consts::FAMILY == "unix" {
-        if !std::process::Command::new("chmod")
-            .arg("+x")
-            .arg(&path)
-            .status()
-            .is_ok()
-        {
-            println!("Could not add exec permission to rustup");
-            return;
-        }
-    }
 
     let Some(data_dir) = data_dir() else {
         return;
@@ -196,7 +179,23 @@ fn get_rust() {
     let rust_path = data_dir.join("fmc/rust");
     std::fs::create_dir_all(&rust_path).ok();
 
-    let mut command = std::process::Command::new(&path);
+    let mut rustup_path = rust_path.join("rustup-init");
+    rustup_path.set_extension(std::env::consts::EXE_EXTENSION);
+    std::fs::write(&rustup_path, buf).ok();
+
+    if std::env::consts::FAMILY == "unix" {
+        if !std::process::Command::new("chmod")
+            .arg("+x")
+            .arg(&rustup_path)
+            .status()
+            .is_ok()
+        {
+            println!("Could not add exec permission to rustup");
+            return;
+        }
+    }
+
+    let mut command = std::process::Command::new(&rustup_path);
     command.env("CARGO_HOME", &rust_path);
     command.env("RUSTUP_HOME", &rust_path);
     // Skip all confirmation prompts
@@ -209,4 +208,6 @@ fn get_rust() {
     if let Err(e) = command.status() {
         error!("Could not execute rustup, error: {}", e);
     }
+
+    //std::fs::remove_file(rustup_path).ok();
 }

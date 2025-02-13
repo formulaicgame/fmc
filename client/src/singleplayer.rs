@@ -46,7 +46,7 @@ fn launch_singleplayer_server(
             return;
         }
 
-        let path = String::from("fmc_server/server") + std::env::consts::EXE_EXTENSION;
+        let path = String::from("fmc_server/server") + std::env::consts::EXE_SUFFIX;
 
         if !std::path::Path::new(&path).exists() {
             info!("Still downloading server executable");
@@ -56,7 +56,10 @@ fn launch_singleplayer_server(
         info!("Starting single player server");
         match std::process::Command::new(&std::fs::canonicalize(path).unwrap())
             .current_dir("fmc_server")
-            .env_clear()
+            // The server listens for this in order to organize its files differently when running
+            // as a cargo project. We don't want it to do this when the client is run as a cargo
+            // project.
+            .env_remove("CARGO")
             .stdin(Stdio::piped())
             .spawn()
         {

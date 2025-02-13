@@ -39,7 +39,8 @@ debug-assertions = false
 
 [profile.release]
 strip = true
-lto = true
+# Decreases linux binary size by 33% but increases compile time by a lot
+#lto = true
 
 # flamegraph
 #[profile.release]

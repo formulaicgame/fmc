@@ -2,7 +2,7 @@ use std::io;
 
 use clap::Parser;
 
-use crate::modding::server::{Mod, ServerBuildConfig};
+use crate::modding::server_builder::{Mod, ServerBuildConfig};
 
 pub fn parse() -> bool {
     let cli = Cli::parse();
@@ -16,7 +16,7 @@ pub fn parse() -> bool {
                     let build_config: ServerBuildConfig = match parse_server_build_config(&path) {
                         Ok(s) => s,
                         Err(e) => {
-                            println!("Encountered error reading server configuration:\n{e}");
+                            println!("Encountered error while reading server configuration: {e}");
                             return true;
                         }
                     };
