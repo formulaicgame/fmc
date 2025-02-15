@@ -1,6 +1,5 @@
 pub mod assets;
 pub mod blocks;
-pub mod chat;
 pub mod database;
 pub mod interfaces;
 pub mod items;
@@ -81,6 +80,5 @@ impl PluginGroup for DefaultPlugins {
             .add(physics::PhysicsPlugin)
             .add(players::PlayersPlugin)
             .add(interfaces::InterfacePlugin)
-            .add(chat::ChatPlugin)
     }
 }
