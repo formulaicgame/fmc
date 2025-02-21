@@ -1,0 +1,11 @@
+[package]
+name = "fmc_client_api"
+version = "0.0.3"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/formulaicgame/fmc"
+description = "Library for creating fmc client plugins"
+
+[dependencies]
+wit-bindgen = "0.22"
+glam = "0.29.2"

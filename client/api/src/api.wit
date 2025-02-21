@@ -1,0 +1,104 @@
+package fmc:api;
+
+// These structs are implemented in the glam crate
+interface math {
+    record vec3 {
+        x: f32,
+        y: f32,
+        z: f32
+    }
+
+    /// IM DOCUMENTING
+    record i-vec3 {
+        x: s32,
+        y: s32,
+        z: s32
+    }
+
+    // TODO: Unfortunate ergonomics, include glam in the repo and gut the Quat
+    //
+    // We use the f64 version instead because the f32 version is implemented with simd and so
+    // doesn't have any fields.
+    record d-quat {
+        x: f64,
+        y: f64,
+        z: f64,
+        w: f64,
+    }
+}
+
+interface transform {
+    use math.{vec3, d-quat};
+
+    record transform {
+        translation: vec3,
+        rotation: d-quat,
+        scale: vec3
+    }
+}
+
+world plugin {
+    use math.{vec3, i-vec3, d-quat};
+    use transform.{transform};
+
+    type block-id = u16;
+
+    record friction {
+        surface: option<surface-friction>,
+        drag: vec3
+    }
+
+    record surface-friction {
+        front: f32,
+        back: f32,
+        right: f32,
+        left: f32,
+        top: f32,
+        bottom: f32,
+    }
+
+    // TODO: The client can map keys, is it best to handle this only host side? Eventually the wasm
+    // should handle the interfaces which means it needs complete access to the keyboard anyways.
+    enum key {
+       key-w, 
+       key-a, 
+       key-s, 
+       key-d, 
+       shift,
+       control,
+       space
+    }
+
+    record keyboard-key {
+        /// Physical key code
+        key: key,
+        /// True if it was released, false if pressed
+        released: bool,
+        /// If the button has been held down for some OS specified period
+        repeat: bool
+    }
+
+    export init-plugin: func();
+    export set-update-frequency: func() -> option<f32>;
+    export update: func();
+
+    import log: func(msg: string);
+
+    import delta-time: func() -> f32;
+
+    import get-player-transform: func() -> transform;
+    import get-camera-transform: func() -> transform;
+
+    import set-player-transform: func(transform: transform);
+    import set-camera-transform: func(transform: transform);
+
+    import keyboard-input: func() -> list<keyboard-key>;
+
+    /// Get the id of a block in the world map
+    import get-block: func(block-position: i-vec3) -> option<block-id>;
+    /// Get the friction of a block
+    import get-block-friction: func(block-id: block-id) -> friction;
+    /// Get the name of a block
+    import get-block-name: func(block-id: block-id) -> string;
+
+}
