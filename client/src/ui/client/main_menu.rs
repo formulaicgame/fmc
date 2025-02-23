@@ -208,10 +208,10 @@ fn download_default_game(mut commands: Commands) {
     }
 
     let url = match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-unknown-linux-gnu",
-        ("windows", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-pc-windows-msvc.exe",
-        ("macos", "x86_64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/x86_64-apple-darwin",
-        ("macos", "aarch64") => "https://github.com/formulaicgame/fmc_vanilla/releases/download/nightly/aarch64-apple-darwin",
+        ("linux", "x86_64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/x86_64-unknown-linux-gnu",
+        ("windows", "x86_64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/x86_64-pc-windows-msvc.exe",
+        ("macos", "x86_64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/x86_64-apple-darwin",
+        ("macos", "aarch64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/aarch64-apple-darwin",
         _ => return
     }.to_owned();
 
