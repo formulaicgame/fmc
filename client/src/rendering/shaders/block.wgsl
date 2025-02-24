@@ -163,11 +163,11 @@ fn fragment(
 
     output_color = vec4(output_color.rgb * light, output_color.a);
 
-    if abs(world_normal.z) == 1.0 {
+    if abs(world_normal.z) >= 0.99 {
         output_color = vec4(output_color.rgb * 0.8, output_color.a);
-    } else if abs(world_normal.x) == 1.0 {
+    } else if abs(world_normal.x) >= 0.99 {
         output_color = vec4(output_color.rgb * 0.5, output_color.a);
-    } else if world_normal.y == -1.0 {
+    } else if world_normal.y <= -0.99 {
         output_color = vec4(output_color.rgb * 0.3, output_color.a);
     }
 
