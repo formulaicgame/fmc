@@ -60,14 +60,17 @@ jobs:
       - name: Build
         run: cd client && cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename Artifact
-        run: cp ./client/target/${{ matrix.target }}/release/client${{ matrix.file_extension }} ${{ matrix.name }}${{ matrix.file_extension }}
+      - name: Zip Artifact
+        run: |
+          cd client
+          cp target/${{ matrix.target }}/release/client${{ matrix.file_extension }} fmc${{ matrix.file_extension }}
+          7z a -tzip ${{ matrix.name }}.zip fmc${{ matrix.file_extension }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.name }}${{ matrix.file_extension }}
+          path: ./client/${{ matrix.name }}.zip
           retention-days: 1
 
   publish:
