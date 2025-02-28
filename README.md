@@ -4,6 +4,9 @@
 Download the game at [fmc.gg](https://fmc.gg)  
 Join the [Discord](https://discord.gg/VMgFmdsQ6m) if you have questions
 
+## Contributing
+Contributions are welcome and encouraged, reach out on discord. 
+
 ## Modding
 
 Mods can be added through the `fmc build` command, see `fmc build --template` for an example.  
