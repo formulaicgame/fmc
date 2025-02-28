@@ -121,7 +121,7 @@ pub(super) fn load_models(
         let model_name = path.file_stem().unwrap().to_string_lossy().into_owned();
 
         let Some(model_id) = server_config.model_ids.get(&model_name) else {
-            net.disconnect("Misconfigured assets: There's a model named '{}' in the assets: but the server didn't send an id for it.");
+            net.disconnect(format!("Misconfigured assets: There's a model named '{}' in the assets: but the server didn't send an id for it.", &model_name));
             return;
         };
 
@@ -661,6 +661,9 @@ fn construct_animations(
         model.animations = vec![AnimationNodeIndex::default(); gltf.animations.len()];
 
         let mut animation_graph = AnimationGraph::new();
+        let root = animation_graph.get_mut(animation_graph.root).unwrap();
+        root.node_type = AnimationNodeType::Add;
+
         for (name, animation_clip) in gltf.named_animations.iter() {
             let index = gltf
                 .animations
@@ -674,6 +677,10 @@ fn construct_animations(
             model.named_animations.insert(name.to_string(), node_index);
         }
 
+        // TODO: This was removed because the animation implementation in bevy 0.15 no longer
+        // allows inspecting animation clips... Might be useful in the future, but should not be
+        // part of the client.
+        //
         // if !model.named_animations.contains_key("equip") {
         //     // This will build an equip animation if there is a "left_click" animation available
         //     build_equip_animation(

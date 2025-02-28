@@ -1,7 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use bevy::{
-    animation::RepeatAnimation,
+    animation::{ActiveAnimation, RepeatAnimation},
     gltf::Gltf,
     math::DVec3,
     pbr::NotShadowCaster,
@@ -29,6 +32,7 @@ impl Plugin for ModelPlugin {
                 //render_aabb,
                 handle_transform_updates,
                 interpolate_to_new_transform,
+                advance_transitions,
                 play_animations.after(handle_model_add_delete),
             )
                 .run_if(in_state(GameState::Playing)),
@@ -85,6 +89,7 @@ fn handle_model_add_delete(
                 Model::Asset(new_model.asset),
                 AnimationGraphHandle(model_config.animation_graph.clone().unwrap()),
                 AnimationPlayer::default(),
+                Transition::default(),
                 TransformInterpolation::default(),
                 MovesWithOrigin,
             ))
@@ -286,7 +291,10 @@ fn play_animations(
     net: Res<NetworkClient>,
     models: Res<Models>,
     model_entities: Res<ModelEntities>,
-    mut model_query: Query<(&mut Model, &mut AnimationPlayer), With<AnimationGraphHandle>>,
+    mut model_query: Query<
+        (&mut Model, &mut AnimationPlayer, &mut Transition),
+        With<AnimationGraphHandle>,
+    >,
     mut animation_events: EventReader<messages::ModelPlayAnimation>,
 ) {
     for animation in animation_events.read() {
@@ -297,7 +305,8 @@ fn play_animations(
             return;
         };
 
-        let (model, mut animation_player) = model_query.get_mut(*model_entity).unwrap();
+        let (model, mut animation_player, mut transition) =
+            model_query.get_mut(*model_entity).unwrap();
 
         let Model::Asset(model_asset_id) = *model else {
             // TODO: Disconnect
@@ -318,20 +327,86 @@ fn play_animations(
             return;
         };
 
-        animation_player.stop_all();
-        animation_player.play(*animation_index);
-        let active_animation = animation_player.animation_mut(*animation_index).unwrap();
-        //dbg!(&active_animation);
+        let active_animation = if let Some((from_animation, duration)) = animation.transition {
+            let Some(from_animation_index) = model_config.animations.get(from_animation as usize)
+            else {
+                // TODO: Need to print the name of the model in the error message for debugging.
+                // net.disconnect(format!(
+                //     "The server sent an animation that doesn't exist. Animation index was '{}'",
+                //     animation.animation_index
+                // ));
+                return;
+            };
+
+            transition.play(
+                &mut animation_player,
+                *from_animation_index,
+                *animation_index,
+                duration,
+            )
+        } else {
+            animation_player.play(*animation_index)
+        };
+
+        if active_animation.is_finished() || animation.restart {
+            active_animation.replay();
+        }
 
         // When the server wants an animation to stop, it sends the same animation but with
         // repeat=false. Then we complete the current animation cycle and stop.
         if animation.repeat {
-            active_animation.set_repeat(RepeatAnimation::Forever);
+            active_animation.repeat();
         } else {
             // TODO: It messes up the last frame
             // https://github.com/bevyengine/bevy/issues/10832
             let count = active_animation.completions() + 1;
             active_animation.set_repeat(RepeatAnimation::Count(count));
+        }
+    }
+}
+
+#[derive(Component, Default)]
+struct Transition {
+    to: Option<AnimationNodeIndex>,
+    from: Option<AnimationNodeIndex>,
+    decline_per_sec: f32,
+}
+
+impl Transition {
+    fn play<'p>(
+        &mut self,
+        animation_player: &'p mut AnimationPlayer,
+        from: AnimationNodeIndex,
+        to: AnimationNodeIndex,
+        duration: f32,
+    ) -> &'p mut ActiveAnimation {
+        self.from = Some(from);
+        self.to = Some(to);
+        self.decline_per_sec = 1.0 / duration;
+        animation_player.play(to)
+    }
+}
+
+fn advance_transitions(mut query: Query<(&mut Transition, &mut AnimationPlayer)>, time: Res<Time>) {
+    for (mut transition, mut player) in query.iter_mut() {
+        let Some(from) = transition.from else {
+            continue;
+        };
+
+        let mut new_weight = 1.0;
+        if let Some(animation) = player.animation_mut(from) {
+            new_weight =
+                (animation.weight() - transition.decline_per_sec * time.delta_secs()).max(0.0);
+            animation.set_weight(new_weight);
+
+            if animation.weight() == 0.0 {
+                player.stop(from);
+                transition.from.take();
+            }
+        };
+
+        if let Some(animation) = transition.to.and_then(|index| player.animation_mut(index)) {
+            animation.set_weight(1.0 - new_weight);
         }
     }
 }

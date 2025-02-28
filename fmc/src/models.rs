@@ -31,12 +31,12 @@ impl Plugin for ModelPlugin {
                 (
                     send_models_on_chunk_subscription.before(send_animations),
                     //update_model_assets,
-                    play_move_animation
+                    apply_animations
                         .before(send_animations)
                         .after(TransformSystem::TransformPropagate),
                     send_animations,
                     remove_models,
-                    update_model_transform,
+                    send_model_transform,
                     update_visibility.after(TransformSystem::TransformPropagate),
                 ),
             );
@@ -155,7 +155,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(ModelVisibility, ModelAnimations, Transform)]
+#[require(ModelVisibility, AnimationPlayer, Transform)]
 pub enum Model {
     Asset(ModelId),
     Custom {
@@ -197,42 +197,91 @@ impl ModelVisibility {
     }
 }
 
-enum Animation {
-    Play(u32),
-    StopRepeating(u32),
-    PlayRepeating(u32),
+pub struct Animation {
+    restart: bool,
+    animation_index: u32,
+    repeat: bool,
+    transition_from: Option<u32>,
+    transition_duration: f32,
+}
+
+impl Animation {
+    pub fn repeat(&mut self) -> &mut Self {
+        self.repeat = true;
+        self
+    }
+
+    pub fn restart(&mut self) -> &mut Self {
+        self.restart = true;
+        self
+    }
+
+    pub fn transition(&mut self, from: u32, duration: f32) -> &mut Self {
+        self.transition_from = Some(from);
+        self.transition_duration = duration;
+        self
+    }
 }
 
 #[derive(Component, Default)]
-pub struct ModelAnimations {
+pub struct AnimationPlayer {
+    // The entity of the model being animated, if None, defaults to the entity the animation player
+    // is part of.
+    target: Option<Entity>,
+    // Animation played when the model is moving
     move_animation: Option<u32>,
     playing_move_animation: bool,
     last_position: DVec3,
-    repeating: HashSet<u32>,
+    // Animation played when the model is idle
+    idle_animation: Option<u32>,
+    // New animations
     animation_queue: Vec<Animation>,
+    // Animations that are playing
+    playing: Vec<Animation>,
 }
 
-impl ModelAnimations {
-    pub fn play(&mut self, animation_index: u32) {
-        self.animation_queue.push(Animation::Play(animation_index));
-    }
-
-    pub fn play_repeating(&mut self, animation_index: u32) {
-        self.animation_queue
-            .push(Animation::PlayRepeating(animation_index));
+impl AnimationPlayer {
+    pub fn play(&mut self, animation_index: u32) -> &mut Animation {
+        self.animation_queue.push(Animation {
+            restart: false,
+            animation_index,
+            repeat: false,
+            transition_from: None,
+            transition_duration: 0.0,
+        });
+        self.animation_queue.last_mut().unwrap()
     }
 
     pub fn stop(&mut self, animation_index: u32) {
-        self.animation_queue
-            .push(Animation::StopRepeating(animation_index));
+        // Animation's always run to completion, but this let's you 'stop' it if it is
+        // a repeating animation.
+        self.animation_queue.push(Animation {
+            restart: false,
+            animation_index,
+            repeat: false,
+            transition_from: None,
+            transition_duration: 0.0,
+        });
     }
 
-    pub fn play_on_move(&mut self, animation_index: Option<u32>) {
+    pub fn set_target(&mut self, target: Entity) {
+        self.target = Some(target);
+    }
+
+    pub fn set_move_animation(&mut self, animation_index: Option<u32>) {
         if let Some(prev) = self.move_animation.take() {
-            self.animation_queue.push(Animation::StopRepeating(prev));
+            self.stop(prev);
         }
 
         self.move_animation = animation_index;
+    }
+
+    pub fn set_idle_animation(&mut self, animation_index: Option<u32>) {
+        if let Some(prev) = self.idle_animation.take() {
+            self.stop(prev);
+        }
+
+        self.idle_animation = animation_index;
     }
 }
 
@@ -346,7 +395,7 @@ fn remove_models(
 }
 
 // TODO: Split position, rotation and scale into packets?
-fn update_model_transform(
+fn send_model_transform(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut model_map: ResMut<ModelMap>,
@@ -382,24 +431,44 @@ fn update_model_transform(
     }
 }
 
-fn play_move_animation(
-    mut moved_models: Query<(&mut ModelAnimations, &GlobalTransform), Changed<GlobalTransform>>,
-) {
-    for (mut animations, transform) in moved_models.iter_mut() {
-        let Some(move_animation) = animations.move_animation else {
-            continue;
-        };
+fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>) {
+    for (mut animation_player, transform) in models.iter_mut() {
+        if animation_player.move_animation.is_some()
+            && transform.is_changed()
+            // TODO: Even though it doesn't move the translation still changes when the model is
+            // rotated! Probably some inaccuracy from converting fram a matrix representation.
+            && transform.translation() != animation_player.last_position
+        {
+            let move_animation = animation_player.move_animation.unwrap();
 
-        let difference = transform
-            .translation()
-            .distance_squared(animations.last_position);
+            let difference = transform
+                .translation()
+                .xz()
+                .distance_squared(animation_player.last_position.xz());
 
-        if !animations.playing_move_animation && difference > 0.25 {
-            animations.playing_move_animation = true;
-            animations.play_repeating(move_animation);
-        } else if animations.playing_move_animation && difference < 0.25 {
-            animations.playing_move_animation = false;
-            animations.stop(move_animation);
+            if !animation_player.playing_move_animation && difference > 0.0005 {
+                animation_player.playing_move_animation = true;
+                if let Some(idle_animation) = animation_player.idle_animation {
+                    animation_player
+                        .play(move_animation)
+                        .repeat()
+                        .transition(idle_animation, 0.25);
+                } else {
+                    animation_player.play(move_animation).repeat();
+                }
+            } else if animation_player.playing_move_animation && difference < 0.0005 {
+                animation_player.playing_move_animation = false;
+                if let Some(idle_animation) = animation_player.idle_animation {
+                    animation_player
+                        .play(idle_animation)
+                        .repeat()
+                        .transition(move_animation, 0.25);
+                } else {
+                    animation_player.stop(move_animation);
+                }
+            }
+
+            animation_player.last_position = transform.translation();
         }
     }
 }
@@ -516,7 +585,7 @@ fn send_models_on_chunk_subscription(
     model_query: Query<(
         Option<&Parent>,
         &Model,
-        &ModelAnimations,
+        &AnimationPlayer,
         &GlobalTransform,
         &ModelVisibility,
     )>,
@@ -525,7 +594,7 @@ fn send_models_on_chunk_subscription(
     for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {
             for entity in model_entities.iter() {
-                let Ok((maybe_player_parent, model, animations, transform, visibility)) =
+                let Ok((maybe_player_parent, model, animation_player, transform, visibility)) =
                     model_query.get(*entity)
                 else {
                     continue;
@@ -594,25 +663,17 @@ fn send_models_on_chunk_subscription(
                     ),
                 }
 
-                if animations.playing_move_animation {
-                    let animation_index = animations.move_animation.unwrap();
+                for animation in animation_player.playing.iter() {
                     net.send_one(
                         chunk_sub.player_entity,
                         messages::ModelPlayAnimation {
-                            model_id: entity.index(),
-                            animation_index,
-                            repeat: true,
-                        },
-                    );
-                }
-
-                for animation_index in animations.repeating.iter().copied() {
-                    net.send_one(
-                        chunk_sub.player_entity,
-                        messages::ModelPlayAnimation {
-                            model_id: entity.index(),
-                            animation_index,
-                            repeat: true,
+                            model_id: animation_player.target.unwrap_or(*entity).index(),
+                            animation_index: animation.animation_index,
+                            restart: animation.restart,
+                            repeat: animation.repeat,
+                            transition: animation
+                                .transition_from
+                                .and_then(|from| Some((from, animation.transition_duration))),
                         },
                     );
                 }
@@ -625,45 +686,34 @@ fn send_animations(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut animation_query: Query<
-        (Entity, &mut ModelAnimations, &GlobalTransform),
-        Changed<ModelAnimations>,
+        (Entity, &mut AnimationPlayer, &GlobalTransform),
+        Changed<AnimationPlayer>,
     >,
 ) {
-    for (entity, mut model_animations, transform) in animation_query.iter_mut() {
+    for (entity, mut animation_player, transform) in animation_query.iter_mut() {
         let chunk_position = ChunkPosition::from(transform.translation());
 
         let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
-            model_animations.animation_queue.clear();
+            animation_player.animation_queue.clear();
             continue;
         };
 
-        for animation in model_animations.animation_queue.drain(..) {
-            match animation {
-                Animation::Play(animation_index) => net.send_many(
-                    subs,
-                    messages::ModelPlayAnimation {
-                        model_id: entity.index(),
-                        animation_index,
-                        repeat: false,
-                    },
-                ),
-                Animation::PlayRepeating(animation_index) => net.send_many(
-                    subs,
-                    messages::ModelPlayAnimation {
-                        model_id: entity.index(),
-                        animation_index,
-                        repeat: true,
-                    },
-                ),
-                Animation::StopRepeating(animation_index) => net.send_many(
-                    subs,
-                    messages::ModelPlayAnimation {
-                        model_id: entity.index(),
-                        animation_index,
-                        repeat: false,
-                    },
-                ),
-            }
+        // split borrow
+        let animation_player = animation_player.into_inner();
+
+        for animation in animation_player.animation_queue.drain(..) {
+            net.send_many(
+                subs,
+                messages::ModelPlayAnimation {
+                    model_id: animation_player.target.unwrap_or(entity).index(),
+                    animation_index: animation.animation_index,
+                    restart: animation.restart,
+                    repeat: animation.repeat,
+                    transition: animation
+                        .transition_from
+                        .and_then(|from| Some((from, animation.transition_duration))),
+                },
+            );
         }
     }
 }

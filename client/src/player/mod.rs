@@ -114,12 +114,12 @@ fn send_position_to_server(
 
     let transform = player_transform.single();
 
-    if *last_position == transform.translation {
+    if last_position.distance_squared(transform.translation) < 0.0001 {
         return;
     }
     *last_position = transform.translation;
 
     net.send_message(messages::PlayerPosition {
-        position: transform.translation.as_dvec3() + origin.as_dvec3(),
+        position: origin.to_global(transform.translation),
     });
 }
