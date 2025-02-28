@@ -404,9 +404,13 @@ fn send_clicks(
             net.send_message(messages::LeftClick::Release);
         } else if mouse_button_input.just_pressed(MouseButton::Right) {
             net.send_message(messages::RightClick::Press);
-        } else if mouse_button_input.just_released(MouseButton::Right) {
-            net.send_message(messages::RightClick::Release);
         }
+        // TODO: Full right clicks don't work for interfaces. If you open an interface on the down
+        // press the cursor won't be locked anymore, so it won't send the release event.
+        // else if mouse_button_input.just_released(MouseButton::Right) {
+        //     dbg!("send release");
+        //     net.send_message(messages::RightClick::Release);
+        // }
     }
 }
 
