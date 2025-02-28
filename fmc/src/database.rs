@@ -38,14 +38,19 @@ impl Plugin for DatabasePlugin {
     }
 }
 
-#[derive(Resource, Deref, Clone)]
+#[derive(Resource, Clone)]
 pub struct Database(Arc<DatabaseInner>);
 
+impl Database {
+    fn path(&self) -> &str {
+        &self.0.path
+    }
+}
 // TODO: Two modes, one where it saves only changes to disk and one where it saves all chunk data.
 //       Changes are best for single instances that don't care about the cpu load of re-generating
 //       chunks. For large servers it is preferable to save cpu at the cost of storage.
 // TODO: Implement connection pool
-pub struct DatabaseInner {
+struct DatabaseInner {
     path: String,
     //pub pool: Mutex<Vec<rusqlite::Connection>>
 }
@@ -68,7 +73,7 @@ impl Database {
     }
 
     pub fn get_connection(&self) -> rusqlite::Connection {
-        return rusqlite::Connection::open(&self.path).unwrap();
+        return rusqlite::Connection::open(self.path()).unwrap();
         //return rusqlite::Connection::open_with_flags(
         //    MEMORY_DATABASE_PATH,
         //    rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,

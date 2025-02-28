@@ -84,7 +84,7 @@ pub fn load_interfaces(
     let directory = match std::fs::read_dir(INTERFACE_CONFIG_PATH) {
         Ok(dir) => dir,
         Err(e) => {
-            net.disconnect(&format!(
+            net.disconnect(format!(
                 "Misconfigured assets: Failed to read interface configuration directory '{}'\n\
                 Error: {}",
                 INTERFACE_CONFIG_PATH, e
@@ -97,7 +97,7 @@ pub fn load_interfaces(
         let file_path = match dir_entry {
             Ok(d) => d.path(),
             Err(e) => {
-                net.disconnect(&format!(
+                net.disconnect(format!(
                     "Failed to read the file path of an interface config\nError: {}",
                     e
                 ));
@@ -108,7 +108,7 @@ pub fn load_interfaces(
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
             Err(e) => {
-                net.disconnect(&format!(
+                net.disconnect(format!(
                     "Failed to open interface configuration at: '{}'\nError: {}",
                     &file_path.display(),
                     e
@@ -120,7 +120,7 @@ pub fn load_interfaces(
         let node_config: NodeConfig = match serde_json::from_reader(&file) {
             Ok(c) => c,
             Err(e) => {
-                net.disconnect(&format!(
+                net.disconnect(format!(
                     "Misconfigured assets: Failed to read interface configuration at: '{}'\n\
                 Error: {}",
                     &file_path.display(),
@@ -130,8 +130,8 @@ pub fn load_interfaces(
             }
         };
 
-        // NOTE(WORKAROUND): When spawning an ImageBundle, the dimensions of the image are
-        // inferred, but if it has children, it's discarded and it uses the size of the children
+        // NOTE(WORKAROUND): When spawning an Image, the dimensions of the image are
+        // inferred, but if it has children they're discarded and it uses the size of the children
         // instead. Images must therefore be spawned with defined width/height to display correctly.
         fn read_image_dimensions(image_path: &str) -> Vec2 {
             let image_data = match std::fs::read(INTERFACE_TEXTURE_PATH.to_owned() + image_path) {

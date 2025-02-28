@@ -100,7 +100,9 @@ fn change_player_render_distance(
 /// Event sent in response to a block update.
 #[derive(Event)]
 pub struct ChangedBlockEvent {
+    /// The position of the block that was changed.
     pub position: BlockPosition,
+    /// What block it was changed into
     pub to: (BlockId, Option<BlockState>),
     pub top: Option<(BlockId, Option<BlockState>)>,
     pub bottom: Option<(BlockId, Option<BlockState>)>,
@@ -148,13 +150,12 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
 
 #[derive(Event)]
 pub enum BlockUpdate {
-    /// Change one block to another. Fields are position/block id/block state
+    /// Change one block to another.
     Change {
         position: BlockPosition,
         block_id: BlockId,
         block_state: Option<BlockState>,
     },
-    // Particles?
 }
 
 // Applies block updates to the world and sends them to the players.

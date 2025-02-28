@@ -123,7 +123,7 @@ impl GlobalTransform {
     /// Get the translation as a [`Vec3`].
     #[inline]
     pub fn translation(&self) -> Vec3 {
-        self.0.translation.into()
+        self.0.translation
     }
 
     /// Mutably access the internal translation.

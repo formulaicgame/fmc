@@ -6,7 +6,7 @@ use bevy::{
 use fmc_protocol::messages;
 
 use crate::{
-    blocks::{BlockPosition, BlockState, Blocks},
+    blocks::{BlockPosition, Blocks},
     database::Database,
     models::Model,
     networking::{NetworkEvent, Server},

@@ -399,9 +399,13 @@ fn send_clicks(
 ) {
     if window.single().cursor_options.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
-            net.send_message(messages::LeftClick);
+            net.send_message(messages::LeftClick::Press);
+        } else if mouse_button_input.just_released(MouseButton::Left) {
+            net.send_message(messages::LeftClick::Release);
         } else if mouse_button_input.just_pressed(MouseButton::Right) {
-            net.send_message(messages::RightClick);
+            net.send_message(messages::RightClick::Press);
+        } else if mouse_button_input.just_released(MouseButton::Right) {
+            net.send_message(messages::RightClick::Release);
         }
     }
 }

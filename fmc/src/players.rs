@@ -4,16 +4,12 @@ use fmc_protocol::messages;
 
 use crate::{
     bevy_extensions::f64_transform::{GlobalTransform, Transform},
-    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks, Friction},
+    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks},
     interfaces::InterfaceNodes,
     models::ModelMap,
     networking::{NetworkMessage, Server},
-    physics::{shapes::Aabb, Collider},
-    utils,
-    world::{
-        chunk::{Chunk, ChunkPosition},
-        RenderDistance, WorldMap,
-    },
+    physics::Collider,
+    world::{chunk::ChunkPosition, RenderDistance, WorldMap},
 };
 
 pub struct PlayersPlugin;
