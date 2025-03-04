@@ -44,12 +44,15 @@ impl Plugin for ServerInterfacesPlugin {
                 Update,
                 (
                     button_interaction.run_if(in_state(UiState::ServerInterfaces)),
-                    hide_interfaces_when_paused.run_if(state_changed::<UiState>),
                     handle_node_visibility_updates,
                     handle_interface_visibility_updates,
                     handle_toggle_events,
                 )
                     .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                interface_visibility.run_if(state_changed::<UiState>),
             )
             .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
@@ -729,7 +732,7 @@ fn handle_toggle_events(
     }
 }
 
-fn hide_interfaces_when_paused(
+fn interface_visibility(
     ui_state: Res<State<UiState>>,
     mut interface_stack: ResMut<InterfaceStack>,
     mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
