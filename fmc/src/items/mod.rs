@@ -132,9 +132,9 @@ struct ItemConfigJson {
     stack_size: u32,
     #[serde(default)]
     categories: HashSet<String>,
-    #[serde(default)]
-    properties: serde_json::Map<String, serde_json::Value>,
     tool: Option<Tool>,
+    #[serde(flatten)]
+    properties: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Names and configs of all the items in the game.
@@ -234,9 +234,9 @@ impl ItemStack {
         return self.size;
     }
 
-    pub fn set_size(mut self, size: u32) -> Self {
+    pub fn set_size(&mut self, size: u32) -> &mut Self {
         if size == 0 {
-            return Self::default();
+            *self = Self::default();
         }
         self.size = size;
         self
@@ -244,7 +244,7 @@ impl ItemStack {
 
     /// Set a custom capacity. The item stack's initial capacity will be preserved if transfered to
     /// an empty stack.
-    pub fn set_capacity(mut self, capacity: u32) -> Self {
+    pub fn set_capacity(&mut self, capacity: u32) -> &mut Self {
         self.custom_capacity = Some(capacity);
         self
     }

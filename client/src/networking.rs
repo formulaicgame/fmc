@@ -149,7 +149,7 @@ impl NetworkClient {
             return;
         }
 
-        dbg!(message.as_ref());
+        println!("{}", message.as_ref());
         // Disconnect might be called many times as errors cascade, but only the first message will
         // register as that will be the primary cause. The event queue only has capacity for one
         // element.

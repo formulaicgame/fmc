@@ -169,7 +169,7 @@ fn handle_custom_models(
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(material)),
                 Transform {
-                    translation: (custom_model.position - origin.as_dvec3()).as_vec3(),
+                    translation: origin.to_local(custom_model.position),
                     rotation: custom_model.rotation,
                     scale: custom_model.scale,
                 },

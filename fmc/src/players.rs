@@ -284,7 +284,6 @@ fn find_target(
         let mut raycast = world_map.raycast(&camera_transform, 5.0);
         while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
-
             let Some(hitbox) = &block_config.hitbox else {
                 // Blocks that don't have a hitbox cannot be targeted. This will normally be
                 // blocks that are considered void, like air, not water.
@@ -300,7 +299,7 @@ fn find_target(
                 .unwrap_or_default();
 
             let block_transform = Transform {
-                translation: block_position.as_dvec3(),
+                translation: block_position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
                 rotation,
                 ..default()
             };

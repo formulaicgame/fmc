@@ -155,6 +155,8 @@ pub enum BlockUpdate {
         position: BlockPosition,
         block_id: BlockId,
         block_state: Option<BlockState>,
+        /// Keep the current block's entity and do not execute the new block's spawn function
+        keep_entity: bool,
     },
 }
 
@@ -173,6 +175,7 @@ fn handle_block_updates(
                 position,
                 block_id,
                 block_state,
+                keep_entity,
             } => {
                 let chunk_position = ChunkPosition::from(*position);
                 let block_index = position.as_chunk_index();
@@ -186,16 +189,28 @@ fn handle_block_updates(
                 chunk[block_index] = *block_id;
                 chunk.set_block_state(block_index, *block_state);
 
-                if let Some(old_entity) = chunk.block_entities.remove(&block_index) {
-                    commands.entity(old_entity).despawn_recursive();
+                if !keep_entity {
+                    if let Some(old_entity) = chunk.block_entities.remove(&block_index) {
+                        commands.entity(old_entity).despawn_recursive();
+                    }
                 }
 
                 let block_config = Blocks::get().get_config(block_id);
                 if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
-                    let mut entity_commands = commands.spawn(*position);
+                    let mut entity_commands = if *keep_entity {
+                        if let Some(entity) = chunk.block_entities.get(&block_index) {
+                            commands.entity(*entity)
+                        } else {
+                            commands.spawn(*position)
+                        }
+                    } else {
+                        commands.spawn(*position)
+                    };
 
-                    if let Some(spawn_fn) = block_config.spawn_entity_fn {
-                        (spawn_fn)(&mut entity_commands, None);
+                    if !keep_entity {
+                        if let Some(spawn_fn) = block_config.spawn_entity_fn {
+                            (spawn_fn)(&mut entity_commands, None);
+                        }
                     }
 
                     if let Some(model_id) = block_config.model {
@@ -305,6 +320,7 @@ fn save_block_updates_to_database(
                 position,
                 block_id,
                 block_state,
+                ..
             } => {
                 block_updates.insert(*position, (*block_id, *block_state));
             }
@@ -337,6 +353,7 @@ fn send_changed_block_event(
                 position,
                 block_id,
                 block_state,
+                ..
             } => ChangedBlockEvent {
                 position: *position,
                 to: (*block_id, *block_state),

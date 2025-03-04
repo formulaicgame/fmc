@@ -207,10 +207,10 @@ pub fn load_blocks(
                 if let Some(faces) = faces {
                     for (i, face_name) in [
                         &faces.top,
-                        &faces.front,
+                        &faces.back,
                         &faces.left,
                         &faces.right,
-                        &faces.back,
+                        &faces.front,
                         &faces.bottom,
                     ]
                     .iter()
@@ -823,11 +823,11 @@ pub struct Sound {
 #[derive(Deserialize, Debug)]
 struct BlockPlacement {
     // Set if the block can be placed by clicking the top face of the block below
-    floor: bool,
+    //floor: bool,
     // Set if the block can be placed by clicking the bottom face of the block above
-    ceiling: bool,
+    //ceiling: bool,
     // Set if the block can be placed by clicking the sides of adjacent blocks
-    sides: bool,
+    //sides: bool,
     // Set if the block should always be rotated when placed.
     rotatable: bool,
     // Set if a transform should be applied when placing on a sideways adjacent block. This will
@@ -838,9 +838,9 @@ struct BlockPlacement {
 impl Default for BlockPlacement {
     fn default() -> Self {
         Self {
-            floor: true,
-            ceiling: true,
-            sides: true,
+            // floor: true,
+            // ceiling: true,
+            // sides: true,
             rotatable: false,
             side_transform: None,
         }
