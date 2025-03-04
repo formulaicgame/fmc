@@ -21,6 +21,7 @@ use crate::{
     items::{ItemConfig, ItemId, Items},
     models::{ModelId, Models},
     physics::{shapes::Aabb, Collider},
+    players::Camera,
     prelude::*,
     utils::Rng,
     world::chunk::{Chunk, ChunkPosition},
@@ -133,7 +134,7 @@ fn load_blocks_to_resource(
             let aabb = model_config.aabb.clone();
             Some(Collider::Aabb(aabb))
         } else if block_config_json.faces.is_some() {
-            let aabb = Aabb::from_min_max(DVec3::ZERO, DVec3::ONE);
+            let aabb = Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
             Some(Collider::Aabb(aabb))
         } else if let Some(quads) = block_config_json.quads {
             let mut min = Vec3::MAX;
@@ -687,7 +688,11 @@ impl BlockConfig {
         }
     }
 
-    pub fn placement_rotation(&self, against_block_face: BlockFace) -> Option<BlockState> {
+    pub fn placement_rotation(
+        &self,
+        against_block_face: BlockFace,
+        camera: &Camera,
+    ) -> Option<BlockState> {
         if !self.is_placeable(against_block_face) {
             return None;
         }
@@ -698,10 +703,26 @@ impl BlockConfig {
 
         let mut block_state = BlockState::new();
 
-        if (against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top)
-            && self.placement.centered
-        {
-            block_state.set_centered(true);
+        if against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top {
+            if self.placement.centered {
+                block_state.set_centered(true);
+            } else {
+                let facing = camera.forward().xz().as_vec2();
+                let rotation = if facing.dot(Vec2::X).abs() > facing.dot(Vec2::Y).abs() {
+                    if facing.x.is_sign_positive() {
+                        BlockRotation::Left
+                    } else {
+                        BlockRotation::Right
+                    }
+                } else {
+                    if facing.y.is_sign_positive() {
+                        BlockRotation::Back
+                    } else {
+                        BlockRotation::Front
+                    }
+                };
+                block_state.set_rotation(rotation);
+            }
         } else {
             block_state.set_rotation(against_block_face.to_rotation());
         }
@@ -768,7 +789,7 @@ impl Default for BlockPlacement {
             ceiling: true,
             sides: true,
             rotatable: false,
-            centered: true,
+            centered: false,
             rotation_transform: None,
         }
     }
@@ -863,11 +884,7 @@ impl BlockState {
             return None;
         }
 
-        if self.0 & 0b100 == 0 {
-            return Some(BlockRotation::from(self.0));
-        } else {
-            None
-        }
+        return Some(BlockRotation::from(self.0));
     }
 }
 
