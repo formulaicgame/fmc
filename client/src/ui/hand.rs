@@ -112,7 +112,7 @@ fn equip_item(
     for item_box in changed_equipped_item_query.iter() {
         let (mut hand, mut animation_player) = hand_query.single_mut();
 
-        if let Some(item_id) = item_box.item_stack.item {
+        if let Some(item_id) = item_box.item_stack.item() {
             let item = items.get(&item_id);
 
             // This prevents triggering the switch animation when switching between the same items.

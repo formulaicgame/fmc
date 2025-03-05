@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::{gltf::Gltf, prelude::*, text::FontSmoothing, ui::FocusPolicy};
+use bevy::{prelude::*, text::FontSmoothing, ui::FocusPolicy};
 
 use fmc_protocol::messages;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use crate::{
     world::blocks::{BlockId, Blocks},
 };
 
-use super::{InterfaceNode, InterfacePaths};
+use super::{InterfaceConfig, InterfaceNode, InterfacePaths};
 
 pub type ItemId = u32;
 
@@ -26,7 +26,7 @@ impl Plugin for ItemPlugin {
             (
                 handle_item_box_updates,
                 initial_select_item_box,
-                return_cursor_item.after(super::handle_toggle_events),
+                discard_items.after(super::handle_toggle_events),
                 left_click_item_box,
                 right_click_item_box,
                 update_cursor_image.after(left_click_item_box),
@@ -175,11 +175,11 @@ pub fn load_items(
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ItemStack {
     // The item occupying the stack
-    pub item: Option<ItemId>,
+    item: Option<ItemId>,
     // Maximum amount of the item type that can currently be stored in the stack.
     max_size: Option<u32>,
     // Current stack size.
-    pub size: u32,
+    size: u32,
 }
 
 impl ItemStack {
@@ -191,11 +191,34 @@ impl ItemStack {
         };
     }
 
+    pub fn item(&self) -> Option<ItemId> {
+        self.item
+    }
+
+    pub fn take(&mut self, amount: u32) -> ItemStack {
+        let taken = ItemStack {
+            item: self.item.clone(),
+            size: amount.min(self.size),
+            max_size: self.max_size,
+        };
+
+        self.size -= taken.size;
+        if self.size == 0 {
+            *self = ItemStack::default();
+        }
+
+        taken
+    }
+
+    fn size(&self) -> u32 {
+        self.size
+    }
+
     fn add(&mut self, amount: u32) {
         self.size += amount;
     }
 
-    pub fn subtract(&mut self, amount: u32) {
+    fn subtract(&mut self, amount: u32) {
         self.size -= amount;
         if self.size == 0 {
             self.item = None;
@@ -203,8 +226,7 @@ impl ItemStack {
         }
     }
 
-    /// Move items from this stack. If this stack already contains items, the stack's items need to
-    /// match, otherwise they will be swapped.
+    /// Move items from this stack. If the stack's items don't match, they will be swapped.
     #[track_caller]
     pub fn transfer_to(&mut self, other: &mut ItemStack, mut amount: u32) -> u32 {
         if self.is_empty() {
@@ -840,77 +862,48 @@ fn keyboard_select_item_box(
     }
 }
 
-// TODO: This is a crude 'If any interface changes visibility, return the item'. It will
-// fail if there is no room. And I don't know what should happen if it's not an interface
-// root that is toggled.
-fn return_cursor_item(
+// If an item is held by the cursor and the interface closes, or if you click outside the interface
+// the item is considered "discarded".
+fn discard_items(
     net: Res<NetworkClient>,
-    items: Res<Items>,
-    visibility_changed: Query<(), (Changed<Visibility>, With<InterfaceNode>)>,
-    item_box_section_query: Query<(
-        &ItemBoxSection,
-        Option<&Children>,
-        &InheritedVisibility,
-        &InterfaceNode,
-    )>,
-    mut cursor_item_box_query: Query<&mut CursorItemBox>,
-    mut item_box_query: Query<&mut ItemBox>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    item_box_section_query: Query<&InterfaceConfig, Changed<InheritedVisibility>>,
+    interaction_query: Query<&Interaction, With<ImageNode>>,
+    mut cursor_box: Single<&mut CursorItemBox>,
 ) {
-    if visibility_changed.iter().count() == 0 {
+    if cursor_box.is_empty() {
         return;
     }
-    let mut cursor_box = cursor_item_box_query.single_mut();
-    if !cursor_box.is_empty() {
-        for (item_box_section, children, visibility, interface_node) in
-            item_box_section_query.iter()
-        {
-            // Test that the item box section is part of the currently open interface
-            if !visibility.get() {
-                continue;
-            }
 
-            let item_config = items.get(&cursor_box.item_stack.item.unwrap());
-            if !item_box_section.can_contain(item_config) {
-                continue;
-            }
+    if !item_box_section_query.is_empty() {
+        net.send_message(messages::InterfaceInteraction::PlaceItem {
+            interface_path: "".to_owned(),
+            index: 0,
+            quantity: cursor_box.item_stack.size(),
+        });
 
-            if let Some(children) = children {
-                for item_box_entity in children.iter() {
-                    let mut item_box = item_box_query.get_mut(*item_box_entity).unwrap();
-                    if item_box.item_stack.item == cursor_box.item_stack.item {
-                        let transfered = item_box
-                            .item_stack
-                            .transfer_to(&mut cursor_box.item_stack, u32::MAX);
-                        net.send_message(messages::InterfaceInteraction::PlaceItem {
-                            interface_path: interface_node.path.clone(),
-                            index: item_box.index as u32,
-                            quantity: transfered,
-                        })
-                    }
+        cursor_box.item_stack = ItemStack::default();
+        return;
+    }
 
-                    if cursor_box.is_empty() {
-                        return;
-                    }
-                }
-
-                // Has to be split from above because we first want it to fill up any existing
-                // stacks before it begins on empty stacks.
-                for item_box_entity in children.iter() {
-                    let mut item_box = item_box_query.get_mut(*item_box_entity).unwrap();
-                    if item_box.is_empty() {
-                        let transfered = item_box
-                            .item_stack
-                            .transfer_to(&mut cursor_box.item_stack, u32::MAX);
-                        net.send_message(messages::InterfaceInteraction::PlaceItem {
-                            interface_path: interface_node.path.clone(),
-                            index: item_box.index as u32,
-                            quantity: transfered,
-                        });
-
-                        return;
-                    }
-                }
-            }
+    // If the cursor is over anything, there's nothing more to do
+    for interaction in interaction_query.iter() {
+        if *interaction != Interaction::None {
+            return;
         }
+    }
+
+    for mouse_button in mouse_button_input.get_just_pressed() {
+        let discarded = match mouse_button {
+            MouseButton::Left => cursor_box.item_stack.take(u32::MAX),
+            MouseButton::Right => cursor_box.item_stack.take(1),
+            _ => continue,
+        };
+
+        net.send_message(messages::InterfaceInteraction::PlaceItem {
+            interface_path: "".to_owned(),
+            index: 0,
+            quantity: discarded.size(),
+        });
     }
 }

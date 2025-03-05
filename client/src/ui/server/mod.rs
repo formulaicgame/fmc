@@ -205,6 +205,7 @@ pub fn load_interfaces(
                 node,
                 BackgroundColor::from(config.background_color.unwrap_or(Color::NONE)),
                 BorderColor::from(config.border_color.unwrap_or(Color::NONE)),
+                Interaction::default(),
             ));
 
             if let Some(path) = &config.image {

@@ -291,7 +291,9 @@ fn simulate_physics(
                         if let Some(intersection) = entity_collider.intersection(
                             &pos_after_move,
                             &block_collider,
-                            &Transform::from_translation(block_pos.as_dvec3()),
+                            &Transform::from_translation(
+                                block_pos.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
+                            ),
                         ) {
                             collisions.push((intersection, block_config));
                         } else {
