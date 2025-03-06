@@ -410,7 +410,8 @@ fn trigger_update_on_block_change(
 ) {
     for block_update in block_updates.read() {
         let position = match block_update {
-            BlockUpdate::Change { position, .. } => *position,
+            BlockUpdate::Replace { position, .. } => *position,
+            BlockUpdate::Swap { position, .. } => *position,
             _ => continue,
         };
         let chunk_position = ChunkPosition::from(position);

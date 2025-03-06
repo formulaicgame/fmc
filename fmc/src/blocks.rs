@@ -839,7 +839,7 @@ pub struct Friction {
     pub bottom: f64,
 }
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Clone)]
 pub struct BlockData(pub Vec<u8>);
 
 // bits:

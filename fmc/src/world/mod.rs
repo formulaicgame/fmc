@@ -1,16 +1,17 @@
-use std::{collections::HashMap, ops::Index};
+use std::{collections::HashMap, ops::Index, time::Duration};
 
 use bevy::{
     app::AppExit,
     math::DVec3,
     tasks::{futures_lite::future, IoTaskPool},
+    time::common_conditions::on_timer,
 };
 use chunk::ChunkPosition;
 use fmc_protocol::messages;
 
 use crate::{
     bevy_extensions::f64_transform::TransformSystem,
-    blocks::{BlockFace, BlockId, BlockPosition, BlockState, Blocks},
+    blocks::{BlockData, BlockFace, BlockId, BlockPosition, BlockState, Blocks},
     database::Database,
     models::Model,
     networking::{NetworkMessage, Server},
@@ -30,27 +31,23 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DatabaseSyncTimer(Timer::from_seconds(
-            5.0,
-            TimerMode::Repeating,
-        )))
-        .insert_resource(RenderDistance { chunks: 16 })
-        .add_plugins(chunk_manager::ChunkManagerPlugin)
-        .add_event::<BlockUpdate>()
-        .add_event::<ChangedBlockEvent>()
-        .add_systems(Update, change_player_render_distance)
-        .add_systems(
-            PostUpdate,
-            (
-                handle_block_updates
-                    .run_if(on_event::<BlockUpdate>)
-                    // We want block models to be sent immediately as they are spawned, so it goes:
-                    // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
-                    .before(TransformSystem::TransformPropagate),
-                send_changed_block_event.after(handle_block_updates),
-                save_block_updates_to_database,
-            ),
-        );
+        app.insert_resource(RenderDistance { chunks: 16 })
+            .insert_resource(BlockUpdateCache::default())
+            .init_resource::<Events<BlockUpdate>>()
+            .add_event::<ChangedBlockEvent>()
+            .add_plugins(chunk_manager::ChunkManagerPlugin)
+            .add_systems(Update, change_player_render_distance)
+            .add_systems(
+                PostUpdate,
+                (
+                    handle_block_updates
+                        // We want block models to be sent immediately as they are spawned
+                        // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
+                        .before(TransformSystem::TransformPropagate),
+                    save_blocks_to_database
+                        .run_if(on_timer(Duration::from_secs(5)).or(on_event::<AppExit>)),
+                ),
+            );
     }
 }
 
@@ -151,12 +148,22 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
 #[derive(Event)]
 pub enum BlockUpdate {
     /// Change one block to another.
-    Change {
+    Replace {
         position: BlockPosition,
         block_id: BlockId,
         block_state: Option<BlockState>,
-        /// Keep the current block's entity and do not execute the new block's spawn function
-        keep_entity: bool,
+        block_data: Option<BlockData>,
+    },
+    /// Swap out a block, keeping its entity and block data.
+    Swap {
+        position: BlockPosition,
+        block_id: BlockId,
+        block_state: Option<BlockState>,
+    },
+    /// Set a block's entity data
+    Data {
+        position: BlockPosition,
+        block_data: Option<BlockData>,
     },
 }
 
@@ -164,83 +171,92 @@ pub enum BlockUpdate {
 fn handle_block_updates(
     mut commands: Commands,
     net: Res<Server>,
-    chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
     mut world_map: ResMut<WorldMap>,
-    mut block_events: EventReader<BlockUpdate>,
+    chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
+    mut block_events: ResMut<Events<BlockUpdate>>,
+    mut changed_block_events: EventWriter<ChangedBlockEvent>,
+    mut block_update_cache: ResMut<BlockUpdateCache>,
     mut chunked_updates: Local<HashMap<ChunkPosition, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
-    for event in block_events.read() {
+    for event in block_events.update_drain() {
         match event {
-            BlockUpdate::Change {
+            BlockUpdate::Replace {
                 position,
                 block_id,
                 block_state,
-                keep_entity,
+                ..
+            }
+            | BlockUpdate::Swap {
+                position,
+                block_id,
+                block_state,
             } => {
-                let chunk_position = ChunkPosition::from(*position);
+                let chunk_position = ChunkPosition::from(position);
                 let block_index = position.as_chunk_index();
 
                 let chunk = if let Some(c) = world_map.get_chunk_mut(&chunk_position) {
                     c
                 } else {
-                    panic!("Tried to change block in non-existing chunk");
+                    panic!("Tried to change block in non-existent chunk");
                 };
 
-                chunk[block_index] = *block_id;
-                chunk.set_block_state(block_index, *block_state);
+                chunk[block_index] = block_id;
+                chunk.set_block_state(block_index, block_state);
 
-                if !keep_entity {
+                if let BlockUpdate::Replace { block_data, .. } = &event {
                     if let Some(old_entity) = chunk.block_entities.remove(&block_index) {
                         commands.entity(old_entity).despawn_recursive();
                     }
-                }
 
-                let block_config = Blocks::get().get_config(block_id);
-                if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
-                    let mut entity_commands = if *keep_entity {
-                        if let Some(entity) = chunk.block_entities.get(&block_index) {
-                            commands.entity(*entity)
-                        } else {
-                            commands.spawn(*position)
-                        }
-                    } else {
-                        commands.spawn(*position)
-                    };
+                    let block_config = Blocks::get().get_config(&block_id);
+                    if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
+                        let mut entity_commands = commands.spawn(position);
 
-                    if !keep_entity {
                         if let Some(spawn_fn) = block_config.spawn_entity_fn {
-                            (spawn_fn)(&mut entity_commands, None);
+                            (spawn_fn)(&mut entity_commands, block_data.as_ref());
                         }
-                    }
 
-                    if let Some(model_id) = block_config.model {
-                        let mut transform = Transform::from_translation(
-                            position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
-                        );
-                        if let Some(block_state) = block_state {
-                            if let Some(rotation) = block_state.rotation() {
-                                if let Some(mut rotation_transform) =
-                                    block_config.placement.rotation_transform
-                                {
-                                    rotation_transform
-                                        .rotate_around(DVec3::ZERO, rotation.as_quat());
-                                    transform.translation += rotation_transform.translation;
-                                    transform.rotation *= rotation_transform.rotation;
-                                    transform.scale *= rotation_transform.scale;
+                        if let Some(model_id) = block_config.model {
+                            let mut transform = Transform::from_translation(
+                                position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
+                            );
+                            if let Some(block_state) = block_state {
+                                if let Some(rotation) = block_state.rotation() {
+                                    if let Some(mut rotation_transform) =
+                                        block_config.placement.rotation_transform
+                                    {
+                                        rotation_transform
+                                            .rotate_around(DVec3::ZERO, rotation.as_quat());
+                                        transform.translation += rotation_transform.translation;
+                                        transform.rotation *= rotation_transform.rotation;
+                                        transform.scale *= rotation_transform.scale;
+                                    }
                                 }
                             }
+
+                            entity_commands.insert((Model::Asset(model_id), transform));
                         }
 
-                        entity_commands.insert((Model::Asset(model_id), transform));
+                        chunk
+                            .block_entities
+                            .insert(block_index, entity_commands.id());
                     }
-
-                    chunk
-                        .block_entities
-                        .insert(block_index, entity_commands.id());
                 }
 
                 // TODO: This is slow, see function defintion.
                 chunk.check_visible_faces();
+
+                send_changed_block_event(
+                    &world_map,
+                    &mut changed_block_events,
+                    position,
+                    block_id,
+                    block_state,
+                );
+
+                block_update_cache
+                    .updates
+                    .insert(position, (block_id, block_state));
 
                 // TODO: Need to remove entries when chunks unload
                 let chunked_block_updates = chunked_updates
@@ -249,10 +265,26 @@ fn handle_block_updates(
 
                 chunked_block_updates.push((
                     block_index,
-                    *block_id,
+                    block_id,
                     block_state.map(|b| b.as_u16()),
                 ));
             }
+            _ => (),
+        }
+
+        match event {
+            BlockUpdate::Replace {
+                position,
+                block_data,
+                ..
+            }
+            | BlockUpdate::Data {
+                position,
+                block_data,
+            } => {
+                block_update_cache.block_data.insert(position, block_data);
+            }
+            _ => (),
         }
     }
 
@@ -269,12 +301,16 @@ fn handle_block_updates(
     }
 }
 
-#[derive(Resource, DerefMut, Deref)]
-struct DatabaseSyncTimer(Timer);
+#[derive(Default, Resource)]
+struct BlockUpdateCache {
+    updates: HashMap<BlockPosition, (BlockId, Option<BlockState>)>,
+    block_data: HashMap<BlockPosition, Option<BlockData>>,
+}
 
 async fn save_blocks(
     database: Database,
-    block_updates: Vec<(BlockPosition, (BlockId, Option<BlockState>))>,
+    block_updates: HashMap<BlockPosition, (BlockId, Option<BlockState>)>,
+    block_data: HashMap<BlockPosition, Option<BlockData>>,
 ) {
     let mut conn = database.get_connection();
     let transaction = conn.transaction().unwrap();
@@ -296,118 +332,120 @@ async fn save_blocks(
                 position.y,
                 position.z,
                 block_id,
-                block_state.map(|state| state.0)
+                block_state.map(|state| state.as_u16())
             ])
             .unwrap();
     }
     statement.finalize().unwrap();
+
+    let mut statement = transaction
+        .prepare(
+            r#"
+        update blocks
+        set 
+            block_data = ?
+        where
+            x = ? and y = ? and z = ?
+        "#,
+        )
+        .unwrap();
+
+    for (position, block_data) in block_data {
+        statement
+            .execute(rusqlite::params![
+                block_data.map(|data| data.0),
+                position.x,
+                position.y,
+                position.z,
+            ])
+            .unwrap();
+    }
+    statement.finalize().unwrap();
+
     transaction
         .commit()
         .expect("Failed to write blocks to database.");
 }
 
-fn save_block_updates_to_database(
+fn save_blocks_to_database(
     database: Res<Database>,
-    time: Res<Time>,
-    mut block_events: EventReader<BlockUpdate>,
-    mut sync_timer: ResMut<DatabaseSyncTimer>,
     exit_events: EventReader<AppExit>,
-    mut block_updates: Local<HashMap<BlockPosition, (BlockId, Option<BlockState>)>>,
+    mut cache: ResMut<BlockUpdateCache>,
 ) {
-    for event in block_events.read() {
-        match event {
-            BlockUpdate::Change {
-                position,
-                block_id,
-                block_state,
-                ..
-            } => {
-                block_updates.insert(*position, (*block_id, *block_state));
-            }
-        }
-    }
-
-    sync_timer.tick(time.delta());
-    if sync_timer.just_finished() {
-        let task_pool = IoTaskPool::get();
-        let block_updates = block_updates.drain().collect();
-        task_pool
-            .spawn(save_blocks(database.clone(), block_updates))
-            .detach();
-    }
+    let block_updates = cache.updates.clone();
+    let block_data = cache.block_data.clone();
+    cache.updates.clear();
+    cache.block_data.clear();
 
     if !exit_events.is_empty() {
-        let block_updates = block_updates.drain().collect();
-        future::block_on(save_blocks(database.clone(), block_updates));
+        future::block_on(save_blocks(database.clone(), block_updates, block_data));
+    } else {
+        let task_pool = IoTaskPool::get();
+        task_pool
+            .spawn(save_blocks(database.clone(), block_updates, block_data))
+            .detach();
     }
 }
 
 fn send_changed_block_event(
-    world_map: Res<WorldMap>,
-    mut block_update_events: EventReader<BlockUpdate>,
-    mut changed_block_events: EventWriter<ChangedBlockEvent>,
+    world_map: &WorldMap,
+    changed_block_events: &mut EventWriter<ChangedBlockEvent>,
+    position: BlockPosition,
+    block_id: BlockId,
+    block_state: Option<BlockState>,
 ) {
-    changed_block_events.send_batch(block_update_events.read().map(|event| {
-        match event {
-            BlockUpdate::Change {
-                position,
-                block_id,
-                block_state,
-                ..
-            } => ChangedBlockEvent {
-                position: *position,
-                to: (*block_id, *block_state),
-                top: world_map
-                    .get_block(*position + IVec3::Y)
-                    .map(|block_id| ((block_id, world_map.get_block_state(*position + IVec3::Y)))),
-                bottom: world_map
-                    .get_block(*position - IVec3::Y)
-                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::Y))),
-                right: world_map
-                    .get_block(*position + IVec3::X)
-                    .map(|block_id| (block_id, world_map.get_block_state(*position + IVec3::X))),
-                left: world_map
-                    .get_block(*position - IVec3::X)
-                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::X))),
-                front: world_map
-                    .get_block(*position + IVec3::Z)
-                    .map(|block_id| (block_id, world_map.get_block_state(*position + IVec3::Z))),
-                front_left: world_map
-                    .get_block(*position + IVec3::Z - IVec3::X)
-                    .map(|block_id| {
-                        (
-                            block_id,
-                            world_map.get_block_state(*position + IVec3::Z - IVec3::X),
-                        )
-                    }),
-                front_right: world_map
-                    .get_block(*position + IVec3::Z + IVec3::X)
-                    .map(|block_id| {
-                        (
-                            block_id,
-                            world_map.get_block_state(*position + IVec3::Z + IVec3::X),
-                        )
-                    }),
-                back: world_map
-                    .get_block(*position - IVec3::Z)
-                    .map(|block_id| (block_id, world_map.get_block_state(*position - IVec3::Z))),
-                back_left: world_map
-                    .get_block(*position - IVec3::Z - IVec3::X)
-                    .map(|block_id| {
-                        (
-                            block_id,
-                            world_map.get_block_state(*position - IVec3::Z - IVec3::X),
-                        )
-                    }),
-                back_right: world_map
-                    .get_block(*position - IVec3::Z + IVec3::X)
-                    .map(|block_id| {
-                        (
-                            block_id,
-                            world_map.get_block_state(*position - IVec3::Z + IVec3::X),
-                        )
-                    }),
-            },
-        }
-    }));
+    changed_block_events.send(ChangedBlockEvent {
+        position,
+        to: (block_id, block_state),
+        top: world_map
+            .get_block(position + IVec3::Y)
+            .map(|block_id| ((block_id, world_map.get_block_state(position + IVec3::Y)))),
+        bottom: world_map
+            .get_block(position - IVec3::Y)
+            .map(|block_id| (block_id, world_map.get_block_state(position - IVec3::Y))),
+        right: world_map
+            .get_block(position + IVec3::X)
+            .map(|block_id| (block_id, world_map.get_block_state(position + IVec3::X))),
+        left: world_map
+            .get_block(position - IVec3::X)
+            .map(|block_id| (block_id, world_map.get_block_state(position - IVec3::X))),
+        front: world_map
+            .get_block(position + IVec3::Z)
+            .map(|block_id| (block_id, world_map.get_block_state(position + IVec3::Z))),
+        front_left: world_map
+            .get_block(position + IVec3::Z - IVec3::X)
+            .map(|block_id| {
+                (
+                    block_id,
+                    world_map.get_block_state(position + IVec3::Z - IVec3::X),
+                )
+            }),
+        front_right: world_map
+            .get_block(position + IVec3::Z + IVec3::X)
+            .map(|block_id| {
+                (
+                    block_id,
+                    world_map.get_block_state(position + IVec3::Z + IVec3::X),
+                )
+            }),
+        back: world_map
+            .get_block(position - IVec3::Z)
+            .map(|block_id| (block_id, world_map.get_block_state(position - IVec3::Z))),
+        back_left: world_map
+            .get_block(position - IVec3::Z - IVec3::X)
+            .map(|block_id| {
+                (
+                    block_id,
+                    world_map.get_block_state(position - IVec3::Z - IVec3::X),
+                )
+            }),
+        back_right: world_map
+            .get_block(position - IVec3::Z + IVec3::X)
+            .map(|block_id| {
+                (
+                    block_id,
+                    world_map.get_block_state(position - IVec3::Z + IVec3::X),
+                )
+            }),
+    });
 }
