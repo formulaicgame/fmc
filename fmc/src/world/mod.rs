@@ -36,17 +36,20 @@ impl Plugin for WorldPlugin {
             .init_resource::<Events<BlockUpdate>>()
             .add_event::<ChangedBlockEvent>()
             .add_plugins(chunk_manager::ChunkManagerPlugin)
-            .add_systems(Update, change_player_render_distance)
             .add_systems(
-                PostUpdate,
+                Update,
                 (
-                    handle_block_updates
-                        // We want block models to be sent immediately as they are spawned
-                        // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
-                        .before(TransformSystem::TransformPropagate),
+                    change_player_render_distance,
                     save_blocks_to_database
                         .run_if(on_timer(Duration::from_secs(5)).or(on_event::<AppExit>)),
                 ),
+            )
+            .add_systems(
+                PostUpdate,
+                handle_block_updates
+                    // We want block models to be sent immediately as they are spawned
+                    // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
+                    .before(TransformSystem::TransformPropagate),
             );
     }
 }
