@@ -234,6 +234,8 @@ pub struct AnimationPlayer {
     last_position: DVec3,
     // Animation played when the model is idle
     idle_animation: Option<u32>,
+    // Transition time between move and idle animation
+    transition_time: f32,
     // New animations
     animation_queue: Vec<Animation>,
     // Animations that are playing
@@ -269,19 +271,46 @@ impl AnimationPlayer {
     }
 
     pub fn set_move_animation(&mut self, animation_index: Option<u32>) {
+        if self.move_animation == animation_index {
+            return;
+        }
+
         if let Some(prev) = self.move_animation.take() {
-            self.stop(prev);
+            if self.playing_move_animation {
+                if let Some(new) = animation_index {
+                    let time = self.transition_time;
+                    self.play(new).repeat().transition(prev, time);
+                } else {
+                    self.stop(prev);
+                }
+            }
         }
 
         self.move_animation = animation_index;
     }
 
     pub fn set_idle_animation(&mut self, animation_index: Option<u32>) {
+        if self.idle_animation == animation_index {
+            return;
+        }
+
         if let Some(prev) = self.idle_animation.take() {
-            self.stop(prev);
+            if !self.playing_move_animation {
+                if let Some(new) = animation_index {
+                    let time = self.transition_time;
+                    self.play(new).repeat().transition(prev, time);
+                } else {
+                    self.stop(prev);
+                }
+            }
         }
 
         self.idle_animation = animation_index;
+    }
+
+    /// Set the transition time between the move and the idle animation
+    pub fn set_transition_time(&mut self, duration: f32) {
+        self.transition_time = duration;
     }
 }
 
@@ -446,23 +475,25 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                 .xz()
                 .distance_squared(animation_player.last_position.xz());
 
-            if !animation_player.playing_move_animation && difference > 0.0005 {
+            if !animation_player.playing_move_animation && difference > 0.00001 {
                 animation_player.playing_move_animation = true;
                 if let Some(idle_animation) = animation_player.idle_animation {
+                    let transition = animation_player.transition_time;
                     animation_player
                         .play(move_animation)
                         .repeat()
-                        .transition(idle_animation, 0.25);
+                        .transition(idle_animation, transition);
                 } else {
                     animation_player.play(move_animation).repeat();
                 }
-            } else if animation_player.playing_move_animation && difference < 0.0005 {
+            } else if animation_player.playing_move_animation && difference < 0.00001 {
                 animation_player.playing_move_animation = false;
                 if let Some(idle_animation) = animation_player.idle_animation {
+                    let transition = animation_player.transition_time;
                     animation_player
                         .play(idle_animation)
                         .repeat()
-                        .transition(move_animation, 0.25);
+                        .transition(move_animation, transition);
                 } else {
                     animation_player.stop(move_animation);
                 }

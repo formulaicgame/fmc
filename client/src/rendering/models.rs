@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    animation::{ActiveAnimation, RepeatAnimation},
+    animation::{self, ActiveAnimation, RepeatAnimation},
     gltf::Gltf,
     math::DVec3,
     pbr::NotShadowCaster,
@@ -32,7 +32,7 @@ impl Plugin for ModelPlugin {
                 //render_aabb,
                 handle_transform_updates,
                 interpolate_to_new_transform,
-                advance_transitions,
+                //advance_transitions,
                 play_animations.after(handle_model_add_delete),
             )
                 .run_if(in_state(GameState::Playing)),
@@ -89,7 +89,7 @@ fn handle_model_add_delete(
                 Model::Asset(new_model.asset),
                 AnimationGraphHandle(model_config.animation_graph.clone().unwrap()),
                 AnimationPlayer::default(),
-                Transition::default(),
+                AnimationTransitions::default(),
                 TransformInterpolation::default(),
                 MovesWithOrigin,
             ))
@@ -292,7 +292,7 @@ fn play_animations(
     models: Res<Models>,
     model_entities: Res<ModelEntities>,
     mut model_query: Query<
-        (&mut Model, &mut AnimationPlayer, &mut Transition),
+        (&mut Model, &mut AnimationPlayer, &mut AnimationTransitions),
         With<AnimationGraphHandle>,
     >,
     mut animation_events: EventReader<messages::ModelPlayAnimation>,
@@ -340,9 +340,9 @@ fn play_animations(
 
             transition.play(
                 &mut animation_player,
-                *from_animation_index,
+                //*from_animation_index,
                 *animation_index,
-                duration,
+                Duration::from_secs_f32(duration),
             )
         } else {
             animation_player.play(*animation_index)
@@ -365,51 +365,51 @@ fn play_animations(
     }
 }
 
-#[derive(Component, Default)]
-struct Transition {
-    to: Option<AnimationNodeIndex>,
-    from: Option<AnimationNodeIndex>,
-    decline_per_sec: f32,
-}
+// #[derive(Component, Default)]
+// struct Transition {
+//     to: Option<AnimationNodeIndex>,
+//     from: Option<AnimationNodeIndex>,
+//     decline_per_sec: f32,
+// }
 
-impl Transition {
-    fn play<'p>(
-        &mut self,
-        animation_player: &'p mut AnimationPlayer,
-        from: AnimationNodeIndex,
-        to: AnimationNodeIndex,
-        duration: f32,
-    ) -> &'p mut ActiveAnimation {
-        self.from = Some(from);
-        self.to = Some(to);
-        self.decline_per_sec = 1.0 / duration;
-        animation_player.play(to)
-    }
-}
+// impl Transition {
+//     fn play<'p>(
+//         &mut self,
+//         animation_player: &'p mut AnimationPlayer,
+//         from: AnimationNodeIndex,
+//         to: AnimationNodeIndex,
+//         duration: f32,
+//     ) -> &'p mut ActiveAnimation {
+//         self.from = Some(from);
+//         self.to = Some(to);
+//         self.decline_per_sec = 1.0 / duration;
+//         animation_player.play(to)
+//     }
+// }
 
-fn advance_transitions(mut query: Query<(&mut Transition, &mut AnimationPlayer)>, time: Res<Time>) {
-    for (mut transition, mut player) in query.iter_mut() {
-        let Some(from) = transition.from else {
-            continue;
-        };
-
-        let mut new_weight = 1.0;
-        if let Some(animation) = player.animation_mut(from) {
-            new_weight =
-                (animation.weight() - transition.decline_per_sec * time.delta_secs()).max(0.0);
-            animation.set_weight(new_weight);
-
-            if animation.weight() == 0.0 {
-                player.stop(from);
-                transition.from.take();
-            }
-        };
-
-        if let Some(animation) = transition.to.and_then(|index| player.animation_mut(index)) {
-            animation.set_weight(1.0 - new_weight);
-        }
-    }
-}
+// fn advance_transitions(mut query: Query<(&mut Transition, &mut AnimationPlayer)>, time: Res<Time>) {
+//     for (mut transition, mut player) in query.iter_mut() {
+//         let Some(from) = transition.from else {
+//             continue;
+//         };
+//
+//         let mut new_weight = 1.0;
+//         if let Some(animation) = player.animation_mut(from) {
+//             new_weight =
+//                 (animation.weight() - transition.decline_per_sec * time.delta_secs()).max(0.0);
+//             animation.set_weight(new_weight);
+//
+//             if animation.weight() == 0.0 {
+//                 player.stop(from);
+//                 transition.from.take();
+//             }
+//         };
+//
+//         if let Some(animation) = transition.to.and_then(|index| player.animation_mut(index)) {
+//             animation.set_weight(1.0 - new_weight);
+//         }
+//     }
+// }
 
 fn render_aabb(
     mut commands: Commands,
