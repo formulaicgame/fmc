@@ -2,9 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     bevy::math::DVec3,
-    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks},
+    blocks::{BlockId, BlockPosition, BlockState},
     prelude::*,
-    utils,
     world::{chunk::Chunk, terrain_generation::TerrainGenerator},
 };
 

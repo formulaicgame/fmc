@@ -107,8 +107,8 @@ impl Collider {
 
         let mut intersection = None;
         for aabb in self.iter() {
+            let aabb = aabb.transform(self_transform);
             for other_aabb in other.iter() {
-                let aabb = aabb.transform(self_transform);
                 let other_aabb = other_aabb.transform(other_transform);
                 let new_intersection = aabb.intersection(&other_aabb);
                 intersection = max_intersection(intersection, new_intersection);
@@ -153,6 +153,7 @@ pub struct Physics {
     pub enabled: bool,
     pub acceleration: DVec3,
     pub velocity: DVec3,
+    pub grounded: BVec3,
     pub buoyancy: Option<Buoyancy>,
 }
 
@@ -162,6 +163,7 @@ impl Default for Physics {
             enabled: true,
             acceleration: DVec3::default(),
             velocity: DVec3::default(),
+            grounded: BVec3::FALSE,
             buoyancy: None,
         }
     }
@@ -249,19 +251,29 @@ fn simulate_physics(
             continue;
         }
 
+        if physics.velocity.x != 0.0 {
+            physics.grounded.x = false;
+        }
+        if physics.velocity.y != 0.0 {
+            physics.grounded.y = false;
+        }
+        if physics.velocity.z != 0.0 {
+            physics.grounded.z = false;
+        }
+
         let blocks = Blocks::get();
 
         let mut friction = DVec3::ZERO;
 
         for directional_velocity in [
             DVec3::new(0.0, physics.velocity.y, 0.0),
-            DVec3::new(physics.velocity.x, 0.0, 0.0),
-            DVec3::new(0.0, 0.0, physics.velocity.z),
+            DVec3::new(physics.velocity.x, 0.0, physics.velocity.z),
         ] {
             let pos_after_move = transform.with_translation(
                 transform.translation + directional_velocity * time.delta_secs_f64(),
             );
 
+            // TODO: Allocation is unnecessary
             // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();
             let (min, max) = entity_collider.min_max(&pos_after_move);
@@ -330,6 +342,7 @@ fn simulate_physics(
 
                     move_back.y = collision.y + collision.y / 100.0;
                     physics.velocity.y = 0.0;
+                    physics.grounded.y = true;
                 } else if resolution_axis == backwards_time.x {
                     if physics.velocity.x.is_sign_positive() {
                         friction = friction.max(DVec3::splat(block_friction.left));
@@ -339,6 +352,7 @@ fn simulate_physics(
 
                     move_back.x = collision.x + collision.x / 100.0;
                     physics.velocity.x = 0.0;
+                    physics.grounded.x = true;
                 } else if resolution_axis == backwards_time.z {
                     if physics.velocity.z.is_sign_positive() {
                         friction = friction.max(DVec3::splat(block_friction.back));
@@ -348,6 +362,7 @@ fn simulate_physics(
 
                     move_back.z = collision.z + collision.z / 100.0;
                     physics.velocity.z = 0.0;
+                    physics.grounded.z = true;
                 } else {
                     // When physics.velocity is really small there's numerical precision problems. Since a
                     // resolution is guaranteed. Move it back by whatever the smallest resolution
