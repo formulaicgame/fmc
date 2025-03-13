@@ -25,6 +25,7 @@ pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ChunkUnloadEvent>()
+            .add_event::<ChunkLoadEvent>()
             .add_event::<ChunkSubscriptionEvent>()
             .insert_resource(ChunkSubscriptions::default())
             .add_systems(PostUpdate, add_and_remove_subscribers)
@@ -81,9 +82,16 @@ pub struct ChunkSubscriptionEvent {
     pub chunk_position: ChunkPosition,
 }
 
-// Event sent when the server should unload a chunk and its associated entities.
-#[derive(Event)]
+/// Event sent when a chunk is being unloaded.
+#[derive(Event, Debug)]
 pub struct ChunkUnloadEvent(pub ChunkPosition);
+
+/// Event sent when a chunk has just been loaded.
+#[derive(Event, Debug)]
+pub struct ChunkLoadEvent {
+    /// The position of the chunk
+    pub position: ChunkPosition,
+}
 
 // Keeps track of which players are subscribed to which chunks. Clients will get updates for
 // everything that happens within a chunk it is subscribed to.
@@ -361,11 +369,16 @@ fn handle_chunk_loading_tasks(
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut origin_query: Query<&mut PlayerChunkOrigin>,
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
+    mut chunk_load_event_writer: EventWriter<ChunkLoadEvent>,
 ) {
     for (entity, mut task) in chunks.iter_mut() {
         if let Some((new_chunk_position, chunk)) = future::block_on(future::poll_once(&mut task.0))
         {
             commands.entity(entity).despawn();
+
+            chunk_load_event_writer.send(ChunkLoadEvent {
+                position: new_chunk_position,
+            });
 
             let Some(subscribers) = chunk_subscriptions
                 .chunk_to_subscribers
