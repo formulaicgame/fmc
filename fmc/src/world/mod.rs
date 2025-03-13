@@ -23,7 +23,9 @@ mod chunk_manager;
 mod map;
 mod terrain_generation;
 
-pub use chunk_manager::{ChunkSubscriptionEvent, ChunkSubscriptions};
+pub use chunk_manager::{
+    ChunkLoadEvent, ChunkSubscriptionEvent, ChunkSubscriptions, ChunkUnloadEvent,
+};
 pub use map::WorldMap;
 pub use terrain_generation::{blueprints, Surface, TerrainFeature, TerrainGenerator};
 
@@ -315,7 +317,7 @@ async fn save_blocks(
     block_updates: HashMap<BlockPosition, (BlockId, Option<BlockState>)>,
     block_data: HashMap<BlockPosition, Option<BlockData>>,
 ) {
-    let mut conn = database.get_connection();
+    let mut conn = database.get_read_connection();
     let transaction = conn.transaction().unwrap();
     let mut statement = transaction
         .prepare(

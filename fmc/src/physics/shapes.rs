@@ -55,9 +55,9 @@ impl Aabb {
     pub fn transform(&self, transform: &Transform) -> Self {
         let rot_mat = DMat3::from_quat(transform.rotation);
         // If you rotate a square normally, its aabb will grow larger at 45 degrees because the
-        // diagonal the square is longer and pointing in the axis direction. We don't want
-        // our aabb to grow larger, we want uniform aabb to stay constant because they are easier
-        // to deal with.
+        // diagonal of the square is longer and pointing in the axis direction. We don't want
+        // our aabbs to grow larger, we want a constant volume because they are easier to deal with
+        // in physics. Lets us use uniform aabbs without worrying about contortions.
         //
         // let abs_rot_mat = DMat3::from_cols(
         //     rot_mat.x_axis.abs(),
@@ -65,12 +65,11 @@ impl Aabb {
         //     rot_mat.z_axis.abs(),
         // );
         //
-        // This is how you do it normally, each column will have a euclidian length of 1. At a 45
+        // This is how you do it normally, each column will have a euclidean distance of 1. At a 45
         // degree angle around the y axis, this will give an x_axis of
         // [sqrt(2)/2=0.707, 0.0, 0.707], i.e. take 70% of the x extent and 70% of the z
         // extent. We want it to only take 50%. This is done by normalizing it so its total
-        // SUM is 1. For visualization this is like rotating it around a "diamond" instead of a
-        // circle.
+        // sum is 1.
         let abs_rot_mat = DMat3::from_cols(
             rot_mat.x_axis.abs() / rot_mat.x_axis.abs().element_sum(),
             rot_mat.y_axis.abs() / rot_mat.y_axis.abs().element_sum(),

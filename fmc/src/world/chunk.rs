@@ -230,7 +230,7 @@ impl IndexMut<usize> for Chunk {
     }
 }
 
-#[derive(Deref, DerefMut, Hash, Clone, Copy, PartialEq, Eq)]
+#[derive(Deref, DerefMut, Hash, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ChunkPosition(pub IVec3);
 
 impl ChunkPosition {

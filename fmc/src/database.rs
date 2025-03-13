@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use bevy::prelude::*;
 use indexmap::IndexSet;
@@ -46,44 +49,65 @@ impl Database {
         &self.0.path
     }
 }
+
 // TODO: Two modes, one where it saves only changes to disk and one where it saves all chunk data.
 //       Changes are best for single instances that don't care about the cpu load of re-generating
 //       chunks. For large servers it is preferable to save cpu at the cost of storage.
 // TODO: Implement connection pool
 struct DatabaseInner {
+    write_connection: Mutex<rusqlite::Connection>,
     path: String,
     //pub pool: Mutex<Vec<rusqlite::Connection>>
 }
 
-//pub struct Connection {
-//    pool: Arc<Database>,
-//    conn: rusqlite::Connection
-//}
-//
+#[derive(Deref, DerefMut)]
+pub struct WriteConnection<'a> {
+    conn: MutexGuard<'a, rusqlite::Connection>,
+}
+
+// pub struct ReadConnection {
+//     database: Database
+//     conn: ...
+// }
+
 //impl Drop for Connection {
 //    fn drop(&mut self) {
-//        self.pool.put_back(self.conn);
+//        self.database.put_back(self.conn);
 //    }
 //}
 
 // TODO: Extract functions and have them take a connection instead?
 impl Database {
     pub fn new(path: String) -> Self {
-        return Self(Arc::new(DatabaseInner { path }));
+        let write_connection = rusqlite::Connection::open(&path).unwrap();
+        write_connection
+            .execute_batch(
+                "PRAGMA journal_mode = wal;
+                    PRAGMA synchronous = 1;",
+            )
+            .unwrap();
+
+        return Self(Arc::new(DatabaseInner {
+            write_connection: Mutex::new(write_connection),
+            path,
+        }));
     }
 
-    pub fn get_connection(&self) -> rusqlite::Connection {
+    /// Get the write connection.
+    pub fn get_write_connection(&self) -> WriteConnection {
+        WriteConnection {
+            conn: self.0.write_connection.lock().unwrap(),
+        }
+    }
+
+    /// Get a connection to read from the database. Note that this is only semantic, you can
+    /// use it to write, but that WILL lead to errors. Use `get_write_connection` instead.
+    pub fn get_read_connection(&self) -> rusqlite::Connection {
         return rusqlite::Connection::open(self.path()).unwrap();
-        //return rusqlite::Connection::open_with_flags(
-        //    MEMORY_DATABASE_PATH,
-        //    rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,
-        //)
-        //.unwrap();
     }
 
     pub fn build(&self) {
-        let conn = self.get_connection();
-        conn.pragma_update(None, "journal_mode", "wal").unwrap();
+        let conn = self.get_write_connection();
 
         //conn.execute("drop table if exists blocks", []).unwrap();
         conn.execute("drop table if exists block_ids", []).unwrap();
@@ -106,7 +130,7 @@ impl Database {
              )",
             [],
         )
-        .expect("Could not create block table");
+        .expect("Could not create 'blocks' table");
 
         conn.execute(
             "create table if not exists block_ids (
@@ -115,7 +139,7 @@ impl Database {
                 )",
             [],
         )
-        .expect("Could not create block_ids table");
+        .expect("Could not create 'block_ids' table");
 
         conn.execute(
             "create table if not exists item_ids (
@@ -124,7 +148,7 @@ impl Database {
                 )",
             [],
         )
-        .expect("Could not create item_ids table");
+        .expect("Could not create 'item_ids' table");
 
         conn.execute(
             "create table if not exists model_ids (
@@ -133,7 +157,7 @@ impl Database {
                 )",
             [],
         )
-        .expect("Could not create model_ids table");
+        .expect("Could not create 'model_ids' table");
 
         // All data about a player is stored in the save field. Its format is decided by the program.
         conn.execute(
@@ -143,7 +167,7 @@ impl Database {
                 )",
             [],
         )
-        .expect("Could not create players table");
+        .expect("Could not create 'players' table");
 
         // General persistent storage
         conn.execute(
@@ -153,7 +177,7 @@ impl Database {
                 )",
             [],
         )
-        .expect("Could not create struct storage table");
+        .expect("Could not create 'storage' table");
     }
 
     // TODO: rusqlite doesn't drop stuff correctly so there's all kinds of errors when you don't
@@ -267,7 +291,7 @@ impl Database {
         &self,
         position: &IVec3,
     ) -> HashMap<usize, (BlockId, Option<BlockState>, Option<BlockData>)> {
-        let conn = self.get_connection();
+        let conn = self.get_read_connection();
 
         let mut block_stmt = conn
             .prepare(
@@ -480,7 +504,7 @@ impl Database {
             block_names.push(block_name.to_owned());
         }
 
-        let mut conn = self.get_connection();
+        let mut conn = self.get_write_connection();
         let tx = conn.transaction().unwrap();
 
         let mut stmt = tx
@@ -498,7 +522,7 @@ impl Database {
     }
 
     pub fn load_block_ids(&self) -> HashMap<String, BlockId> {
-        let conn = self.get_connection();
+        let conn = self.get_read_connection();
         let mut stmt = conn.prepare("SELECT * FROM block_ids").unwrap();
         let mut rows = stmt.query([]).unwrap();
 
@@ -536,7 +560,7 @@ impl Database {
             );
         }
 
-        let mut conn = self.get_connection();
+        let mut conn = self.get_write_connection();
         let tx = conn.transaction().unwrap();
 
         let mut stmt = tx
@@ -553,7 +577,7 @@ impl Database {
     }
 
     pub fn load_item_ids(&self) -> HashMap<String, ItemId> {
-        let conn = self.get_connection();
+        let conn = self.get_read_connection();
         let mut stmt = conn.prepare("SELECT * FROM item_ids").unwrap();
         let mut rows = stmt.query([]).unwrap();
 
@@ -587,7 +611,7 @@ impl Database {
             );
         }
 
-        let mut conn = self.get_connection();
+        let mut conn = self.get_write_connection();
         let tx = conn.transaction().unwrap();
 
         let mut stmt = tx
@@ -605,7 +629,7 @@ impl Database {
 
     // Load model names sorted by their model ids
     pub fn load_models(&self) -> IndexSet<String> {
-        let conn = self.get_connection();
+        let conn = self.get_read_connection();
         let mut stmt = conn.prepare("SELECT name FROM model_ids").unwrap();
         let mut rows = stmt.query([]).unwrap();
 
