@@ -27,51 +27,70 @@ impl Plugin for ChunkManagerPlugin {
         app.add_event::<ChunkUnloadEvent>()
             .add_event::<ChunkLoadEvent>()
             .add_event::<ChunkSubscriptionEvent>()
+            .add_event::<ChunkSimulationEvent>()
             .insert_resource(ChunkSubscriptions::default())
-            .add_systems(PostUpdate, add_and_remove_subscribers)
+            .insert_resource(SimulatedChunks::default())
             .add_systems(
                 Update,
                 (
-                    add_player_chunk_origin,
+                    add_player_chunk_tracker,
                     update_player_chunk_origin,
+                    update_simulated_chunks.after(update_player_chunk_origin),
                     (
                         subscribe_to_visible_chunks,
-                        handle_chunk_subscription_events,
+                        manage_subscriptions,
                         handle_chunk_loading_tasks,
                     )
-                        .chain(),
-                    unsubscribe_from_chunks,
+                        .chain()
+                        .after(update_player_chunk_origin),
                     unload_chunks,
                 ),
             );
     }
 }
 
-/// The position of the chunk the player is currently in.
 #[derive(Component)]
-struct PlayerChunkOrigin(ChunkPosition);
+struct ChunkTracker {
+    // The chunk the player is currently/previously in. Ticks they differ are when the player
+    // changed, otherwise they are equal.
+    current_origin: ChunkPosition,
+    prev_origin: ChunkPosition,
+    // Set whenever a new chunk is loaded so it can attempt to load more
+    try_subscribe: bool,
+}
 
-fn add_player_chunk_origin(
+impl ChunkTracker {
+    fn new(chunk_position: ChunkPosition) -> Self {
+        Self {
+            current_origin: chunk_position,
+            prev_origin: chunk_position,
+            try_subscribe: true,
+        }
+    }
+
+    fn set_origin(&mut self, chunk_position: ChunkPosition) {
+        self.prev_origin = self.current_origin;
+        self.current_origin = chunk_position;
+    }
+}
+
+fn add_player_chunk_tracker(
     mut commands: Commands,
     player_query: Query<(Entity, &GlobalTransform), Added<Player>>,
 ) {
     for (entity, transform) in player_query.iter() {
         commands
             .entity(entity)
-            .insert(PlayerChunkOrigin(ChunkPosition::from(
+            .insert(ChunkTracker::new(ChunkPosition::from(
                 transform.translation(),
             )));
     }
 }
 
-fn update_player_chunk_origin(
-    mut player_query: Query<(&mut PlayerChunkOrigin, &GlobalTransform), Changed<GlobalTransform>>,
-) {
-    for (mut chunk_origin, transform) in player_query.iter_mut() {
+fn update_player_chunk_origin(mut player_query: Query<(&mut ChunkTracker, &GlobalTransform)>) {
+    for (mut chunk_tracker, transform) in player_query.iter_mut() {
         let chunk_position = ChunkPosition::from(transform.translation());
-        if chunk_origin.0 != chunk_position {
-            chunk_origin.0 = chunk_position;
-        }
+        chunk_tracker.set_origin(chunk_position);
     }
 }
 
@@ -84,7 +103,9 @@ pub struct ChunkSubscriptionEvent {
 
 /// Event sent when a chunk is being unloaded.
 #[derive(Event, Debug)]
-pub struct ChunkUnloadEvent(pub ChunkPosition);
+pub struct ChunkUnloadEvent {
+    pub position: ChunkPosition,
+}
 
 /// Event sent when a chunk has just been loaded.
 #[derive(Event, Debug)]
@@ -107,50 +128,16 @@ impl ChunkSubscriptions {
     }
 }
 
-fn add_and_remove_subscribers(
-    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    mut network_events: EventReader<NetworkEvent>,
-    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
-) {
-    for event in network_events.read() {
-        match event {
-            NetworkEvent::Connected { entity } => {
-                chunk_subscriptions
-                    .subscriber_to_chunks
-                    .insert(*entity, HashSet::default());
-            }
-            NetworkEvent::Disconnected { entity } => {
-                let subscribed_chunks = chunk_subscriptions
-                    .subscriber_to_chunks
-                    .remove(entity)
-                    .unwrap();
-
-                for chunk_position in subscribed_chunks {
-                    let subscribers = chunk_subscriptions
-                        .chunk_to_subscribers
-                        .get_mut(&chunk_position)
-                        .unwrap();
-                    subscribers.remove(entity);
-
-                    if subscribers.len() == 0 {
-                        chunk_subscriptions
-                            .chunk_to_subscribers
-                            .remove(&chunk_position);
-                        unload_chunk_events.send(ChunkUnloadEvent(chunk_position));
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn handle_chunk_subscription_events(
+fn manage_subscriptions(
     mut commands: Commands,
     net: Res<Server>,
     world_map: Res<WorldMap>,
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    player_origin_query: Query<(Entity, &ChunkTracker, &RenderDistance), Changed<ChunkTracker>>,
+    mut network_events: EventReader<NetworkEvent>,
     mut subscription_events: EventReader<ChunkSubscriptionEvent>,
+    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
@@ -190,27 +177,18 @@ fn handle_chunk_subscription_events(
             commands.spawn(ChunkLoadingTask(task));
         };
     }
-}
 
-fn unsubscribe_from_chunks(
-    chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
-    player_origin_query: Query<
-        (Entity, &PlayerChunkOrigin, &RenderDistance),
-        Changed<PlayerChunkOrigin>,
-    >,
-) {
-    // reborrow to make split borrowing work.
+    // reborrow for split borrow
     let chunk_subscriptions = chunk_subscriptions.into_inner();
 
-    for (entity, origin, render_distance) in player_origin_query.iter() {
+    for (entity, tracker, render_distance) in player_origin_query.iter() {
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get_mut(&entity)
             .unwrap();
 
         let removed = subscribed_chunks.extract_if(|chunk_position| {
-            let distance = (*chunk_position - origin.0).abs() / Chunk::SIZE as i32;
+            let distance = (*chunk_position - tracker.current_origin).abs() / Chunk::SIZE as i32;
             if distance
                 .cmpgt(IVec3::splat(render_distance.chunks as i32))
                 .any()
@@ -232,7 +210,46 @@ fn unsubscribe_from_chunks(
                 chunk_subscriptions
                     .chunk_to_subscribers
                     .remove(&chunk_position);
-                unload_chunk_events.send(ChunkUnloadEvent(chunk_position));
+                if world_map.contains_chunk(&chunk_position) {
+                    unload_chunk_events.send(ChunkUnloadEvent {
+                        position: chunk_position,
+                    });
+                }
+            }
+        }
+    }
+
+    for event in network_events.read() {
+        match event {
+            NetworkEvent::Connected { entity } => {
+                chunk_subscriptions
+                    .subscriber_to_chunks
+                    .insert(*entity, HashSet::default());
+            }
+            NetworkEvent::Disconnected { entity } => {
+                let subscribed_chunks = chunk_subscriptions
+                    .subscriber_to_chunks
+                    .remove(entity)
+                    .unwrap();
+
+                for chunk_position in subscribed_chunks {
+                    let subscribers = chunk_subscriptions
+                        .chunk_to_subscribers
+                        .get_mut(&chunk_position)
+                        .unwrap();
+                    subscribers.remove(entity);
+
+                    if subscribers.len() == 0 {
+                        chunk_subscriptions
+                            .chunk_to_subscribers
+                            .remove(&chunk_position);
+                        if world_map.contains_chunk(&chunk_position) {
+                            unload_chunk_events.send(ChunkUnloadEvent {
+                                position: chunk_position,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -263,29 +280,30 @@ struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 fn subscribe_to_visible_chunks(
     world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    // NOTE: It's not restricted to running only when the origin is changed. Every time a new chunk
-    // is loaded for a player the origin is mutably accessed to trigger the change detection.
-    changed_origin_query: Query<
-        (Entity, &PlayerChunkOrigin, &RenderDistance),
-        Changed<PlayerChunkOrigin>,
-    >,
+    mut changed_origin_query: Query<(Entity, &mut ChunkTracker, &RenderDistance)>,
     mut subscription_events: EventWriter<ChunkSubscriptionEvent>,
     mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
     mut already_visited: Local<HashSet<ChunkPosition>>,
 ) {
-    for (player_entity, chunk_origin, render_distance) in changed_origin_query.iter() {
+    for (player_entity, mut chunk_tracker, render_distance) in changed_origin_query.iter_mut() {
+        if !chunk_tracker.try_subscribe && chunk_tracker.current_origin == chunk_tracker.prev_origin
+        {
+            continue;
+        }
+        chunk_tracker.try_subscribe = false;
+
         already_visited.clear();
-        already_visited.insert(chunk_origin.0);
+        already_visited.insert(chunk_tracker.current_origin);
 
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get(&player_entity)
             .unwrap();
 
-        if !subscribed_chunks.contains(&chunk_origin.0) {
+        if !subscribed_chunks.contains(&chunk_tracker.current_origin) {
             subscription_events.send(ChunkSubscriptionEvent {
                 player_entity,
-                chunk_position: chunk_origin.0,
+                chunk_position: chunk_tracker.current_origin,
             });
         }
 
@@ -298,7 +316,7 @@ fn subscribe_to_visible_chunks(
             ChunkFace::Back,
         ] {
             queue.push((
-                chunk_face.shift_position(chunk_origin.0),
+                chunk_face.shift_position(chunk_tracker.current_origin),
                 chunk_face.opposite(),
                 chunk_face.opposite(),
             ));
@@ -336,7 +354,7 @@ fn subscribe_to_visible_chunks(
             for to_face in surrounding {
                 let adjacent_position = to_face.shift_position(chunk_position);
                 let distance_to_adjacent =
-                    *(adjacent_position - chunk_origin.0) / Chunk::SIZE as i32;
+                    *(adjacent_position - chunk_tracker.current_origin) / Chunk::SIZE as i32;
                 if distance_to_adjacent
                     .abs()
                     .cmpgt(IVec3::splat(render_distance.chunks as i32))
@@ -367,7 +385,7 @@ fn handle_chunk_loading_tasks(
     net: Res<Server>,
     mut world_map: ResMut<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut origin_query: Query<&mut PlayerChunkOrigin>,
+    mut chunk_tracker_query: Query<&mut ChunkTracker>,
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
     mut chunk_load_event_writer: EventWriter<ChunkLoadEvent>,
 ) {
@@ -493,9 +511,9 @@ fn handle_chunk_loading_tasks(
 
             // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
             // where it last stopped.
-            let mut iter = origin_query.iter_many_mut(subscribers.iter());
-            while let Some(mut origin) = iter.fetch_next() {
-                origin.set_changed();
+            let mut iter = chunk_tracker_query.iter_many_mut(subscribers.iter());
+            while let Some(mut tracker) = iter.fetch_next() {
+                tracker.try_subscribe = true;
             }
 
             net.send_many(
@@ -516,7 +534,7 @@ fn unload_chunks(
     mut unload_chunk_events: EventReader<ChunkUnloadEvent>,
 ) {
     for event in unload_chunk_events.read() {
-        let Some(chunk) = world_map.remove_chunk(&event.0) else {
+        let Some(chunk) = world_map.remove_chunk(&event.position) else {
             // A chunk might be unsubscribed to in the space of time it takes to generate it, so it
             // will never be added to the world map.
             continue;
@@ -524,6 +542,129 @@ fn unload_chunks(
 
         for entity in chunk.block_entities.values() {
             commands.entity(*entity).despawn_recursive();
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct SimulatedChunks {
+    chunks: HashMap<ChunkPosition, u32>,
+}
+
+impl SimulatedChunks {
+    fn insert(&mut self, chunk_position: ChunkPosition) -> bool {
+        if let Some(count) = self.chunks.get_mut(&chunk_position) {
+            *count += 1;
+            false
+        } else {
+            self.chunks.insert(chunk_position, 1);
+            true
+        }
+    }
+
+    fn remove(&mut self, chunk_position: &ChunkPosition) -> bool {
+        let count = self.chunks.get_mut(chunk_position).unwrap();
+        *count -= 1;
+        if *count == 0 {
+            self.chunks.remove(chunk_position);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_simulated(&self, chunk_position: &ChunkPosition) -> bool {
+        self.chunks.contains_key(chunk_position)
+    }
+}
+
+#[derive(Event)]
+pub enum ChunkSimulationEvent {
+    Start(ChunkPosition),
+    Stop(ChunkPosition),
+}
+
+const SIMULATION_DISTANCE: i32 = 5;
+
+fn update_simulated_chunks(
+    world_map: Res<WorldMap>,
+    mut simulated_chunks: ResMut<SimulatedChunks>,
+    players: Query<Ref<ChunkTracker>>,
+    mut chunk_load_events: EventReader<ChunkLoadEvent>,
+    mut chunk_unload_events: EventReader<ChunkUnloadEvent>,
+    mut simulation_event_writer: EventWriter<ChunkSimulationEvent>,
+) {
+    for chunk_tracker in players.iter() {
+        if chunk_tracker.is_added() {
+            for x in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                for y in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                    for z in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                        let x = x * Chunk::SIZE as i32;
+                        let y = y * Chunk::SIZE as i32;
+                        let z = z * Chunk::SIZE as i32;
+                        let chunk_position =
+                            ChunkPosition::new(x, y, z) + chunk_tracker.current_origin;
+
+                        if simulated_chunks.insert(chunk_position)
+                            && world_map.contains_chunk(&chunk_position)
+                        {
+                            simulation_event_writer
+                                .send(ChunkSimulationEvent::Start(chunk_position));
+                        }
+                    }
+                }
+            }
+        } else if chunk_tracker.current_origin != chunk_tracker.prev_origin {
+            for x in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                for z in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                    for y in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
+                        let x = x * Chunk::SIZE as i32;
+                        let y = y * Chunk::SIZE as i32;
+                        let z = z * Chunk::SIZE as i32;
+                        let offset = ChunkPosition::new(x, y, z);
+                        let old_position = chunk_tracker.prev_origin + offset;
+                        let new_position = chunk_tracker.current_origin + offset;
+
+                        if (new_position - chunk_tracker.prev_origin)
+                            .abs()
+                            .max_element()
+                            > SIMULATION_DISTANCE * Chunk::SIZE as i32
+                        {
+                            if simulated_chunks.insert(new_position)
+                                && world_map.contains_chunk(&new_position)
+                            {
+                                simulation_event_writer
+                                    .send(ChunkSimulationEvent::Start(new_position));
+                            }
+                        }
+
+                        if (old_position - chunk_tracker.current_origin)
+                            .abs()
+                            .max_element()
+                            > SIMULATION_DISTANCE * Chunk::SIZE as i32
+                        {
+                            if simulated_chunks.remove(&old_position)
+                                && world_map.contains_chunk(&old_position)
+                            {
+                                simulation_event_writer
+                                    .send(ChunkSimulationEvent::Stop(old_position));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for chunk_load_event in chunk_load_events.read() {
+        if simulated_chunks.is_simulated(&chunk_load_event.position) {
+            simulation_event_writer.send(ChunkSimulationEvent::Start(chunk_load_event.position));
+        }
+    }
+
+    for chunk_unload_event in chunk_unload_events.read() {
+        if simulated_chunks.is_simulated(&chunk_unload_event.position) {
+            simulation_event_writer.send(ChunkSimulationEvent::Stop(chunk_unload_event.position));
         }
     }
 }

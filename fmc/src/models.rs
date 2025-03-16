@@ -371,10 +371,8 @@ impl ModelMap {
             if current_chunk_pos == &chunk_position {
                 return;
             } else {
-                let past_chunk_pos = self.entity2position.remove(&entity).unwrap();
-
                 self.position2entity
-                    .get_mut(&past_chunk_pos)
+                    .get_mut(&*current_chunk_pos)
                     .unwrap()
                     .remove(&entity);
 
@@ -403,21 +401,21 @@ fn remove_models(
     mut deleted_models: RemovedComponents<Model>,
 ) {
     for entity in deleted_models.read() {
-        let chunk_pos = if let Some(position) = model_map.entity2position.remove(&entity) {
-            model_map
-                .position2entity
-                .get_mut(&position)
-                .unwrap()
-                .remove(&entity);
-            position
-        } else {
+        let Some(chunk_position) = model_map.entity2position.remove(&entity) else {
             // TODO: This if condition can be removed, I just want to test for a while that I didn't
             // mess up.
             panic!("All models that are spawned should be entered into the model map. \
                    If when trying to delete a model it doesn't exist in the model map that is big bad.")
         };
 
-        if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_pos) {
+        let chunk = model_map.position2entity.get_mut(&chunk_position).unwrap();
+        chunk.remove(&entity);
+
+        if chunk.is_empty() {
+            model_map.position2entity.remove(&chunk_position);
+        }
+
+        if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) {
             net.send_many(subs, messages::DeleteModel { id: entity.index() });
         }
     }

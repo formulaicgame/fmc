@@ -24,7 +24,8 @@ mod map;
 mod terrain_generation;
 
 pub use chunk_manager::{
-    ChunkLoadEvent, ChunkSubscriptionEvent, ChunkSubscriptions, ChunkUnloadEvent,
+    ChunkLoadEvent, ChunkSimulationEvent, ChunkSubscriptionEvent, ChunkSubscriptions,
+    ChunkUnloadEvent,
 };
 pub use map::WorldMap;
 pub use terrain_generation::{blueprints, Surface, TerrainFeature, TerrainGenerator};
