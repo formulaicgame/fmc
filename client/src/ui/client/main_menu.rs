@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 
 use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
 use crossbeam::{Receiver, Sender};
@@ -263,8 +263,12 @@ async fn download_game(url: String, result_path: String, reporter: Sender<Downlo
     // TODO: https://github.com/rust-lang/rust/issues/130804
     let mut file = std::io::BufWriter::new(file);
 
-    let size = response.header("content-length").unwrap().parse().unwrap();
-    let mut reader = response.into_reader();
+    let size = response.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mut reader = response.into_body().into_reader();
     let mut downloaded = 0;
     loop {
         let mut buf = vec![0; 2048];

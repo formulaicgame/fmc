@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -167,7 +167,12 @@ fn get_rust() {
     };
 
     let mut buf = Vec::with_capacity(10 * 1024 * 1024);
-    if response.into_reader().read_to_end(&mut buf).is_err() {
+    if response
+        .into_body()
+        .into_reader()
+        .read_to_end(&mut buf)
+        .is_err()
+    {
         return;
     };
 
