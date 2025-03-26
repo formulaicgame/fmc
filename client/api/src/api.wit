@@ -81,6 +81,7 @@ world plugin {
     export init-plugin: func();
     export set-update-frequency: func() -> option<f32>;
     export update: func();
+    export handle-server-data: func(data: list<u8>);
 
     import log: func(msg: string);
 

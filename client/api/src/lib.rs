@@ -7,6 +7,8 @@ pub trait Plugin: Send + Sync {
 
     fn update(&mut self);
 
+    fn handle_server_data(&mut self, _data: Vec<u8>) {}
+
     fn set_update_frequency(&mut self) -> Option<f32> {
         None
     }
@@ -81,5 +83,9 @@ impl wit::Guest for Component {
 
     fn update() {
         plugin().update()
+    }
+
+    fn handle_server_data(data: Vec<u8>) {
+        plugin().handle_server_data(data)
     }
 }

@@ -95,8 +95,27 @@ pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
 // jump from ~300 micros to ~30 when going from debug to release. What causes this?
 fn run_plugins(world: &mut World) {
     let mut host = world.remove_resource::<WasmHost>().unwrap();
+    let mut data_events = world
+        .remove_resource::<Events<messages::PluginData>>()
+        .unwrap();
+
     let state = host.store.data_mut();
     state._world = Some(world as *mut World);
+
+    for plugin_data in data_events.update_drain() {
+        let Some(plugin) = host.enabled.get(&plugin_data.plugin) else {
+            error!(
+                "Received data for plugin with name '{}', but there is no plugin by that name",
+                &plugin_data.plugin
+            );
+            continue;
+        };
+
+        plugin
+            .plugin
+            .call_handle_server_data(&mut host.store, &plugin_data.data)
+            .unwrap();
+    }
 
     host.cache_keyboard_input();
 
@@ -119,6 +138,7 @@ fn run_plugins(world: &mut World) {
         }
     }
 
+    world.insert_resource(data_events);
     world.insert_resource(host);
 }
 
