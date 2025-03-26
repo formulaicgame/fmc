@@ -35,6 +35,7 @@ impl Plugin for ModelPlugin {
                         .before(send_animations)
                         .after(TransformSystem::TransformPropagate),
                     send_animations,
+                    send_color,
                     remove_models,
                     send_model_transform,
                     update_visibility.after(TransformSystem::TransformPropagate),
@@ -167,9 +168,7 @@ pub enum Model {
         mesh_normals: Vec<[f32; 3]>,
         /// Texture uvs
         mesh_uvs: Option<Vec<[f32; 2]>>,
-        /// Base color, hex encoded srgb
-        material_base_color: String,
-        /// Color texture of the mesh, pre-light color is material_base_color * this texture
+        /// Color texture of the mesh
         material_color_texture: Option<String>,
         /// Texture used for parallax mapping
         material_parallax_texture: Option<String>,
@@ -182,6 +181,34 @@ pub enum Model {
         /// Collider
         collider: Option<Collider>,
     },
+}
+
+#[derive(Component, PartialEq)]
+pub struct ModelColor {
+    red: f32,
+    green: f32,
+    blue: f32,
+    alpha: f32,
+}
+
+impl ModelColor {
+    const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
+
+    pub const fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha,
+        }
+    }
+
+    fn to_hex(&self) -> String {
+        let [r, g, b, a] = [self.red, self.green, self.blue, self.alpha]
+            .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+
+        format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+    }
 }
 
 #[derive(Component, Default)]
@@ -372,7 +399,7 @@ impl ModelMap {
                 return;
             } else {
                 self.position2entity
-                    .get_mut(&*current_chunk_pos)
+                    .get_mut(current_chunk_pos)
                     .unwrap()
                     .remove(&entity);
 
@@ -416,7 +443,12 @@ fn remove_models(
         }
 
         if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) {
-            net.send_many(subs, messages::DeleteModel { id: entity.index() });
+            net.send_many(
+                subs,
+                messages::DeleteModel {
+                    model_id: entity.index(),
+                },
+            );
         }
     }
 }
@@ -449,7 +481,7 @@ fn send_model_transform(
         net.send_many(
             subs,
             messages::ModelUpdateTransform {
-                id: entity.index(),
+                model_id: entity.index(),
                 position: transform.translation,
                 rotation: transform.rotation.as_quat(),
                 scale: transform.scale.as_vec3(),
@@ -527,7 +559,7 @@ fn update_model_assets(
         net.send_many(
             subs,
             messages::ModelUpdateAsset {
-                id: entity.index(),
+                model_id: entity.index(),
                 asset: model_id,
             },
         );
@@ -539,11 +571,17 @@ fn update_visibility(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<
-        (Entity, &Model, &ModelVisibility, &GlobalTransform),
+        (
+            Entity,
+            &Model,
+            &ModelVisibility,
+            Option<&ModelColor>,
+            &GlobalTransform,
+        ),
         Or<(Changed<ModelVisibility>, Changed<Model>)>,
     >,
 ) {
-    for (entity, model, visibility, transform) in model_query.iter() {
+    for (entity, model, visibility, maybe_color, transform) in model_query.iter() {
         let transform = transform.compute_transform();
 
         let chunk_pos = ChunkPosition::from(transform.translation);
@@ -559,7 +597,7 @@ fn update_visibility(
                         subs,
                         messages::NewModel {
                             parent_id: None,
-                            id: entity.index(),
+                            model_id: entity.index(),
                             asset: *model_id,
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
@@ -571,7 +609,6 @@ fn update_visibility(
                     mesh_indices,
                     mesh_vertices,
                     mesh_normals,
-                    material_base_color,
                     material_color_texture,
                     mesh_uvs,
                     material_parallax_texture,
@@ -583,7 +620,7 @@ fn update_visibility(
                 } => net.send_many(
                     subs,
                     messages::SpawnCustomModel {
-                        id: entity.index(),
+                        model_id: entity.index(),
                         parent_id: None,
                         position: transform.translation,
                         rotation: transform.rotation.as_quat(),
@@ -592,7 +629,6 @@ fn update_visibility(
                         mesh_vertices: mesh_vertices.clone(),
                         mesh_normals: mesh_normals.clone(),
                         mesh_uvs: mesh_uvs.clone(),
-                        material_base_color: material_base_color.clone(),
                         material_color_texture: material_color_texture.clone(),
                         material_parallax_texture: material_parallax_texture.clone(),
                         material_alpha_mode: *material_alpha_mode,
@@ -601,8 +637,23 @@ fn update_visibility(
                     },
                 ),
             }
+
+            if let Some(color) = maybe_color {
+                net.send_many(
+                    subs,
+                    messages::ModelColor {
+                        model_id: entity.index(),
+                        color: color.to_hex(),
+                    },
+                );
+            }
         } else {
-            net.send_many(subs, messages::DeleteModel { id: entity.index() });
+            net.send_many(
+                subs,
+                messages::DeleteModel {
+                    model_id: entity.index(),
+                },
+            );
         }
     }
 }
@@ -649,7 +700,7 @@ fn send_models_on_chunk_subscription(
                             chunk_sub.player_entity,
                             messages::NewModel {
                                 parent_id: None,
-                                id: entity.index(),
+                                model_id: entity.index(),
                                 asset: *model_id,
                                 position: transform.translation,
                                 rotation: transform.rotation.as_quat(),
@@ -661,7 +712,6 @@ fn send_models_on_chunk_subscription(
                         mesh_indices,
                         mesh_vertices,
                         mesh_normals,
-                        material_base_color,
                         material_color_texture,
                         mesh_uvs,
                         material_parallax_texture,
@@ -673,7 +723,7 @@ fn send_models_on_chunk_subscription(
                     } => net.send_one(
                         chunk_sub.player_entity,
                         messages::SpawnCustomModel {
-                            id: entity.index(),
+                            model_id: entity.index(),
                             parent_id: None,
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
@@ -682,7 +732,6 @@ fn send_models_on_chunk_subscription(
                             mesh_vertices: mesh_vertices.clone(),
                             mesh_normals: mesh_normals.clone(),
                             mesh_uvs: mesh_uvs.clone(),
-                            material_base_color: material_base_color.clone(),
                             material_color_texture: material_color_texture.clone(),
                             material_parallax_texture: material_parallax_texture.clone(),
                             material_alpha_mode: *material_alpha_mode,
@@ -744,5 +793,27 @@ fn send_animations(
                 },
             );
         }
+    }
+}
+
+fn send_color(
+    net: Res<Server>,
+    chunk_subscriptions: Res<ChunkSubscriptions>,
+    color_query: Query<(Entity, &ModelColor, &GlobalTransform), Changed<ModelColor>>,
+) {
+    for (entity, color, transform) in color_query.iter() {
+        let chunk_position = ChunkPosition::from(transform.translation());
+
+        let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
+            continue;
+        };
+
+        net.send_many(
+            subs,
+            messages::ModelColor {
+                model_id: entity.index(),
+                color: color.to_hex(),
+            },
+        )
     }
 }

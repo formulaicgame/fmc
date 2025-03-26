@@ -39,7 +39,7 @@ fn main() {
                     global_volume: GlobalVolume {
                         volume: Volume::new(1.0),
                     },
-                    default_spatial_scale: SpatialScale::new(0.1),
+                    default_spatial_scale: SpatialScale::new(0.5),
                 }),
         )
         // .add_plugins(LogDiagnosticsPlugin::default())

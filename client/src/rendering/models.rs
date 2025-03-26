@@ -4,10 +4,10 @@ use std::{
 };
 
 use bevy::{
-    animation::{self, ActiveAnimation, RepeatAnimation},
+    animation::{ActiveAnimation, RepeatAnimation},
     gltf::Gltf,
     math::DVec3,
-    pbr::NotShadowCaster,
+    pbr::{ExtendedMaterial, NotShadowCaster},
     prelude::*,
     render::{mesh::Indices, primitives::Aabb, render_asset::RenderAssetUsages},
 };
@@ -20,23 +20,161 @@ use crate::{
     world::{MovesWithOrigin, Origin},
 };
 
+use super::materials::PbrLightExtension;
+
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ModelEntities::default()).add_systems(
-            Update,
-            (
-                handle_model_add_delete,
-                handle_custom_models,
-                update_model_asset,
-                //render_aabb,
-                handle_transform_updates,
-                interpolate_to_new_transform,
-                //advance_transitions,
-                play_animations.after(handle_model_add_delete),
+        app.insert_resource(ModelEntities::default())
+            .add_systems(
+                PostUpdate,
+                (advance_transitions, expire_completed_transitions),
             )
-                .run_if(in_state(GameState::Playing)),
-        );
+            .add_systems(
+                Update,
+                (
+                    handle_model_add_delete,
+                    handle_custom_models,
+                    update_model_asset,
+                    //render_aabb,
+                    handle_transform_updates,
+                    handle_model_color,
+                    interpolate_to_new_transform,
+                    //advance_transitions,
+                    play_animations.after(handle_model_add_delete),
+                )
+                    .run_if(in_state(GameState::Playing)),
+            );
+    }
+}
+
+// TODO: Small fix from bevy's implementation, will probably be fixed in 0.16
+#[derive(Component, Default, Reflect)]
+#[reflect(Component, Default)]
+pub struct AnimationTransitions {
+    main_animation: Option<AnimationNodeIndex>,
+    transitions: Vec<AnimationTransition>,
+}
+
+// This is needed since `#[derive(Clone)]` does not generate optimized `clone_from`.
+impl Clone for AnimationTransitions {
+    fn clone(&self) -> Self {
+        Self {
+            main_animation: self.main_animation,
+            transitions: self.transitions.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.main_animation = source.main_animation;
+        self.transitions.clone_from(&source.transitions);
+    }
+}
+
+/// An animation that is being faded out as part of a transition
+#[derive(Debug, Clone, Copy, Reflect)]
+pub struct AnimationTransition {
+    /// The current weight. Starts at 1.0 and goes to 0.0 during the fade-out.
+    current_weight: f32,
+    /// How much to decrease `current_weight` per second
+    weight_decline_per_sec: f32,
+    /// The animation that is being faded out
+    animation: AnimationNodeIndex,
+}
+
+impl AnimationTransitions {
+    /// Creates a new [`AnimationTransitions`] component, ready to be added to
+    /// an entity with an [`AnimationPlayer`].
+    pub fn new() -> AnimationTransitions {
+        AnimationTransitions::default()
+    }
+
+    /// Plays a new animation on the given [`AnimationPlayer`], fading out any
+    /// existing animations that were already playing over the
+    /// `transition_duration`.
+    ///
+    /// Pass [`Duration::ZERO`] to instantly switch to a new animation, avoiding
+    /// any transition.
+    pub fn play<'p>(
+        &mut self,
+        player: &'p mut AnimationPlayer,
+        new_animation: AnimationNodeIndex,
+        transition_duration: Duration,
+    ) -> &'p mut ActiveAnimation {
+        if let Some(old_animation_index) = self.main_animation.replace(new_animation) {
+            if let Some(old_animation) = player.animation_mut(old_animation_index) {
+                if !old_animation.is_paused() {
+                    self.transitions.push(AnimationTransition {
+                        current_weight: old_animation.weight(),
+                        weight_decline_per_sec: 1.0 / transition_duration.as_secs_f32(),
+                        animation: old_animation_index,
+                    });
+                }
+            }
+        }
+
+        // If already transitioning away from this animation, cancel the transition.
+        // Otherwise the transition ending would incorrectly stop the new animation.
+        self.transitions
+            .retain(|transition| transition.animation != new_animation);
+
+        player.start(new_animation)
+    }
+
+    /// Obtain the currently playing main animation.
+    pub fn get_main_animation(&self) -> Option<AnimationNodeIndex> {
+        self.main_animation
+    }
+}
+
+/// A system that alters the weight of currently-playing transitions based on
+/// the current time and decline amount.
+pub fn advance_transitions(
+    mut query: Query<(&mut AnimationTransitions, &mut AnimationPlayer)>,
+    time: Res<Time>,
+) {
+    // We use a "greedy layer" system here. The top layer (most recent
+    // transition) gets as much as weight as it wants, and the remaining amount
+    // is divided between all the other layers, eventually culminating in the
+    // currently-playing animation receiving whatever's left. This results in a
+    // nicely normalized weight.
+    for (mut animation_transitions, mut player) in query.iter_mut() {
+        let mut remaining_weight = 1.0;
+        for transition in &mut animation_transitions.transitions.iter_mut().rev() {
+            // Decrease weight.
+            transition.current_weight = (transition.current_weight
+                - transition.weight_decline_per_sec * time.delta_secs())
+            .max(0.0);
+
+            // Update weight.
+            let Some(ref mut animation) = player.animation_mut(transition.animation) else {
+                continue;
+            };
+            animation.set_weight(transition.current_weight * remaining_weight);
+            remaining_weight -= animation.weight();
+        }
+
+        if let Some(main_animation_index) = animation_transitions.main_animation {
+            if let Some(ref mut animation) = player.animation_mut(main_animation_index) {
+                animation.set_weight(remaining_weight);
+            }
+        }
+    }
+}
+
+/// A system that removed transitions that have completed from the
+/// [`AnimationTransitions`] object.
+pub fn expire_completed_transitions(
+    mut query: Query<(&mut AnimationTransitions, &mut AnimationPlayer)>,
+) {
+    for (mut animation_transitions, mut player) in query.iter_mut() {
+        animation_transitions.transitions.retain(|transition| {
+            let expire = transition.current_weight <= 0.0;
+            if expire {
+                player.stop(transition.animation);
+            }
+            !expire
+        });
     }
 }
 
@@ -55,14 +193,14 @@ fn handle_model_add_delete(
     mut new_models: EventReader<messages::NewModel>,
 ) {
     for deleted_model in deleted_models.read() {
-        if let Some(entity) = model_entities.remove(&deleted_model.id) {
+        if let Some(entity) = model_entities.remove(&deleted_model.model_id) {
             commands.entity(entity).despawn_recursive();
         }
     }
 
     for new_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
-        if let Some(old_entity) = model_entities.remove(&new_model.id) {
+        if let Some(old_entity) = model_entities.remove(&new_model.model_id) {
             commands.entity(old_entity).despawn_recursive();
         }
 
@@ -95,7 +233,7 @@ fn handle_model_add_delete(
             ))
             .id();
 
-        model_entities.insert(new_model.id, entity);
+        model_entities.insert(new_model.model_id, entity);
     }
 }
 
@@ -116,7 +254,7 @@ fn handle_custom_models(
 ) {
     for custom_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
-        if let Some(old_entity) = model_entities.remove(&custom_model.id) {
+        if let Some(old_entity) = model_entities.remove(&custom_model.model_id) {
             commands.entity(old_entity).despawn_recursive();
         }
 
@@ -148,9 +286,6 @@ fn handle_custom_models(
         });
 
         let material = StandardMaterial {
-            base_color: Srgba::hex(&custom_model.material_base_color)
-                .unwrap_or(Srgba::WHITE)
-                .into(),
             base_color_texture,
             depth_map,
             alpha_mode: match custom_model.material_alpha_mode {
@@ -180,7 +315,7 @@ fn handle_custom_models(
             ))
             .id();
 
-        model_entities.insert(custom_model.id, entity);
+        model_entities.insert(custom_model.model_id, entity);
     }
 }
 
@@ -193,13 +328,13 @@ fn update_model_asset(
     mut asset_updates: EventReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
-        if let Some(entity) = model_entities.get(&asset_update.id) {
+        if let Some(entity) = model_entities.get(&asset_update.model_id) {
             let (mut scene, mut animation_graph, mut model) = model_query.get_mut(*entity).unwrap();
 
             let Some(model_config) = models.get_config(&asset_update.asset) else {
                 net.disconnect(format!(
                     "Server sent model asset id that doesn't exist, id: {}",
-                    asset_update.id
+                    asset_update.model_id
                 ));
                 return;
             };
@@ -237,7 +372,7 @@ fn handle_transform_updates(
     mut model_query: Query<&mut TransformInterpolation, With<Model>>,
 ) {
     for transform_update in transform_updates.read() {
-        if let Some(entity) = model_entities.get(&transform_update.id) {
+        if let Some(entity) = model_entities.get(&transform_update.model_id) {
             // TODO: I think this should be bug, server should not send model same tick it sends
             // transform updated. But there is 1-frame delay for model entity spawn for command
             // application. Should be disconnect I think, if bevy ever gets immediate command
@@ -365,51 +500,60 @@ fn play_animations(
     }
 }
 
-// #[derive(Component, Default)]
-// struct Transition {
-//     to: Option<AnimationNodeIndex>,
-//     from: Option<AnimationNodeIndex>,
-//     decline_per_sec: f32,
-// }
+type Material = ExtendedMaterial<StandardMaterial, PbrLightExtension>;
+fn handle_model_color(
+    net: Res<NetworkClient>,
+    children_query: Query<&Children>,
+    material_query: Query<&MeshMaterial3d<Material>>,
+    model_entities: Res<ModelEntities>,
+    mut materials: ResMut<Assets<Material>>,
+    mut color_updates: EventReader<messages::ModelColor>,
+) {
+    fn change_color(
+        color: Color,
+        entity: Entity,
+        material_query: &Query<&MeshMaterial3d<Material>>,
+        children_query: &Query<&Children>,
+        materials: &mut Assets<Material>,
+    ) {
+        if let Ok(material_handle) = material_query.get(entity) {
+            let material = materials.get_mut(material_handle).unwrap();
+            material.base.base_color = color;
+        };
 
-// impl Transition {
-//     fn play<'p>(
-//         &mut self,
-//         animation_player: &'p mut AnimationPlayer,
-//         from: AnimationNodeIndex,
-//         to: AnimationNodeIndex,
-//         duration: f32,
-//     ) -> &'p mut ActiveAnimation {
-//         self.from = Some(from);
-//         self.to = Some(to);
-//         self.decline_per_sec = 1.0 / duration;
-//         animation_player.play(to)
-//     }
-// }
+        if let Ok(children) = children_query.get(entity) {
+            for child in children {
+                change_color(color, *child, material_query, children_query, materials);
+            }
+        }
+    }
 
-// fn advance_transitions(mut query: Query<(&mut Transition, &mut AnimationPlayer)>, time: Res<Time>) {
-//     for (mut transition, mut player) in query.iter_mut() {
-//         let Some(from) = transition.from else {
-//             continue;
-//         };
-//
-//         let mut new_weight = 1.0;
-//         if let Some(animation) = player.animation_mut(from) {
-//             new_weight =
-//                 (animation.weight() - transition.decline_per_sec * time.delta_secs()).max(0.0);
-//             animation.set_weight(new_weight);
-//
-//             if animation.weight() == 0.0 {
-//                 player.stop(from);
-//                 transition.from.take();
-//             }
-//         };
-//
-//         if let Some(animation) = transition.to.and_then(|index| player.animation_mut(index)) {
-//             animation.set_weight(1.0 - new_weight);
-//         }
-//     }
-// }
+    for message in color_updates.read() {
+        let color = match Srgba::hex(&message.color) {
+            Ok(c) => c,
+            Err(e) => {
+                net.disconnect(format!(
+                    "Recevied malformed material color '{}', error: {}",
+                    message.color, e
+                ));
+                return;
+            }
+        };
+
+        let Some(model_entity) = model_entities.get(&message.model_id) else {
+            // TODO: Disconnect
+            return;
+        };
+
+        change_color(
+            color.into(),
+            *model_entity,
+            &material_query,
+            &children_query,
+            &mut materials,
+        );
+    }
+}
 
 fn render_aabb(
     mut commands: Commands,

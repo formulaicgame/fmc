@@ -31,11 +31,12 @@ impl Plugin for ClientPlugin {
             .add_event::<messages::Time>()
             .add_event::<messages::Chunk>()
             .add_event::<messages::BlockUpdates>()
+            .add_event::<messages::NewModel>()
             .add_event::<messages::DeleteModel>()
             .add_event::<messages::ModelPlayAnimation>()
             .add_event::<messages::ModelUpdateAsset>()
             .add_event::<messages::ModelUpdateTransform>()
-            .add_event::<messages::NewModel>()
+            .add_event::<messages::ModelColor>()
             .add_event::<messages::SpawnCustomModel>()
             .add_event::<messages::PlayerAabb>()
             .add_event::<messages::PlayerCameraPosition>()
@@ -49,6 +50,8 @@ impl Plugin for ClientPlugin {
             .add_event::<messages::Sound>()
             .add_event::<messages::ParticleEffect>()
             .add_event::<messages::Plugin>()
+            // Updated manually
+            .init_resource::<Events<messages::PluginData>>()
             .add_systems(OnEnter(GameState::Playing), send_client_ready)
             .add_systems(
                 PreUpdate,
@@ -461,6 +464,7 @@ impl Identity {
     }
 }
 
+// TODO: Write a macro for all this
 #[derive(SystemParam)]
 struct EventWriters<'w> {
     asset_response: EventWriter<'w, messages::AssetResponse>,
@@ -469,12 +473,13 @@ struct EventWriters<'w> {
     time: EventWriter<'w, messages::Time>,
     chunk: EventWriter<'w, messages::Chunk>,
     block_updates: EventWriter<'w, messages::BlockUpdates>,
+    new_model: EventWriter<'w, messages::NewModel>,
     delete_model: EventWriter<'w, messages::DeleteModel>,
     model_play_animation: EventWriter<'w, messages::ModelPlayAnimation>,
     model_update_asset: EventWriter<'w, messages::ModelUpdateAsset>,
     model_update_transform: EventWriter<'w, messages::ModelUpdateTransform>,
-    new_model: EventWriter<'w, messages::NewModel>,
     spawn_custom_model: EventWriter<'w, messages::SpawnCustomModel>,
+    model_color: EventWriter<'w, messages::ModelColor>,
     player_aabb: EventWriter<'w, messages::PlayerAabb>,
     player_camera_position: EventWriter<'w, messages::PlayerCameraPosition>,
     player_camera_rotation: EventWriter<'w, messages::PlayerCameraRotation>,
@@ -487,6 +492,7 @@ struct EventWriters<'w> {
     sound: EventWriter<'w, messages::Sound>,
     particle_effect: EventWriter<'w, messages::ParticleEffect>,
     plugin: EventWriter<'w, messages::Plugin>,
+    plugin_data: EventWriter<'w, messages::PluginData>,
 }
 
 fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
@@ -537,6 +543,12 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
                     continue;
                 }
             }
+            MessageType::NewModel => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    event_writers.new_model.send(message);
+                    continue;
+                }
+            }
             MessageType::DeleteModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.delete_model.send(message);
@@ -561,15 +573,15 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
                     continue;
                 }
             }
-            MessageType::NewModel => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.new_model.send(message);
-                    continue;
-                }
-            }
             MessageType::SpawnCustomModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.spawn_custom_model.send(message);
+                    continue;
+                }
+            }
+            MessageType::ModelColor => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    event_writers.model_color.send(message);
                     continue;
                 }
             }
@@ -642,6 +654,12 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
             MessageType::Plugin => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.plugin.send(message);
+                    continue;
+                }
+            }
+            MessageType::PluginData => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    event_writers.plugin_data.send(message);
                     continue;
                 }
             }

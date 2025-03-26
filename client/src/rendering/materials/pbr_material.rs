@@ -145,7 +145,7 @@ fn replace_material_and_mesh(
 }
 
 #[derive(Default, Asset, AsBindGroup, Reflect, Debug, Clone)]
-struct PbrLightExtension {
+pub struct PbrLightExtension {
     // XXX: This is a useless variable to satisfy the AsBindGroup requirement. Ripped from example
     #[uniform(100)]
     _dummy: u32,
