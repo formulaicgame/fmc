@@ -241,7 +241,7 @@ impl ChunkPosition {
 
     pub fn neighbourhood(&self) -> [Self; 27] {
         let mut neighbourhood = [ChunkPosition::from(IVec3::ZERO); 27];
-        let index = 0;
+        let mut index = 0;
         for x_offset in &[IVec3::X, IVec3::NEG_X, IVec3::ZERO] {
             for y_offset in &[IVec3::Y, IVec3::NEG_Y, IVec3::ZERO] {
                 for z_offset in &[IVec3::Z, IVec3::NEG_Z, IVec3::ZERO] {
@@ -251,6 +251,8 @@ impl ChunkPosition {
                             + y_offset * Chunk::SIZE as i32
                             + z_offset * Chunk::SIZE as i32,
                     );
+
+                    index += 1;
                 }
             }
         }

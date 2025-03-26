@@ -594,6 +594,12 @@ fn update_simulated_chunks(
     mut chunk_unload_events: EventReader<ChunkUnloadEvent>,
     mut simulation_event_writer: EventWriter<ChunkSimulationEvent>,
 ) {
+    for chunk_load_event in chunk_load_events.read() {
+        if simulated_chunks.is_simulated(&chunk_load_event.position) {
+            simulation_event_writer.send(ChunkSimulationEvent::Start(chunk_load_event.position));
+        }
+    }
+
     for chunk_tracker in players.iter() {
         if chunk_tracker.is_added() {
             for x in -SIMULATION_DISTANCE..=SIMULATION_DISTANCE {
@@ -625,6 +631,7 @@ fn update_simulated_chunks(
                         let old_position = chunk_tracker.prev_origin + offset;
                         let new_position = chunk_tracker.current_origin + offset;
 
+                        // Add chunks that are outside the range of the previous position
                         if (new_position - chunk_tracker.prev_origin)
                             .abs()
                             .max_element()
@@ -638,6 +645,7 @@ fn update_simulated_chunks(
                             }
                         }
 
+                        // Remove chunks that are outside the range of the new position
                         if (old_position - chunk_tracker.current_origin)
                             .abs()
                             .max_element()
@@ -653,12 +661,6 @@ fn update_simulated_chunks(
                     }
                 }
             }
-        }
-    }
-
-    for chunk_load_event in chunk_load_events.read() {
-        if simulated_chunks.is_simulated(&chunk_load_event.position) {
-            simulation_event_writer.send(ChunkSimulationEvent::Start(chunk_load_event.position));
         }
     }
 

@@ -205,22 +205,27 @@ pub struct Surface {
 impl Surface {
     // TODO: The topmost block in each block column will never be used as we don't know what's
     // above it, might be ignoreable.
-    pub fn new(chunk: &Chunk, air: BlockId) -> Self {
-        let mut surface_blocks = vec![None; Chunk::SIZE.pow(2)];
+    pub fn new(chunk: &Chunk, surface_blocks: &[BlockId], air: BlockId) -> Self {
+        let mut surface = vec![None; Chunk::SIZE.pow(2)];
         for (column_index, block_column) in chunk.blocks.chunks(Chunk::SIZE).enumerate() {
             let mut air_encountered = false;
             for (y_index, block_id) in block_column.into_iter().enumerate().rev() {
-                if air_encountered && *block_id != air {
-                    surface_blocks[column_index] = Some((y_index, *block_id));
+                if air_encountered && surface_blocks.contains(block_id) {
+                    surface[column_index] = Some((y_index, *block_id));
                     break;
                 }
+
                 if *block_id == air {
                     air_encountered = true;
+                } else {
+                    air_encountered = false;
                 }
             }
         }
 
-        Self { surface_blocks }
+        Self {
+            surface_blocks: surface,
+        }
     }
 }
 
