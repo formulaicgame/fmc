@@ -197,6 +197,8 @@ impl Target {
     }
 }
 
+const HIT_DISTANCE: f64 = 5.0;
+
 fn find_target(
     world_map: Res<WorldMap>,
     model_map: Res<ModelMap>,
@@ -270,6 +272,10 @@ fn find_target(
                     continue;
                 };
 
+                if new_target.distance() > HIT_DISTANCE {
+                    continue;
+                }
+
                 if new_target.distance() < min_distance {
                     min_distance = new_target.distance();
                     model_target = Some(new_target);
@@ -281,7 +287,7 @@ fn find_target(
             targets.push(model_target);
         }
 
-        let mut raycast = world_map.raycast(&camera_transform, 5.0);
+        let mut raycast = world_map.raycast(&camera_transform, HIT_DISTANCE);
         while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
             let Some(hitbox) = &block_config.hitbox else {
