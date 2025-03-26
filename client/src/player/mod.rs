@@ -54,7 +54,11 @@ fn setup_player(mut commands: Commands) {
     let head = commands
         .spawn((
             camera::CameraBundle::default(),
-            SpatialListener::new(0.2),
+            // TODO: This has to be inverted or the audio will be
+            SpatialListener {
+                left_ear_offset: Vec3::X * 0.2 / 2.0,
+                right_ear_offset: Vec3::X * 0.2 / -2.0,
+            },
             Head,
         ))
         .id();
