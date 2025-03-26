@@ -368,7 +368,7 @@ fn simulate_physics(
                     // resolution is guaranteed. Move it back by whatever the smallest resolution
                     // direction is.
                     let valid_axes = DVec3::select(
-                        backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                        backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 10.0),
                         backwards_time,
                         DVec3::NAN,
                     );
