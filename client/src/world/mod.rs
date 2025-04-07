@@ -3,12 +3,14 @@ use bevy::{math::DVec3, prelude::*};
 use crate::{game_state::GameState, player::Head};
 
 pub mod blocks;
+pub mod models;
 pub mod world_map;
 
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(world_map::WorldMapPlugin);
+        app.add_plugins(world_map::WorldMapPlugin)
+            .add_plugins(models::ModelPlugin);
 
         app.insert_resource(Origin(IVec3::ZERO));
         app.add_systems(

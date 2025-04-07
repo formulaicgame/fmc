@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::{
     blocks::{BlockFace, BlockPosition, Blocks},
     prelude::*,
-    world::{chunk::ChunkPosition, BlockUpdate, WorldMap},
+    world::{chunk::ChunkPosition, BlockUpdate, ChangedBlockEvent, WorldMap},
 };
 
 pub mod shapes;
@@ -421,15 +421,10 @@ fn update_object_map(
 fn trigger_update_on_block_change(
     object_map: Res<ObjectMap>,
     mut object_query: Query<&mut Transform, With<Physics>>,
-    mut block_updates: EventReader<BlockUpdate>,
+    mut block_updates: EventReader<ChangedBlockEvent>,
 ) {
     for block_update in block_updates.read() {
-        let position = match block_update {
-            BlockUpdate::Replace { position, .. } => *position,
-            BlockUpdate::Swap { position, .. } => *position,
-            _ => continue,
-        };
-        let chunk_position = ChunkPosition::from(position);
+        let chunk_position = ChunkPosition::from(block_update.position);
         if let Some(item_entities) = object_map.get_entities(&chunk_position) {
             for entity in item_entities.iter() {
                 if let Ok(mut transform) = object_query.get_mut(*entity) {
@@ -438,7 +433,7 @@ fn trigger_update_on_block_change(
             }
         }
 
-        let above_position = position + IVec3::Y;
+        let above_position = block_update.position + IVec3::Y;
         let above_chunk_position = ChunkPosition::from(above_position);
         if above_chunk_position != chunk_position {
             if let Some(item_entities) = object_map.get_entities(&above_chunk_position) {

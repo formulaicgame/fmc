@@ -80,15 +80,25 @@ impl Chunk {
         self.blocks = vec![block_id; Self::SIZE.pow(3)];
     }
 
+    pub fn set_block(&mut self, index: usize, block_id: BlockId) -> BlockId {
+        std::mem::replace(&mut self.blocks[index], block_id)
+    }
+
     pub fn get_block_state(&self, index: &usize) -> Option<BlockState> {
         return self.block_state.get(index).copied().map(BlockState);
     }
 
-    pub fn set_block_state(&mut self, block_index: usize, block_state: Option<BlockState>) {
+    pub fn set_block_state(
+        &mut self,
+        block_index: usize,
+        block_state: Option<BlockState>,
+    ) -> Option<BlockState> {
         if let Some(block_state) = block_state {
-            self.block_state.insert(block_index, block_state.as_u16());
+            self.block_state
+                .insert(block_index, block_state.as_u16())
+                .map(BlockState)
         } else {
-            self.block_state.remove(&block_index);
+            self.block_state.remove(&block_index).map(BlockState)
         }
     }
 

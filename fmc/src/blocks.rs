@@ -19,7 +19,7 @@ use crate::{
     assets::AssetSet,
     database::Database,
     items::{ItemConfig, ItemId, Items},
-    models::{ModelId, Models},
+    models::{ModelAssetId, Models},
     physics::{shapes::Aabb, Collider},
     players::Camera,
     prelude::*,
@@ -267,7 +267,7 @@ pub struct Block {
     #[deref]
     config: BlockConfig,
     // This function is used to set up the ecs entity for the block if it should have
-    // functionality. e.g. a furnace needs ui components and its internal smelting state.
+    // functionality. e.g. a furnace would need ui components and its internal smelting state.
     pub spawn_entity_fn: Option<fn(&mut EntityCommands, Option<&BlockData>)>,
 }
 
@@ -614,7 +614,7 @@ pub struct BlockConfig {
     /// Name of the block
     pub name: String,
     /// If a model is used to represent this block, this contains its model id
-    pub model: Option<ModelId>,
+    pub model: Option<ModelAssetId>,
     /// The friction of the block's surfaces.
     pub friction: Option<Friction>,
     /// The frictional drag when inside the block.
@@ -671,7 +671,7 @@ impl BlockConfig {
     }
 
     pub fn is_solid(&self) -> bool {
-        self.friction.is_some()
+        self.friction.is_some() && self.model.is_none()
     }
 
     pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {

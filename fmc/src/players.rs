@@ -9,7 +9,7 @@ use crate::{
     models::ModelMap,
     networking::{NetworkMessage, Server},
     physics::Collider,
-    world::{chunk::ChunkPosition, RenderDistance, WorldMap},
+    world::{chunk::ChunkPosition, ChunkOrigin, RenderDistance, WorldMap},
 };
 
 pub struct PlayersPlugin;
@@ -29,6 +29,7 @@ impl Plugin for PlayersPlugin {
 }
 
 #[derive(Component, Default)]
+#[require(ChunkOrigin)]
 pub struct Player {
     pub username: String,
 }
@@ -65,7 +66,6 @@ impl Default for Camera {
 pub struct DefaultPlayerBundle {
     player: Player,
     render_distance: RenderDistance,
-    global_transform: GlobalTransform,
     transform: Transform,
     camera: Camera,
     targets: Targets,
@@ -78,7 +78,6 @@ impl DefaultPlayerBundle {
         Self {
             player: Player { username },
             render_distance: RenderDistance { chunks: 1 },
-            global_transform: GlobalTransform::default(),
             transform: Transform::default(),
             camera: Camera::default(),
             targets: Targets::default(),
@@ -221,78 +220,20 @@ fn find_target(
             ..default()
         };
 
-        let mut min_distance = f64::MAX;
-        let mut model_target = None;
-
-        let chunk_position = ChunkPosition::from(transform.translation);
-        for chunk_position in chunk_position.neighbourhood() {
-            let Some(model_entities) = model_map.get_entities(&chunk_position) else {
-                continue;
-            };
-            for (entity, maybe_aabb, maybe_block, model_transform) in
-                model_query.iter_many(model_entities)
-            {
-                let new_target = if let Some(block_position) = maybe_block {
-                    let Some(block_id) = world_map.get_block(*block_position) else {
-                        continue;
-                    };
-
-                    let block_config = blocks.get_config(&block_id);
-
-                    let Some(hitbox) = &block_config.hitbox else {
-                        continue;
-                    };
-
-                    let Some((distance, block_face)) = hitbox
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
-                    else {
-                        continue;
-                    };
-
-                    Target::Block {
-                        block_position: *block_position,
-                        block_id,
-                        block_face,
-                        distance,
-                        entity: Some(entity),
-                    }
-                } else if let Some(aabb) = maybe_aabb {
-                    let Some((distance, face)) = aabb
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
-                    else {
-                        continue;
-                    };
-
-                    Target::Entity {
-                        distance,
-                        face,
-                        entity,
-                    }
-                } else {
-                    continue;
-                };
-
-                if new_target.distance() > HIT_DISTANCE {
-                    continue;
-                }
-
-                if new_target.distance() < min_distance {
-                    min_distance = new_target.distance();
-                    model_target = Some(new_target);
-                }
-            }
-        }
-
-        if let Some(model_target) = model_target {
-            targets.push(model_target);
-        }
+        let mut distance_to_solid_block = f64::MAX;
 
         let mut raycast = world_map.raycast(&camera_transform, HIT_DISTANCE);
         while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
+
+            // Block models are handled above
+            if block_config.model.is_some() {
+                continue;
+            }
+
+            // Blocks that don't have a hitbox cannot be targeted. This will normally be
+            // blocks that are considered void, like air, not water.
             let Some(hitbox) = &block_config.hitbox else {
-                // Blocks that don't have a hitbox cannot be targeted. This will normally be
-                // blocks that are considered void, like air, not water.
                 continue;
             };
 
@@ -321,6 +262,8 @@ fn find_target(
                     .map(|chunk| chunk.block_entities.get(&block_index).cloned())
                     .flatten();
 
+                distance_to_solid_block = distance;
+
                 targets.push(Target::Block {
                     block_position,
                     block_id,
@@ -335,6 +278,65 @@ fn find_target(
             }
         }
 
+        let chunk_position = ChunkPosition::from(transform.translation);
+        for chunk_position in chunk_position.neighbourhood() {
+            let Some(model_entities) = model_map.get_entities(&chunk_position) else {
+                continue;
+            };
+            for (entity, maybe_aabb, maybe_block, model_transform) in
+                model_query.iter_many(model_entities)
+            {
+                if let Some(block_position) = maybe_block {
+                    let Some(block_id) = world_map.get_block(*block_position) else {
+                        continue;
+                    };
+
+                    let block_config = blocks.get_config(&block_id);
+
+                    let Some(hitbox) = &block_config.hitbox else {
+                        continue;
+                    };
+
+                    let Some((distance, block_face)) = hitbox
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                    else {
+                        continue;
+                    };
+
+                    if distance < distance_to_solid_block && distance < HIT_DISTANCE {
+                        targets.push(Target::Block {
+                            block_position: *block_position,
+                            block_id,
+                            block_face,
+                            distance,
+                            entity: Some(entity),
+                        });
+                        distance_to_solid_block = distance;
+                    }
+                } else if let Some(aabb) = maybe_aabb {
+                    let Some((distance, face)) = aabb
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                    else {
+                        continue;
+                    };
+
+                    if distance < HIT_DISTANCE && distance < distance_to_solid_block {
+                        targets.push(Target::Entity {
+                            distance,
+                            face,
+                            entity,
+                        })
+                    }
+                } else {
+                    continue;
+                };
+            }
+        }
+
+        // Because the order in which things are added is arbitrary some targets might sneak in
+        // that are past the block distance. For example we might add a static block first that is
+        // actually occluded by a model block, but we only search for those later.
+        targets.retain(|t| t.distance() <= distance_to_solid_block);
         targets.sort_unstable_by(|a, b| a.distance().partial_cmp(&b.distance()).unwrap());
     }
 }

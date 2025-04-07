@@ -278,7 +278,8 @@ fn fragment(
     }
 
 #ifdef TONEMAP_IN_SHADER
-    output_color = tone_mapping(output_color, view.color_grading);
+    // TODO: Makes it look so bland...
+    //output_color = tone_mapping(output_color, view.color_grading);
 #ifdef DEBAND_DITHER
     var output_rgb = output_color.rgb;
     output_rgb = powsafe(output_rgb, 1.0 / 2.2);

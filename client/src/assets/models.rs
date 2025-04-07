@@ -1,8 +1,12 @@
 use bevy::{
     animation::{animated_field, AnimationTarget, AnimationTargetId},
-    gltf::{Gltf, GltfMesh, GltfPrimitive},
+    gltf::{Gltf, GltfMesh, GltfNode, GltfPrimitive},
+    math::Vec3A,
     prelude::*,
-    render::{mesh::MeshAabb, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology},
+    render::{
+        mesh::MeshAabb, primitives::Aabb, render_asset::RenderAssetUsages,
+        render_resource::PrimitiveTopology,
+    },
     utils::HashMap,
 };
 
@@ -23,7 +27,7 @@ impl Plugin for ModelPlugin {
         app.add_systems(
             Update,
             (
-                construct_animations.run_if(resource_exists::<Models>),
+                on_gltf_load.run_if(resource_exists::<Models>),
                 transfer_animation_targets.run_if(in_state(GameState::Playing)),
             ),
         );
@@ -55,16 +59,18 @@ impl Models {
 }
 
 pub struct ModelConfig {
+    pub filename: String,
     pub gltf_handle: Handle<Gltf>,
     pub animation_graph: Option<Handle<AnimationGraph>>,
     pub animations: Vec<AnimationNodeIndex>,
     pub named_animations: HashMap<String, AnimationNodeIndex>,
+    pub aabb: Aabb,
 }
 
 #[derive(Component)]
 pub enum Model {
     Asset(ModelAssetId),
-    Custom,
+    Custom { aabb: Aabb },
 }
 
 #[derive(Resource)]
@@ -167,6 +173,7 @@ pub(super) fn load_models(
             loading_models.models.insert(gltf_handle.id(), *model_id);
 
             ModelConfig {
+                filename: model_name.clone(),
                 gltf_handle,
                 animation_graph: Some(block_animation_graph.clone()),
                 animations: block_animation_indices.clone(),
@@ -174,6 +181,7 @@ pub(super) fn load_models(
                     ("left_click".to_owned(), block_animation_indices[0]),
                     ("equip".to_owned(), block_animation_indices[1]),
                 ]),
+                aabb: Aabb::from_min_max(Vec3::new(-0.5, 0.0, -0.5), Vec3::new(0.5, 1.0, 0.5)),
             }
         } else if extension == "glb" || extension == "gltf" {
             let gltf_handle = asset_server.load(path);
@@ -181,10 +189,12 @@ pub(super) fn load_models(
             loading_models.models.insert(gltf_handle.id(), *model_id);
 
             ModelConfig {
+                filename: model_name.clone(),
                 gltf_handle,
                 animation_graph: None,
                 animations: Vec::new(),
                 named_animations: HashMap::new(),
+                aabb: Aabb::default(),
             }
         } else {
             //net.disconnect(message);
@@ -635,12 +645,13 @@ fn transfer_animation_targets(
 //
 // Models that are loaded through the asset server need to have their animation graphs constructed
 // after the gltf has been loaded, as well as to add any animations that should be generated.
-fn construct_animations(
+fn on_gltf_load(
     mut models: ResMut<Models>,
     mut loading_models: ResMut<LoadingModels>,
     mut gltfs: ResMut<Assets<Gltf>>,
     mut animation_clips: ResMut<Assets<AnimationClip>>,
     gltf_meshes: Res<Assets<GltfMesh>>,
+    gltf_nodes: Res<Assets<GltfNode>>,
     meshes: Res<Assets<Mesh>>,
     asset_server: Res<AssetServer>,
     mut asset_events: EventReader<AssetEvent<Gltf>>,
@@ -694,6 +705,28 @@ fn construct_animations(
         // }
 
         model.animation_graph = Some(asset_server.add(animation_graph));
+
+        let mut min = Vec3A::MAX;
+        let mut max = Vec3A::MIN;
+        for node in gltf.nodes.iter() {
+            let node = gltf_nodes.get(node).unwrap();
+            let Some(mesh_handle) = &node.mesh else {
+                continue;
+            };
+
+            let translation = Vec3A::from(node.transform.translation);
+
+            let gltf_mesh = gltf_meshes.get(mesh_handle).unwrap();
+            for primitive in gltf_mesh.primitives.iter() {
+                let mesh = meshes.get(&primitive.mesh).unwrap();
+                if let Some(aabb) = mesh.compute_aabb() {
+                    min = min.min(translation + aabb.min());
+                    max = max.max(translation + aabb.max());
+                }
+            }
+        }
+
+        model.aabb = Aabb::from_min_max(min.into(), max.into());
     }
 }
 

@@ -42,6 +42,7 @@ impl Plugin for WorldPlugin {
             .add_systems(
                 Update,
                 (
+                    update_chunk_origins,
                     change_player_render_distance,
                     save_blocks_to_database
                         .run_if(on_timer(Duration::from_secs(5)).or(on_event::<AppExit>)),
@@ -49,11 +50,37 @@ impl Plugin for WorldPlugin {
             )
             .add_systems(
                 PostUpdate,
-                handle_block_updates
+                (handle_block_updates, apply_deferred)
                     // We want block models to be sent immediately as they are spawned
                     // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
                     .before(TransformSystem::TransformPropagate),
             );
+    }
+}
+
+/// Keeps track of which chunk an entity is in. Useful for tracking when the entity moves between
+/// chunks.
+#[derive(Component)]
+pub struct ChunkOrigin {
+    pub chunk_position: ChunkPosition,
+}
+
+impl Default for ChunkOrigin {
+    fn default() -> Self {
+        Self {
+            chunk_position: ChunkPosition::new(0, 0, 0),
+        }
+    }
+}
+
+fn update_chunk_origins(
+    mut chunk_origins: Query<(&mut ChunkOrigin, &GlobalTransform), Changed<GlobalTransform>>,
+) {
+    for (mut origin, transform) in chunk_origins.iter_mut() {
+        let current_chunk_position = ChunkPosition::from(transform.translation());
+        if current_chunk_position != origin.chunk_position {
+            origin.chunk_position = current_chunk_position;
+        }
     }
 }
 
@@ -105,6 +132,7 @@ fn change_player_render_distance(
 pub struct ChangedBlockEvent {
     /// The position of the block that was changed.
     pub position: BlockPosition,
+    pub from: (BlockId, Option<BlockState>),
     /// What block it was changed into
     pub to: (BlockId, Option<BlockState>),
     pub top: Option<(BlockId, Option<BlockState>)>,
@@ -151,6 +179,7 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
     }
 }
 
+// DO NOT listen for this. If you need to know when a block changes listen for ChangedBlockEvent
 #[derive(Event)]
 pub enum BlockUpdate {
     /// Change one block to another.
@@ -184,7 +213,7 @@ fn handle_block_updates(
     mut block_update_cache: ResMut<BlockUpdateCache>,
     mut chunked_updates: Local<HashMap<ChunkPosition, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
-    for event in block_events.update_drain() {
+    for event in block_events.drain() {
         match event {
             BlockUpdate::Replace {
                 position,
@@ -206,8 +235,8 @@ fn handle_block_updates(
                     panic!("Tried to change block in non-existent chunk");
                 };
 
-                chunk[block_index] = block_id;
-                chunk.set_block_state(block_index, block_state);
+                let prev_block = chunk.set_block(block_index, block_id);
+                let prev_block_state = chunk.set_block_state(block_index, block_state);
 
                 if let BlockUpdate::Replace { block_data, .. } = &event {
                     if let Some(old_entity) = chunk.block_entities.remove(&block_index) {
@@ -226,16 +255,15 @@ fn handle_block_updates(
                             let mut transform = Transform::from_translation(
                                 position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
                             );
+
                             if let Some(block_state) = block_state {
                                 if let Some(rotation) = block_state.rotation() {
-                                    if let Some(mut rotation_transform) =
+                                    transform.rotate(rotation.as_quat());
+
+                                    if let Some(custom_transform) =
                                         block_config.placement.rotation_transform
                                     {
-                                        rotation_transform
-                                            .rotate_around(DVec3::ZERO, rotation.as_quat());
-                                        transform.translation += rotation_transform.translation;
-                                        transform.rotation *= rotation_transform.rotation;
-                                        transform.scale *= rotation_transform.scale;
+                                        transform = transform * custom_transform;
                                     }
                                 }
                             }
@@ -256,6 +284,8 @@ fn handle_block_updates(
                     &world_map,
                     &mut changed_block_events,
                     position,
+                    prev_block,
+                    prev_block_state,
                     block_id,
                     block_state,
                 );
@@ -397,11 +427,14 @@ fn send_changed_block_event(
     world_map: &WorldMap,
     changed_block_events: &mut EventWriter<ChangedBlockEvent>,
     position: BlockPosition,
+    prev_block_id: BlockId,
+    prev_block_state: Option<BlockState>,
     block_id: BlockId,
     block_state: Option<BlockState>,
 ) {
     changed_block_events.send(ChangedBlockEvent {
         position,
+        from: (prev_block_id, prev_block_state),
         to: (block_id, block_state),
         top: world_map
             .get_block(position + IVec3::Y)

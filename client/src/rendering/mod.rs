@@ -5,7 +5,6 @@ pub mod chunk;
 
 mod lighting;
 pub mod materials;
-mod models;
 mod sky;
 
 pub struct RenderingPlugin;
@@ -14,8 +13,7 @@ impl Plugin for RenderingPlugin {
         app.add_plugins(materials::MaterialsPlugin)
             .add_plugins(chunk::ChunkMeshPlugin)
             .add_plugins(lighting::LightingPlugin)
-            .add_plugins(sky::SkyPlugin)
-            .add_plugins(models::ModelPlugin);
+            .add_plugins(sky::SkyPlugin);
         app.configure_sets(
             Update,
             (RenderSet::UpdateBlocks, RenderSet::Light, RenderSet::Mesh).chain(),

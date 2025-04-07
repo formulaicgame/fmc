@@ -43,11 +43,11 @@ impl WorldMap {
         self.chunks.remove(chunk_position)
     }
 
-    pub fn get_block(&self, position: BlockPosition) -> Option<BlockId> {
-        let chunk_position = ChunkPosition::from(*position);
+    pub fn get_block(&self, block_position: BlockPosition) -> Option<BlockId> {
+        let chunk_position = ChunkPosition::from(*block_position);
 
         if let Some(chunk) = self.get_chunk(&chunk_position) {
-            let index = position.as_chunk_index();
+            let index = block_position.as_chunk_index();
             Some(chunk[index])
         } else {
             None

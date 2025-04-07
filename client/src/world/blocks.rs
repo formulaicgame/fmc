@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_protocol::messages;
 use serde::Deserialize;
 
@@ -356,6 +356,18 @@ pub fn load_blocks(
                     None
                 };
 
+                let aabb = if !mesh_primitives.is_empty() {
+                    Aabb::enclosing(
+                        mesh_primitives
+                            .iter()
+                            .map(|p| p.vertices)
+                            .flatten()
+                            .map(|vertex| Vec3::from_slice(&vertex)),
+                    )
+                } else {
+                    None
+                };
+
                 Block::Cube(Cube {
                     name,
                     material_handle,
@@ -370,6 +382,7 @@ pub fn load_blocks(
                     fog_settings,
                     sound,
                     placement,
+                    aabb,
                 })
             }
 
@@ -499,6 +512,8 @@ pub struct Cube {
     light: u8,
     // How the block can be placed
     placement: BlockPlacement,
+    // The bounding box of the block
+    aabb: Option<Aabb>,
 }
 
 // TODO: This was made before the Models collection was made. This could hold model ids instead of
@@ -635,6 +650,13 @@ impl Block {
         match self {
             Block::Cube(c) => &c.sound.step,
             Block::Model(m) => &m.sound.step,
+        }
+    }
+
+    pub fn aabb(&self) -> Option<Aabb> {
+        match self {
+            Block::Cube(c) => c.aabb,
+            Block::Model(_) => None,
         }
     }
 }

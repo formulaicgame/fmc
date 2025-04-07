@@ -9,7 +9,11 @@ use bevy::{
     math::DVec3,
     pbr::{ExtendedMaterial, NotShadowCaster},
     prelude::*,
-    render::{mesh::Indices, primitives::Aabb, render_asset::RenderAssetUsages},
+    render::{
+        mesh::{Indices, MeshAabb},
+        primitives::Aabb,
+        render_asset::RenderAssetUsages,
+    },
 };
 use fmc_protocol::messages;
 
@@ -17,10 +21,9 @@ use crate::{
     assets::models::{Model, Models},
     game_state::GameState,
     networking::NetworkClient,
+    rendering::materials::PbrLightExtension,
     world::{MovesWithOrigin, Origin},
 };
-
-use super::materials::PbrLightExtension;
 
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
@@ -179,8 +182,32 @@ pub fn expire_completed_transitions(
 }
 
 /// Map from server model id to entity
-#[derive(Resource, Deref, DerefMut, Default)]
-struct ModelEntities(HashMap<u32, Entity>);
+#[derive(Resource, Default)]
+pub struct ModelEntities {
+    id2entity: HashMap<u32, Entity>,
+    entity2id: HashMap<Entity, u32>,
+}
+
+impl ModelEntities {
+    fn insert(&mut self, model_id: u32, entity: Entity) {
+        self.id2entity.insert(model_id, entity);
+        self.entity2id.insert(entity, model_id);
+    }
+
+    fn remove(&mut self, model_id: u32) -> Option<Entity> {
+        let entity = self.id2entity.remove(&model_id)?;
+        self.entity2id.remove(&entity);
+        Some(entity)
+    }
+
+    pub fn get_entity(&self, model_id: &u32) -> Option<Entity> {
+        self.id2entity.get(model_id).cloned()
+    }
+
+    pub fn get_model_id(&self, entity: &Entity) -> Option<u32> {
+        self.entity2id.get(entity).cloned()
+    }
+}
 
 fn handle_model_add_delete(
     net: Res<NetworkClient>,
@@ -193,14 +220,14 @@ fn handle_model_add_delete(
     mut new_models: EventReader<messages::NewModel>,
 ) {
     for deleted_model in deleted_models.read() {
-        if let Some(entity) = model_entities.remove(&deleted_model.model_id) {
+        if let Some(entity) = model_entities.remove(deleted_model.model_id) {
             commands.entity(entity).despawn_recursive();
         }
     }
 
     for new_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
-        if let Some(old_entity) = model_entities.remove(&new_model.model_id) {
+        if let Some(old_entity) = model_entities.remove(new_model.model_id) {
             commands.entity(old_entity).despawn_recursive();
         }
 
@@ -254,7 +281,7 @@ fn handle_custom_models(
 ) {
     for custom_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
-        if let Some(old_entity) = model_entities.remove(&custom_model.model_id) {
+        if let Some(old_entity) = model_entities.remove(custom_model.model_id) {
             commands.entity(old_entity).despawn_recursive();
         }
 
@@ -301,6 +328,11 @@ fn handle_custom_models(
 
         let entity = commands
             .spawn((
+                Model::Custom {
+                    aabb: mesh
+                        .compute_aabb()
+                        .expect("mesh to have ATTRIBUTE_POSITION"),
+                },
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(material)),
                 Transform {
@@ -308,7 +340,6 @@ fn handle_custom_models(
                     rotation: custom_model.rotation,
                     scale: custom_model.scale,
                 },
-                Model::Custom,
                 AnimationPlayer::default(),
                 TransformInterpolation::default(),
                 MovesWithOrigin,
@@ -328,8 +359,8 @@ fn update_model_asset(
     mut asset_updates: EventReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
-        if let Some(entity) = model_entities.get(&asset_update.model_id) {
-            let (mut scene, mut animation_graph, mut model) = model_query.get_mut(*entity).unwrap();
+        if let Some(entity) = model_entities.get_entity(&asset_update.model_id) {
+            let (mut scene, mut animation_graph, mut model) = model_query.get_mut(entity).unwrap();
 
             let Some(model_config) = models.get_config(&asset_update.asset) else {
                 net.disconnect(format!(
@@ -372,12 +403,12 @@ fn handle_transform_updates(
     mut model_query: Query<&mut TransformInterpolation, With<Model>>,
 ) {
     for transform_update in transform_updates.read() {
-        if let Some(entity) = model_entities.get(&transform_update.model_id) {
+        if let Some(entity) = model_entities.get_entity(&transform_update.model_id) {
             // TODO: I think this should be bug, server should not send model same tick it sends
             // transform updated. But there is 1-frame delay for model entity spawn for command
             // application. Should be disconnect I think, if bevy ever gets immediate command
             // application.
-            let mut interpolation = match model_query.get_mut(*entity) {
+            let mut interpolation = match model_query.get_mut(entity) {
                 Ok(m) => m,
                 Err(_) => continue,
             };
@@ -433,7 +464,7 @@ fn play_animations(
     mut animation_events: EventReader<messages::ModelPlayAnimation>,
 ) {
     for animation in animation_events.read() {
-        let Some(model_entity) = model_entities.get(&animation.model_id) else {
+        let Some(model_entity) = model_entities.get_entity(&animation.model_id) else {
             // net.disconnect(
             //     "The server tried to play an animation for an entity that doesn't exist.",
             // );
@@ -441,7 +472,7 @@ fn play_animations(
         };
 
         let (model, mut animation_player, mut transition) =
-            model_query.get_mut(*model_entity).unwrap();
+            model_query.get_mut(model_entity).unwrap();
 
         let Model::Asset(model_asset_id) = *model else {
             // TODO: Disconnect
@@ -540,14 +571,14 @@ fn handle_model_color(
             }
         };
 
-        let Some(model_entity) = model_entities.get(&message.model_id) else {
+        let Some(model_entity) = model_entities.get_entity(&message.model_id) else {
             // TODO: Disconnect
             return;
         };
 
         change_color(
             color.into(),
-            *model_entity,
+            model_entity,
             &material_query,
             &children_query,
             &mut materials,

@@ -7,7 +7,7 @@ use crate::{
     assets::AssetSet,
     blocks::{BlockConfig, BlockId},
     database::Database,
-    models::ModelId,
+    models::ModelAssetId,
 };
 
 pub type ItemId = u32;
@@ -63,7 +63,7 @@ fn load_items(mut commands: Commands, database: Res<Database>) {
         // too.
         let models = database.load_models();
         let model_id = match models.get_index_of(&json.equip_model) {
-            Some(id) => id as ModelId,
+            Some(id) => id as ModelAssetId,
             None => panic!(
                 "Failed to parse item config at: {}\nError: Missing model by the name: {}",
                 &file_path, &json.equip_model
@@ -96,7 +96,7 @@ pub struct ItemConfig {
     /// Block placed by the item
     pub block: Option<BlockId>,
     /// Model used to render the item
-    pub model_id: ModelId,
+    pub model_id: ModelAssetId,
     /// The max amount a stack of this item can store
     pub max_stack_size: u32,
     /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in

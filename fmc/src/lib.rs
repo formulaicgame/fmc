@@ -23,6 +23,7 @@ pub mod bevy {
         pub use crate::bevy_extensions::f64_transform::Transform;
         pub use crate::bevy_extensions::f64_transform::TransformBundle;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
+        pub use crate::bevy_extensions::f64_transform::TransformSystem;
     }
 
     pub mod prelude {
@@ -30,6 +31,7 @@ pub mod bevy {
         pub use crate::bevy_extensions::f64_transform::Transform;
         pub use crate::bevy_extensions::f64_transform::TransformBundle;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
+        pub use crate::bevy_extensions::f64_transform::TransformSystem;
         pub use bevy::prelude::*;
     }
 }

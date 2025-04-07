@@ -42,6 +42,7 @@ world plugin {
     use transform.{transform};
 
     type block-id = u16;
+    type entity = u64;
 
     record friction {
         surface: option<surface-friction>,
@@ -101,5 +102,11 @@ world plugin {
     import get-block-friction: func(block-id: block-id) -> friction;
     /// Get the name of a block
     import get-block-name: func(block-id: block-id) -> string;
+    /// Get the aabb of the block
+    import get-block-aabb: func(block-id: block-id) -> option<tuple<vec3, vec3>>;
 
+    /// Get the models inside the aabb defined by min and max
+    import get-models: func(min: vec3, max: vec3) -> list<u32>;
+    /// Get the aabb a model
+    import get-model-aabb: func(model-id: u32) -> tuple<vec3, vec3>;
 }

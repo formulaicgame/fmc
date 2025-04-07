@@ -3,16 +3,20 @@ use std::collections::HashMap;
 use bevy::{
     ecs::system::SystemState,
     input::{keyboard::KeyboardInput, ButtonState},
+    math::{Mat3A, Vec3A},
     prelude::*,
+    render::primitives::Aabb,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_protocol::messages;
 use wasmtime::{component::Linker, Engine, Store};
 
 use crate::{
+    assets::models::{Model, Models},
+    game_state::GameState,
     networking::NetworkClient,
     player::Player,
-    world::{blocks::Blocks, world_map::WorldMap, Origin},
+    world::{blocks::Blocks, models::ModelEntities, world_map::WorldMap, Origin},
 };
 
 pub struct WasmPlugin;
@@ -33,7 +37,10 @@ impl Plugin for WasmPlugin {
             keyboard_events,
         });
 
-        app.add_systems(Update, (run_plugins, plugin_activation));
+        app.add_systems(
+            Update,
+            (run_plugins, plugin_activation).run_if(in_state(GameState::Playing)),
+        );
     }
 }
 
@@ -192,6 +199,16 @@ mod wit {
 
     impl From<bevy::math::Vec3> for Vec3 {
         fn from(value: bevy::math::Vec3) -> Self {
+            Vec3 {
+                x: value.x,
+                y: value.y,
+                z: value.z,
+            }
+        }
+    }
+
+    impl From<bevy::math::Vec3A> for Vec3 {
+        fn from(value: bevy::math::Vec3A) -> Self {
             Vec3 {
                 x: value.x,
                 y: value.y,
@@ -426,5 +443,102 @@ impl wit::PluginImports for WasmState {
         };
 
         wit::Friction { surface, drag }
+    }
+
+    fn get_block_aabb(&mut self, block_id: wit::BlockId) -> Option<(wit::Vec3, wit::Vec3)> {
+        let config = Blocks::get().get_config(block_id);
+        let aabb = config.aabb()?;
+        Some((aabb.center.into(), aabb.half_extents.into()))
+    }
+
+    fn get_models(&mut self, min: wit::Vec3, max: wit::Vec3) -> Vec<u32> {
+        let world = self.world();
+        let mut model_query = world.query::<(Entity, &GlobalTransform, &Model)>();
+        let configs = world.get_resource::<Models>().unwrap();
+        let model_entites = world.get_resource::<ModelEntities>().unwrap();
+
+        let min = Vec3A::new(min.x, min.y, min.z);
+        let max = Vec3A::new(max.x, max.y, max.z);
+
+        let mut models = Vec::new();
+        for (entity, transform, model) in model_query.iter(&world) {
+            let aabb = match model {
+                Model::Asset(asset_id) => {
+                    let model_config = configs.get_config(asset_id).unwrap();
+                    &model_config.aabb
+                }
+                Model::Custom { aabb } => aabb,
+            };
+
+            let transformed_aabb = transform_aabb(transform, aabb);
+
+            if min.cmple(transformed_aabb.max()).all() || max.cmpge(transformed_aabb.min()).all() {
+                let Some(model_id) = model_entites.get_model_id(&entity) else {
+                    // TODO: This should be a safe unwrap but fails intermittently.
+                    error!("Found unregistered model when running plugin");
+                    continue;
+                };
+                models.push(model_id);
+            }
+        }
+
+        models
+    }
+
+    fn get_model_aabb(&mut self, model_id: u32) -> (wit::Vec3, wit::Vec3) {
+        let world = self.world();
+        let mut model_query = world.query::<(&GlobalTransform, &Model)>();
+        let model_entities = world.get_resource::<ModelEntities>().unwrap();
+        let configs = world.get_resource::<Models>().unwrap();
+
+        // TODO: Not safe to unwrap
+        let entity = model_entities.get_entity(&model_id).unwrap();
+        let (transform, model) = model_query.get(world, entity).unwrap();
+
+        let aabb = match model {
+            Model::Asset(asset_id) => {
+                let config = configs.get_config(asset_id).unwrap();
+                &config.aabb
+            }
+            Model::Custom { aabb } => aabb,
+        };
+
+        let transformed_aabb = transform_aabb(transform, aabb);
+
+        return (
+            transformed_aabb.center.into(),
+            transformed_aabb.half_extents.into(),
+        );
+    }
+}
+
+fn transform_aabb(transform: &GlobalTransform, aabb: &Aabb) -> Aabb {
+    // If you rotate a square normally, its aabb will grow larger at 45 degrees because the
+    // diagonal of the square is longer and pointing in the axis direction. We don't want
+    // our aabbs to grow larger, we want a constant volume because they are easier to deal with
+    // in physics. Lets us use uniform aabbs without worrying about contortions.
+    //
+    // let abs_rot_mat = DMat3::from_cols(
+    //     rot_mat.x_axis.abs(),
+    //     rot_mat.y_axis.abs(),
+    //     rot_mat.z_axis.abs(),
+    // );
+    //
+    // This is how you do it normally, each column will have a euclidean distance of 1. At a 45
+    // degree angle around the y axis, this will give an x_axis of
+    // [sqrt(2)/2=0.707, 0.0, 0.707], i.e. take 70% of the x extent and 70% of the z
+    // extent. We want it to only take 50%. This is done by normalizing it so its total
+    // sum is 1.
+    let rot_mat = Mat3A::from_quat(transform.rotation());
+    let abs_rot_mat = Mat3A::from_cols(
+        rot_mat.x_axis.abs() / rot_mat.x_axis.abs().element_sum(),
+        rot_mat.y_axis.abs() / rot_mat.y_axis.abs().element_sum(),
+        rot_mat.z_axis.abs() / rot_mat.z_axis.abs().element_sum(),
+    );
+
+    Aabb {
+        center: rot_mat * aabb.center * Vec3A::from(transform.scale())
+            + transform.translation_vec3a(),
+        half_extents: abs_rot_mat * aabb.half_extents * Vec3A::from(transform.scale()),
     }
 }

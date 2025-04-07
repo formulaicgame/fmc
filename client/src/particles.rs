@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use bevy::{prelude::*, render::mesh::VertexAttributeValues};
+use bevy::{
+    math::Vec3A,
+    prelude::*,
+    render::{mesh::VertexAttributeValues, primitives::Aabb},
+};
 use fmc_protocol::messages;
 
 use crate::{
@@ -21,7 +25,7 @@ impl Plugin for ParticlePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             FixedUpdate,
-            simulate_physics.run_if(in_state(GameState::Playing)),
+            simulate_particle_physics.run_if(in_state(GameState::Playing)),
         )
         .add_systems(
             Update,
@@ -214,49 +218,35 @@ fn billboard_particles(
 #[derive(Component, Default, Deref, DerefMut)]
 pub struct Velocity(pub Vec3);
 
-struct Aabb {
-    center: Vec3,
-    half_extents: Vec3,
+trait AabbExt {
+    fn new_particle(transform: &Transform) -> Aabb;
+
+    fn intersects(&self, other: &Aabb) -> Option<Vec3A>;
 }
 
-impl Aabb {
-    fn particle(transform: &Transform) -> Self {
+impl AabbExt for Aabb {
+    fn new_particle(transform: &Transform) -> Self {
         Self {
-            center: transform.translation,
-            half_extents: transform.scale * 0.5,
+            center: Vec3A::from(transform.translation),
+            half_extents: Vec3A::from(transform.scale) * 0.5,
         }
     }
 
-    fn block(position: Vec3) -> Self {
-        Self {
-            center: position + 0.5,
-            half_extents: Vec3::splat(0.5),
-        }
-    }
-
-    fn intersects(&self, other: &Aabb) -> Option<Vec3> {
+    fn intersects(&self, other: &Aabb) -> Option<Vec3A> {
         let distance = other.center - self.center;
         let overlap = self.half_extents + other.half_extents - distance.abs();
 
-        if overlap.cmpgt(Vec3::ZERO).all() {
+        if overlap.cmpgt(Vec3A::ZERO).all() {
             Some(overlap.copysign(distance))
         } else {
             None
         }
     }
-
-    fn min(&self) -> Vec3 {
-        self.center - self.half_extents
-    }
-
-    fn max(&self) -> Vec3 {
-        self.center + self.half_extents
-    }
 }
 
 // BUG: Wanted to use Vec3A end to end, but the Vec3A::max_element function considers NaN to be
 // greater than any number, where Vec3::max_element is opposite.
-pub fn simulate_physics(
+pub fn simulate_particle_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     time: Res<Time>,
@@ -266,14 +256,13 @@ pub fn simulate_physics(
         let gravity = Vec3::new(0.0, -14.0, 0.0);
         velocity.0 += gravity * time.delta_secs();
 
-        let mut friction = Vec3::ZERO;
+        let mut friction = Vec3A::ZERO;
 
         for directional_velocity in [
-            Vec3::new(0.0, velocity.y, 0.0),
-            Vec3::new(velocity.x, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, velocity.z),
+            Vec3A::new(0.0, velocity.y, 0.0),
+            Vec3A::new(velocity.x, 0.0, velocity.z),
         ] {
-            let mut particle_aabb = Aabb::particle(&transform);
+            let mut particle_aabb = Aabb::new_particle(&transform);
             particle_aabb.center += directional_velocity * time.delta_secs();
 
             let blocks = Blocks::get();
@@ -296,10 +285,12 @@ pub fn simulate_physics(
 
                         let block_config = blocks.get_config(block_id);
 
-                        friction = friction.max(block_config.drag());
+                        friction = friction.max(block_config.drag().into());
 
-                        // TODO: Implement colliders client side
-                        let block_aabb = Aabb::block(Vec3::new(x as f32, y as f32, z as f32));
+                        let Some(mut block_aabb) = block_config.aabb() else {
+                            continue;
+                        };
+                        block_aabb.center += Vec3A::new(x as f32, y as f32, z as f32);
 
                         if let Some(overlap) = particle_aabb.intersects(&block_aabb) {
                             collisions.push((overlap, block_config));
@@ -310,46 +301,50 @@ pub fn simulate_physics(
 
             // TODO: This is remnant of when I tried to do all three axes at once. It could
             // probably be made to be simpler.
-            let mut move_back = Vec3::ZERO;
-            let delta_time = Vec3::splat(time.delta_secs());
+            let mut move_back = Vec3A::ZERO;
+            let delta_time = Vec3A::splat(time.delta_secs());
             // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
             // axis it takes the longest time to resolve the conflict.
             for (collision, block_config) in collisions {
                 let backwards_time = collision / directional_velocity;
                 // Small epsilon to delta time because of precision.
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
-                    & backwards_time.cmpgt(Vec3::ZERO);
-                let resolution_axis = backwards_time.cmpeq(Vec3::splat(
-                    Vec3::select(valid_axes, backwards_time, Vec3::NAN).max_element(),
+                    & backwards_time.cmpgt(Vec3A::ZERO);
+                let resolution_axis = backwards_time.cmpeq(Vec3A::splat(
+                    Vec3A::select(valid_axes, backwards_time, Vec3A::MIN).max_element(),
                 ));
 
                 let Some(block_friction) = block_config.friction() else {
                     continue;
                 };
 
-                if resolution_axis.y {
+                let resolves_x = resolution_axis.test(0);
+                let resolves_y = resolution_axis.test(1);
+                let resolves_z = resolution_axis.test(2);
+
+                if resolves_y {
                     if velocity.y.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(block_friction.bottom));
+                        friction = friction.max(Vec3A::splat(block_friction.bottom));
                     } else {
-                        friction = friction.max(Vec3::splat(block_friction.top));
+                        friction = friction.max(Vec3A::splat(block_friction.top));
                     }
 
                     move_back.y = collision.y + collision.y / 100.0;
                     velocity.y = 0.0;
-                } else if resolution_axis.x {
+                } else if resolves_x {
                     if velocity.x.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(block_friction.left));
+                        friction = friction.max(Vec3A::splat(block_friction.left));
                     } else {
-                        friction = friction.max(Vec3::splat(block_friction.right));
+                        friction = friction.max(Vec3A::splat(block_friction.right));
                     }
 
                     move_back.x = collision.x + collision.x / 100.0;
                     velocity.x = 0.0;
-                } else if resolution_axis.z {
+                } else if resolves_z {
                     if velocity.z.is_sign_positive() {
-                        friction = friction.max(Vec3::splat(block_friction.back));
+                        friction = friction.max(Vec3A::splat(block_friction.back));
                     } else {
-                        friction = friction.max(Vec3::splat(block_friction.front));
+                        friction = friction.max(Vec3A::splat(block_friction.front));
                     }
 
                     move_back.z = collision.z + collision.z / 100.0;
@@ -358,31 +353,31 @@ pub fn simulate_physics(
                     // When velocity is really small there's numerical precision problems. Since a
                     // resolution is guaranteed. Move it back by whatever the smallest resolution
                     // direction is.
-                    let valid_axes = Vec3::select(
-                        backwards_time.cmpgt(Vec3::ZERO) & backwards_time.cmplt(delta_time * 2.0),
+                    let valid_axes = Vec3A::select(
+                        backwards_time.cmpgt(Vec3A::ZERO) & backwards_time.cmplt(delta_time * 2.0),
                         backwards_time,
-                        Vec3::NAN,
+                        Vec3A::NAN,
                     );
                     if valid_axes.x.is_finite()
                         || valid_axes.y.is_finite()
                         || valid_axes.z.is_finite()
                     {
-                        let valid_axes = Vec3::select(
-                            valid_axes.cmpeq(Vec3::splat(valid_axes.min_element())),
+                        let valid_axes = Vec3A::select(
+                            valid_axes.cmpeq(Vec3A::splat(valid_axes.min_element())),
                             valid_axes,
-                            Vec3::ZERO,
+                            Vec3A::ZERO,
                         );
                         move_back += (valid_axes + valid_axes / 100.0) * -directional_velocity;
                     }
                 }
             }
 
-            transform.translation = particle_aabb.center - move_back;
+            transform.translation = Vec3::from(particle_aabb.center - move_back);
         }
 
         // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
         // should be understood as 'velocity *= friction^time'
-        velocity.0 = velocity.0 * (1.0 - friction).powf(4.0).powf(time.delta_secs());
+        velocity.0 = velocity.0 * Vec3::from((1.0 - friction).powf(4.0).powf(time.delta_secs()));
         // Clamp the velocity when it is close to 0
         velocity.0 = Vec3::select(
             velocity.0.abs().cmplt(Vec3::splat(0.01)),

@@ -490,14 +490,12 @@ fn handle_chunk_loading_tasks(
                         );
                         if let Some(block_state) = chunk.get_block_state(&index) {
                             if let Some(rotation) = block_state.rotation() {
-                                if let Some(mut rotation_transform) =
+                                transform.rotate(rotation.as_quat());
+
+                                if let Some(custom_transform) =
                                     block_config.placement.rotation_transform
                                 {
-                                    rotation_transform
-                                        .rotate_around(DVec3::ZERO, rotation.as_quat());
-                                    transform.translation += rotation_transform.translation;
-                                    transform.rotation *= rotation_transform.rotation;
-                                    transform.scale *= rotation_transform.scale;
+                                    transform = transform * custom_transform;
                                 }
                             }
                         }

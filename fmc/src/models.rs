@@ -11,15 +11,15 @@ use crate::{
     networking::Server,
     physics::{shapes::Aabb, Collider},
     players::Player,
-    world::{chunk::ChunkPosition, ChunkSubscriptionEvent, ChunkSubscriptions},
+    world::{
+        chunk::ChunkPosition, ChunkOrigin, ChunkSubscriptionEvent, ChunkSubscriptions, WorldMap,
+    },
 };
-
-// TODO use super::world_map::chunk_manager::ChunkUnloadEvent;
 
 pub const MODEL_PATH: &str = "./assets/client/textures/models/";
 
 // Used to identify the asset of a model.
-pub type ModelId = u32;
+pub type ModelAssetId = u32;
 
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
@@ -37,18 +37,17 @@ impl Plugin for ModelPlugin {
                     send_animations,
                     send_color,
                     remove_models,
-                    send_model_transform,
+                    send_model_transform.after(TransformSystem::TransformPropagate),
                     update_visibility.after(TransformSystem::TransformPropagate),
-                ),
+                )
+                    .in_set(ModelSystems),
             );
     }
 }
 
-// TODO: We only need the json part of the gltf files, loading the binary parts is wasteful and it
-// doesn't reuse the memory. This is also the only use of the gltf crate. I read it to json before,
-// but I think I experienced a problem computing the aabb's because there were accessors with
-// min/max values that didn't relate to meshes. Need to investigate if this is true (I might have
-// messed up some pivot points in Blockbench)
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
+pub struct ModelSystems;
+
 pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
     let directory = std::fs::read_dir(MODEL_PATH).expect(&format!(
         "Could not read files from model directory, make sure it is present at '{}'.",
@@ -81,6 +80,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             id: 0,
             animations: HashMap::new(),
             aabb: Aabb::default(),
+            meshes: Vec::new(),
         };
 
         if extension == "json" {
@@ -88,7 +88,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             config.aabb =
                 Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
         } else if extension == "glb" || extension == "gltf" {
-            let gltf = match gltf::Gltf::open(&path) {
+            let (gltf, buffers, _) = match gltf::import(&path) {
                 Ok(m) => m,
                 Err(e) => panic!(
                     "Failed to open gltf model at: {}\nError: {}",
@@ -105,16 +105,55 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 
                 let translation = Vec3::from_array(node.transform().decomposed().0);
 
+                let mut model_mesh = ModelMesh::default();
                 for primitive in mesh.primitives() {
+                    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                    if let Some(iter) = reader.read_positions() {
+                        for vertex in iter {
+                            let vertex = Vec3::from_array(vertex) + translation;
+                            model_mesh.vertices.push(vertex.to_array());
+                        }
+                    }
+
+                    if let Some(indices) = reader.read_indices() {
+                        match indices {
+                            gltf::mesh::util::ReadIndices::U8(indices) => {
+                                model_mesh.indices.extend(indices.map(|index| index as u32))
+                            }
+                            gltf::mesh::util::ReadIndices::U16(indices) => {
+                                model_mesh.indices.extend(indices.map(|index| index as u32))
+                            }
+                            gltf::mesh::util::ReadIndices::U32(indices) => {
+                                model_mesh.indices.extend(indices)
+                            }
+                        }
+                    }
+
+                    if let Some(normals) = reader.read_normals() {
+                        model_mesh.normals.extend(normals);
+                    }
+
+                    if let Some(uvs) = reader.read_tex_coords(0) {
+                        match uvs {
+                            gltf::mesh::util::ReadTexCoords::F32(iter) => {
+                                model_mesh.uvs.extend(iter)
+                            }
+                            // TODO: Idk what to do with the others
+                            _ => (),
+                        }
+                    }
+
                     let bounds = primitive.bounding_box();
                     min = min.min(Vec3::from_array(bounds.min) + translation);
                     max = max.max(Vec3::from_array(bounds.max) + translation);
                 }
+
+                config.meshes.push(model_mesh);
             }
 
             config.aabb = Aabb::from_min_max(min.as_dvec3(), max.as_dvec3());
 
-            for animation in gltf.document.animations() {
+            for animation in gltf.animations() {
                 if let Some(name) = animation.name() {
                     config
                         .animations
@@ -156,9 +195,9 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(ModelVisibility, AnimationPlayer, Transform)]
+#[require(ModelVisibility, AnimationPlayer, Transform, ChunkOrigin)]
 pub enum Model {
-    Asset(ModelId),
+    Asset(ModelAssetId),
     Custom {
         /// Mesh Indices
         mesh_indices: Vec<u32>,
@@ -341,11 +380,20 @@ impl AnimationPlayer {
     }
 }
 
+#[derive(Default)]
+pub struct ModelMesh {
+    pub vertices: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
+    pub indices: Vec<u32>,
+}
+
 pub struct ModelConfig {
-    pub id: ModelId,
+    pub id: ModelAssetId,
     // Map from animation name (as stored in the gltf file) to its index
     pub animations: HashMap<String, u32>,
     pub aabb: Aabb,
+    pub meshes: Vec<ModelMesh>,
 }
 
 // The models are stored as an IndexMap where the index corresponds to the model's asset id.
@@ -365,17 +413,17 @@ impl Models {
         }
     }
 
-    pub fn get_by_id(&self, id: ModelId) -> &ModelConfig {
+    pub fn get_by_id(&self, id: ModelAssetId) -> &ModelConfig {
         &self.0[id as usize]
     }
 
-    pub fn asset_ids(&self) -> HashMap<String, ModelId> {
+    pub fn asset_ids(&self) -> HashMap<String, ModelAssetId> {
         return self
             .0
             .keys()
             .cloned()
             .enumerate()
-            .map(|(id, name)| (name, id as ModelId))
+            .map(|(id, name)| (name, id as ModelAssetId))
             .collect();
     }
 }
@@ -569,6 +617,7 @@ fn update_model_assets(
 // TODO: Animations must be sent
 fn update_visibility(
     net: Res<Server>,
+    world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     model_query: Query<
         (
@@ -660,6 +709,7 @@ fn update_visibility(
 
 fn send_models_on_chunk_subscription(
     net: Res<Server>,
+    world_map: Res<WorldMap>,
     model_map: Res<ModelMap>,
     player_query: Query<Entity, With<Player>>,
     model_query: Query<(

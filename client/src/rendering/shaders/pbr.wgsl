@@ -61,7 +61,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
 
         let color = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, in.uv, view.mip_bias);
 
-        // Only non-transparent parts of the texture are used to create the illusion.
+        // Only opaque parts of the texture are used to create the illusion.
         if color.a < 0.1 {
             discard;
         }
@@ -72,7 +72,6 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         let view_normal = view_transformations::direction_world_to_view(in.world_normal);
         var x: vec3<f32>;
         var y: vec3<f32>;
-        // Why 0.9?
         if abs(in.world_normal.y) >= 0.9 {
             // why negative?
             y = view_transformations::direction_world_to_view(vec3(0.0, 0.0, -1.0));
@@ -99,7 +98,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         //       kinda look like a little chunk of the block has been removed somewhat?
         //
         // Increment offset until we hit a transparent part of the texture.
-        // Color it very dark to create the illusion of being and edge
+        // Color it very dark to create the illusion of being an edge
         for (var i = 1; i <= 16; i++) {
             let uv = in.uv + offset / 16.0 * f32(i);
             let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv, view.mip_bias);
@@ -110,7 +109,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         }
 
         // 
-        return vec4(0.0, 0.0, 0.0, 0.6);
+        return vec4(0.0, 0.0, 0.0, 0.45);
         //if i > 16 {
         //    let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv + offset, view.mip_bias);
 
@@ -162,7 +161,8 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     }
 
 #ifdef TONEMAP_IN_SHADER
-    output_color = tone_mapping(output_color, view.color_grading);
+    // TODO: This makes the colors so bland...
+    //output_color = tone_mapping(output_color, view.color_grading);
 #ifdef DEBAND_DITHER
     var output_rgb = output_color.rgb;
     output_rgb = powsafe(output_rgb, 1.0 / 2.2);
