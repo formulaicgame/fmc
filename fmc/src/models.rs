@@ -36,7 +36,7 @@ impl Plugin for ModelPlugin {
                         .after(TransformSystem::TransformPropagate),
                     send_animations,
                     send_color,
-                    remove_models,
+                    remove_models.after(send_model_transform),
                     send_model_transform.after(TransformSystem::TransformPropagate),
                     update_visibility.after(TransformSystem::TransformPropagate),
                 )
@@ -479,8 +479,8 @@ fn remove_models(
         let Some(chunk_position) = model_map.entity2position.remove(&entity) else {
             // TODO: This if condition can be removed, I just want to test for a while that I didn't
             // mess up.
-            panic!("All models that are spawned should be entered into the model map. \
-                   If when trying to delete a model it doesn't exist in the model map that is big bad.")
+            error!("Despawned model was not entered in the model map, this should never happen.");
+            continue;
         };
 
         let chunk = model_map.position2entity.get_mut(&chunk_position).unwrap();
@@ -554,6 +554,7 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                 .distance_squared(animation_player.last_position.xz());
 
             if !animation_player.playing_move_animation && difference > 0.00001 {
+                dbg!("play");
                 animation_player.playing_move_animation = true;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;
@@ -565,6 +566,7 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                     animation_player.play(move_animation).repeat();
                 }
             } else if animation_player.playing_move_animation && difference < 0.00001 {
+                dbg!("pause");
                 animation_player.playing_move_animation = false;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;

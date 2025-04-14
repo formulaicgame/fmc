@@ -33,10 +33,10 @@ impl Plugin for ChunkManagerPlugin {
             .add_systems(
                 Update,
                 (
-                    add_player_chunk_tracker,
                     update_player_chunk_origin,
                     update_simulated_chunks.after(update_player_chunk_origin),
                     (
+                        add_and_remove_subscribers,
                         subscribe_to_visible_chunks,
                         manage_subscriptions,
                         handle_chunk_loading_tasks,
@@ -74,16 +74,50 @@ impl ChunkTracker {
     }
 }
 
-fn add_player_chunk_tracker(
+fn add_and_remove_subscribers(
     mut commands: Commands,
-    player_query: Query<(Entity, &GlobalTransform), Added<Player>>,
+    world_map: Res<WorldMap>,
+    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    connections: Query<(Entity, &GlobalTransform), Added<Player>>,
+    mut disconnections: RemovedComponents<Player>,
+    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
 ) {
-    for (entity, transform) in player_query.iter() {
+    for (entity, transform) in connections.iter() {
+        chunk_subscriptions
+            .subscriber_to_chunks
+            .insert(entity, HashSet::default());
+
         commands
             .entity(entity)
             .insert(ChunkTracker::new(ChunkPosition::from(
                 transform.translation(),
             )));
+    }
+
+    for entity in disconnections.read() {
+        let subscribed_chunks = chunk_subscriptions
+            .subscriber_to_chunks
+            .remove(&entity)
+            .unwrap();
+
+        for chunk_position in subscribed_chunks {
+            let subscribers = chunk_subscriptions
+                .chunk_to_subscribers
+                .get_mut(&chunk_position)
+                .unwrap();
+            subscribers.remove(&entity);
+
+            if subscribers.len() == 0 {
+                chunk_subscriptions
+                    .chunk_to_subscribers
+                    .remove(&chunk_position);
+                if world_map.contains_chunk(&chunk_position) {
+                    unload_chunk_events.send(ChunkUnloadEvent {
+                        position: chunk_position,
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -135,7 +169,6 @@ fn manage_subscriptions(
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     player_origin_query: Query<(Entity, &ChunkTracker, &RenderDistance), Changed<ChunkTracker>>,
-    mut network_events: EventReader<NetworkEvent>,
     mut subscription_events: EventReader<ChunkSubscriptionEvent>,
     mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
 ) {
@@ -214,41 +247,6 @@ fn manage_subscriptions(
                     unload_chunk_events.send(ChunkUnloadEvent {
                         position: chunk_position,
                     });
-                }
-            }
-        }
-    }
-
-    for event in network_events.read() {
-        match event {
-            NetworkEvent::Connected { entity } => {
-                chunk_subscriptions
-                    .subscriber_to_chunks
-                    .insert(*entity, HashSet::default());
-            }
-            NetworkEvent::Disconnected { entity } => {
-                let subscribed_chunks = chunk_subscriptions
-                    .subscriber_to_chunks
-                    .remove(entity)
-                    .unwrap();
-
-                for chunk_position in subscribed_chunks {
-                    let subscribers = chunk_subscriptions
-                        .chunk_to_subscribers
-                        .get_mut(&chunk_position)
-                        .unwrap();
-                    subscribers.remove(entity);
-
-                    if subscribers.len() == 0 {
-                        chunk_subscriptions
-                            .chunk_to_subscribers
-                            .remove(&chunk_position);
-                        if world_map.contains_chunk(&chunk_position) {
-                            unload_chunk_events.send(ChunkUnloadEvent {
-                                position: chunk_position,
-                            });
-                        }
-                    }
                 }
             }
         }
