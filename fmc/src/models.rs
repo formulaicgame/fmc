@@ -553,8 +553,7 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                 .xz()
                 .distance_squared(animation_player.last_position.xz());
 
-            if !animation_player.playing_move_animation && difference > 0.00001 {
-                dbg!("play");
+            if !animation_player.playing_move_animation && difference > 0.0005 {
                 animation_player.playing_move_animation = true;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;
@@ -565,8 +564,7 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                 } else {
                     animation_player.play(move_animation).repeat();
                 }
-            } else if animation_player.playing_move_animation && difference < 0.00001 {
-                dbg!("pause");
+            } else if animation_player.playing_move_animation && difference < 0.0005 {
                 animation_player.playing_move_animation = false;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;
