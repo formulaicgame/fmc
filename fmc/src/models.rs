@@ -617,11 +617,12 @@ fn update_model_assets(
 // TODO: Animations must be sent
 fn update_visibility(
     net: Res<Server>,
-    world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
+    player_query: Query<Entity, With<Player>>,
     model_query: Query<
         (
             Entity,
+            Option<&Parent>,
             &Model,
             &ModelVisibility,
             Option<&ModelColor>,
@@ -630,8 +631,19 @@ fn update_visibility(
         Or<(Changed<ModelVisibility>, Changed<Model>)>,
     >,
 ) {
-    for (entity, model, visibility, maybe_color, transform) in model_query.iter() {
+    for (entity, maybe_parent, model, visibility, maybe_color, transform) in model_query.iter() {
         let transform = transform.compute_transform();
+
+        // Don't send the player model to the player it belongs to.
+        let player_entity = if let Some(parent) = maybe_parent {
+            if let Ok(player_entity) = player_query.get(parent.get()) {
+                Some(player_entity)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let chunk_pos = ChunkPosition::from(transform.translation);
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
@@ -643,7 +655,7 @@ fn update_visibility(
             match model {
                 Model::Asset(model_id) => {
                     net.send_many(
-                        subs,
+                        subs.iter().filter(|sub| Some(**sub) != player_entity),
                         messages::NewModel {
                             parent_id: None,
                             model_id: entity.index(),
@@ -667,7 +679,7 @@ fn update_visibility(
                     // TODO: Collider must be sent to clients
                     collider: _collider,
                 } => net.send_many(
-                    subs,
+                    subs.iter().filter(|sub| Some(**sub) != player_entity),
                     messages::SpawnCustomModel {
                         model_id: entity.index(),
                         parent_id: None,
@@ -689,7 +701,7 @@ fn update_visibility(
 
             if let Some(color) = maybe_color {
                 net.send_many(
-                    subs,
+                    subs.iter().filter(|sub| Some(**sub) != player_entity),
                     messages::ModelColor {
                         model_id: entity.index(),
                         color: color.to_hex(),
@@ -698,7 +710,7 @@ fn update_visibility(
             }
         } else {
             net.send_many(
-                subs,
+                subs.iter().filter(|sub| Some(**sub) != player_entity),
                 messages::DeleteModel {
                     model_id: entity.index(),
                 },
@@ -709,7 +721,6 @@ fn update_visibility(
 
 fn send_models_on_chunk_subscription(
     net: Res<Server>,
-    world_map: Res<WorldMap>,
     model_map: Res<ModelMap>,
     player_query: Query<Entity, With<Player>>,
     model_query: Query<(
@@ -734,7 +745,7 @@ fn send_models_on_chunk_subscription(
                     continue;
                 }
 
-                // Don't send the player models to the players they belong to.
+                // Don't send the player model to the player it belongs to.
                 if let Some(parent) = maybe_player_parent {
                     let player_entity = player_query.get(parent.get()).unwrap();
                     if player_entity == chunk_sub.player_entity {
