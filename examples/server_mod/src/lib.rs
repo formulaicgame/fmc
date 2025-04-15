@@ -1,7 +1,7 @@
 use fmc_vanilla::{
-    // The 'fmc' module is the base layer of the game. It takes care of things like chunk
-    // management, networking, physics, etc... Things that are specific to the game are found in
-    // the 'fmc_vanilla' module, mobs, items and the like. Check out the docs to see what is
+    // The 'fmc' module is the "base" of the game. It takes care of chunk management,
+    // networking, physics, etc... Things that are specific to the game are found in
+    // the 'fmc_vanilla' module, mobs, items and the like. Check the docs to see what is
     // available.
     fmc::{
         networking::Server,
@@ -13,18 +13,18 @@ use fmc_vanilla::{
     //
     // https://bevyengine.org/learn/quick-start/getting-started/ecs/ (ecs section)
     // https://bevy-cheatbook.github.io/programming.html (Chapters 14 and 5)
-    // Ignore everything that has to do with rendering, bevy is a larger framework for game
+    // Ignore everything else, bevy is a larger framework for game
     // development, but we only use the ecs part of it.
     //
-    // https://dev-docs.bevyengine.org/bevy_ecs/index.html
-    // Bevy's docs, you will use these a lot.
+    // https://docs.rs/bevy/latest/bevy/
+    // Bevy's docs
     //
     // https://github.com/bevyengine/bevy/tree/main/examples#ecs-entity-component-system
-    // Exhaustive examples of available features
+    // Exhaustive examples of available ecs features
     prelude::*,
 };
 
-// Your mod must expose a 'Mod' struct that implements Plugin to be recognized as a mod.
+// Your mod must expose a struct named `Mod` that implements `bevy::app::Plugin` to be recognized as a mod.
 pub struct Mod;
 impl Plugin for Mod {
     fn build(&self, app: &mut App) {

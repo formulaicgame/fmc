@@ -1,11 +1,20 @@
-![image](https://github.com/user-attachments/assets/f72ae725-2492-4677-8913-c12d23a5fd27)
+![image](https://github.com/user-attachments/assets/a70f8ff8-5514-4f6b-b178-871700932123)
 
 ## Fmc 
 Download the game at [fmc.gg](https://fmc.gg)  
-Join the [Discord](https://discord.gg/VMgFmdsQ6m) if you have questions
+Singleplayer does not work (well) on Windows and MacOS yet, you should download a [standalone server binary](https://github.com/awowogei/FMC_173/releases/tag/nightly).
+Click "connect" after running it instead of "singleplayer".
+It will be caught by Defender on Windows, and MacOS makes it hard to run unsigned executables.  
+
+Join the [discord](https://discord.gg/VMgFmdsQ6m) if you have questions
+
+## What is this?
+Fmc is a [platform/library](https://github.com/formulaicgame/fmc/tree/master/fmc) for creating [block games](https://github.com/awowogei/FMC_173) that are
+[moddable](https://github.com/formulaicgame/fmc/tree/master/examples/server_mod). The games are implemented entirely server-side,
+making them all playable through the same [client](https://github.com/formulaicgame/fmc/tree/master/client).
 
 ## Contributing
-Contributions are welcome and encouraged, reach out on discord. 
+Contributions are welcome and encouraged, reach out on [discord](https://discord.gg/VMgFmdsQ6m). 
 
 ## Modding
 
@@ -18,6 +27,7 @@ To develop your own mod, see the [example mod](examples/server_mod).
 git clone https://github.com/formulaicgame/fmc
 cd fmc/client && cargo run --release
 ```
+
 # Licensing
-[client](./client/) - All rights reserved (Will be made AGPL3 with time)  
+[client](./client/) - All rights reserved (Will be made AGPL3 as the project becomes established)  
 [fmc](./fmc/)    - MIT or Apache-2.0
