@@ -21,8 +21,8 @@ impl Plugin for InterfacePlugin {
     }
 }
 
-// SystemSet used to order event handling. Use .after(InterfaceEventRegistration) for systems that
-// should handle interface events.
+/// SystemSet used to order event handling. Use .after(InterfaceEventRegistration) for systems that
+/// should handle interface events.
 #[derive(SystemSet, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct InterfaceEventRegistration;
 
@@ -40,9 +40,11 @@ pub struct HeldInterfaceStack {
 #[derive(Component, Deref, DerefMut, Default)]
 pub(crate) struct InterfaceNodes(HashMap<String, Entity>);
 
+/// Register a interface node for a player to an entity, so that when the player interacts with the
+/// node, the entity is notified of the interaction.
 #[derive(Event)]
 pub struct RegisterInterfaceNode {
-    /// The player the node should be registered for.
+    /// The player the node should be registered to.
     pub player_entity: Entity,
     /// The node path. E.g. "inventory/crafting_table"
     pub node_path: String,
@@ -50,6 +52,7 @@ pub struct RegisterInterfaceNode {
     pub node_entity: Entity,
 }
 
+/// Component that lets an entity read interface interactions
 #[derive(Component)]
 pub struct InterfaceEvents(Vec<NetworkMessage<messages::InterfaceInteraction>>);
 

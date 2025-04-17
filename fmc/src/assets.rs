@@ -3,6 +3,7 @@ use std::hash::{DefaultHasher, Hasher};
 use bevy::prelude::*;
 use fmc_protocol::{messages, MessageType};
 
+/// Manages the server's assets
 pub struct AssetPlugin;
 impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
@@ -16,6 +17,7 @@ impl Plugin for AssetPlugin {
     }
 }
 
+/// A [SystemSet] to manage the order assets are loaded in.
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum AssetSet {
     Models,
@@ -24,6 +26,8 @@ pub enum AssetSet {
     Blocks,
 }
 
+/// A [MessageType::AssetResponse] of the client assets, compressed and ready to be sent to the
+/// clients when they connect.
 #[derive(Resource)]
 pub struct Assets {
     pub hash: u64,

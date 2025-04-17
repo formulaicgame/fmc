@@ -1,12 +1,20 @@
+/// Asset management
 pub mod assets;
+/// The game's blocks.
 pub mod blocks;
+/// Database connection management
 pub mod database;
+/// UI interaction infrastructure
 pub mod interfaces;
+/// The game's items.
 pub mod items;
+/// The game's models.
 pub mod models;
 pub mod networking;
 pub mod physics;
+/// Manages core player functionality
 pub mod players;
+// TODO: This is just rng now, rename
 pub mod utils;
 pub mod world;
 
@@ -47,6 +55,20 @@ pub mod prelude {
 }
 
 use bevy::app::{PluginGroup, PluginGroupBuilder};
+
+/// The plugins needed for a basic game, enables all available functionality.
+///
+/// Click `source` above to see the list of plugins.  
+/// To disable plugins:
+/// ```rust
+/// fn main() {
+///     App::new()
+///         .add_plugins(DefaultPlugins
+///             .build()
+///             .disable::<fmc::items::ItemPlugin>()
+///         );
+/// }
+/// ```
 pub struct DefaultPlugins;
 impl PluginGroup for DefaultPlugins {
     // TODO: It might make sense to increase the amount of cpu threads used by the async compute pool

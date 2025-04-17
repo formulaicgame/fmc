@@ -1,8 +1,10 @@
+// This is a mod for fmc_vanilla, replace fmc_vanilla with the game you want to mod in Cargo.toml
+// Use the games docs to discover functionality you can modify.
+//
 use fmc_vanilla::{
-    // The 'fmc' module is the "base" of the game. It takes care of chunk management,
+    // The 'fmc' module is the core of the game. It takes care of chunk management,
     // networking, physics, etc... Things that are specific to the game are found in
-    // the 'fmc_vanilla' module, mobs, items and the like. Check the docs to see what is
-    // available.
+    // the 'fmc_vanilla' module, mobs, items and the like.
     fmc::{
         networking::Server,
         players::{Camera, Player},

@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     blocks::{BlockId, BlockPosition, Blocks, BLOCK_CONFIG_PATH},
-    utils,
     world::chunk::{Chunk, ChunkPosition},
 };
 

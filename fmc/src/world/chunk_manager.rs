@@ -51,7 +51,7 @@ impl Plugin for ChunkManagerPlugin {
 
 #[derive(Component)]
 struct ChunkTracker {
-    // The chunk the player is currently/previously in. Ticks they differ are when the player
+    // The chunk the player is currently/previously in. Ticks they differ are when the chunk
     // changed, otherwise they are equal.
     current_origin: ChunkPosition,
     prev_origin: ChunkPosition,
@@ -574,6 +574,7 @@ impl SimulatedChunks {
     }
 }
 
+/// Signals that you should start/stop simulating a chunk.
 #[derive(Event)]
 pub enum ChunkSimulationEvent {
     Start(ChunkPosition),

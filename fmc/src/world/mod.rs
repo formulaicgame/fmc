@@ -31,7 +31,6 @@ pub use map::WorldMap;
 pub use terrain_generation::{blueprints, Surface, TerrainFeature, TerrainGenerator};
 
 pub struct WorldPlugin;
-
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(RenderDistance { chunks: 16 })
@@ -179,7 +178,9 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
     }
 }
 
-// DO NOT listen for this. If you need to know when a block changes listen for ChangedBlockEvent
+/// Change a block in the [WorldMap]
+///
+/// DO NOT listen for this. If you need to know when a block changes listen for ChangedBlockEvent
 #[derive(Event)]
 pub enum BlockUpdate {
     /// Change one block to another.

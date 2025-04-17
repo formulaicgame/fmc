@@ -3,8 +3,6 @@ use std::{
     ops::Index,
 };
 
-use bevy::prelude::*;
-
 use crate::blocks::{BlockId, BlockPosition, BlockState, Blocks};
 
 use super::{
@@ -14,10 +12,12 @@ use super::{
 
 pub mod blueprints;
 
+/// Trait to make a terrain generator that can be passed to the [WorldMap]
 pub trait TerrainGenerator: Send + Sync {
     fn generate_chunk(&self, position: ChunkPosition) -> Chunk;
 }
 
+/// A multi block structure
 #[derive(Default)]
 pub struct TerrainFeature {
     /// The blocks the feature consists of partitioned into the chunks they are a part of.
@@ -37,15 +37,16 @@ pub struct TerrainFeature {
     //     like ores for different types of stone.
     // }
     // https://gist.github.com/daboross/976978d8200caf86e02acb6805961195 says really long at bottom
+    /// The block types the feature can replace
     pub can_replace: HashSet<BlockId>,
-    // Terrain feautres may supply a set of bounding boxes that will restrict the
-    // feature so that it is only placed where all blocks within the bounding boxes are
-    // replaceable.
+    /// Terrain feautres may supply a set of bounding boxes that will restrict the
+    /// feature so that it is only placed where all blocks within the bounding boxes are
+    /// replaceable according to its replacement rules.
     pub bounding_boxes: Vec<(BlockPosition, BlockPosition)>,
 }
 
 impl TerrainFeature {
-    fn insert_block(&mut self, position: BlockPosition, block_id: BlockId) {
+    pub fn insert_block(&mut self, position: BlockPosition, block_id: BlockId) {
         let chunk_position = ChunkPosition::from(position);
         let index = position.as_chunk_index();
         self.blocks
@@ -54,17 +55,18 @@ impl TerrainFeature {
             .push((index, block_id, None));
     }
 
-    fn add_bounding_box(&mut self, min: BlockPosition, max: BlockPosition) {
+    pub fn add_bounding_box(&mut self, min: BlockPosition, max: BlockPosition) {
         assert!(min.cmple(max.0).all());
         self.bounding_boxes.push((min, max));
     }
 
-    pub fn applies_to_chunk(&self, chunk_position: &ChunkPosition) -> bool {
+    /// Check if the feature will place block in the supplied chunk
+    pub(crate) fn applies_to_chunk(&self, chunk_position: &ChunkPosition) -> bool {
         return self.blocks.contains_key(chunk_position);
     }
 
-    // Check if the blocks of the feature, and its bounding boxes fit inside a single chunk.
-    pub fn fits_in_chunk(&self, chunk_position: ChunkPosition) -> bool {
+    /// Check if the blocks of the feature, and its bounding boxes fit inside a single chunk.
+    pub(crate) fn fits_in_chunk(&self, chunk_position: ChunkPosition) -> bool {
         if self.blocks.len() != 1 || !self.blocks.contains_key(&chunk_position) {
             return false;
         }
@@ -117,7 +119,7 @@ impl TerrainFeature {
     }
 
     /// This should only be used on terrain features that place blocks in multiple chunks.
-    pub fn apply_edge_feature(
+    pub(crate) fn apply_edge_feature(
         &self,
         world_map: &mut WorldMap,
     ) -> Vec<(ChunkPosition, Vec<(usize, BlockId, Option<u16>)>)> {
@@ -163,7 +165,7 @@ impl TerrainFeature {
         return placed_blocks;
     }
 
-    pub fn apply(self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
+    pub(crate) fn apply(self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
         if !self.fits_in_chunk(chunk_position) {
             // The feature is part of many chunks, have to wait until they are loaded.
             chunk.terrain_features.push(self);
@@ -196,7 +198,8 @@ impl TerrainFeature {
     }
 }
 
-/// Keeps track of the surface of a chunk.
+/// The surface height of a chunk, access with `surface[x * CHUNK::SIZE + z]` it will yield the
+/// height and the block id of the surface block.
 pub struct Surface {
     // (y_index, surface block) of each block column if there is one
     surface_blocks: Vec<Option<(usize, BlockId)>>,

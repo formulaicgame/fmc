@@ -12,8 +12,9 @@ use crate::{
     world::chunk::Chunk,
 };
 
+/// Sets up the database at startup
 pub struct DatabasePlugin {
-    path: String,
+    pub path: String,
 }
 
 impl Default for DatabasePlugin {
@@ -41,6 +42,7 @@ impl Plugin for DatabasePlugin {
     }
 }
 
+/// Database connection manager
 #[derive(Resource, Clone)]
 pub struct Database(Arc<DatabaseInner>);
 
@@ -60,6 +62,7 @@ struct DatabaseInner {
     //pub pool: Mutex<Vec<rusqlite::Connection>>
 }
 
+/// A lock on the single write connection the database has.
 #[derive(Deref, DerefMut)]
 pub struct WriteConnection<'a> {
     conn: MutexGuard<'a, rusqlite::Connection>,

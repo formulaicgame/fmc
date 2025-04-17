@@ -31,6 +31,7 @@ const HEADER_SIZE: usize = 5;
 // message length (4 bytes)
 const COMPRESSION_HEADER: usize = 4;
 
+/// Enables and manages the network interface
 pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
@@ -101,6 +102,7 @@ impl Disconnections {
     }
 }
 
+/// The main network interface.
 #[derive(Resource)]
 pub struct Server {
     listener: std::net::TcpListener,
@@ -147,11 +149,13 @@ impl Server {
         }
     }
 
+    /// Broadcast a message to all the clients
     #[track_caller]
     pub fn broadcast<'a, T: ClientBound + Serialize>(&self, message: T) {
         self.send_many(self.connections.keys(), message);
     }
 
+    /// Disconnect a client
     pub fn disconnect(&self, connection_entity: Entity) -> bool {
         self.to_disconnect.insert(connection_entity)
     }
@@ -404,12 +408,13 @@ impl UninitializedConnection {
     }
 }
 
+/// Sent immediately after a client connects or disconnects
 #[derive(Event)]
 pub enum NetworkEvent {
-    // Provided for symmetry, prefer listening for Added<Player>
+    /// Provided for symmetry, prefer listening for `Added<Player>`
     Connected { entity: Entity },
-    // Signals that player connection has been disconnected. This event is only valid during
-    // PreUpdate of the tick after it is issued. After that the entity will have been despawned.
+    /// Signals that player connection has been disconnected. This event is only valid during
+    /// PreUpdate of the tick after it is issued. After that the entity will have been despawned.
     Disconnected { entity: Entity },
 }
 
@@ -584,8 +589,9 @@ fn log_connections(
     }
 }
 
+/// A message received from a client
 #[derive(Event, Deref, Debug)]
-pub struct NetworkMessage<T> {
+pub struct NetworkMessage<T: fmc_protocol::ServerBound> {
     pub player_entity: Entity,
     #[deref]
     pub message: T,

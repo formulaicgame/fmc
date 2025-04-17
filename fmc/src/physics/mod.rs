@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::{
     blocks::{BlockFace, BlockPosition, Blocks},
     prelude::*,
-    world::{chunk::ChunkPosition, BlockUpdate, ChangedBlockEvent, WorldMap},
+    world::{chunk::ChunkPosition, ChangedBlockEvent, WorldMap},
 };
 
 pub mod shapes;
@@ -55,10 +55,12 @@ impl Collider {
     //     }
     // }
 
+    /// Construct a collider from a set of aabb bounds.
     pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
         Self::Aabb(Aabb::from_min_max(min, max))
     }
 
+    /// Get the minimum and maximum bounds of the collider.
     pub fn min_max(&self, transform: &Transform) -> (DVec3, DVec3) {
         let mut min = DVec3::MAX;
         let mut max = DVec3::MIN;
@@ -70,6 +72,7 @@ impl Collider {
         (min, max)
     }
 
+    /// Iterate over the shapes of the collider
     fn iter(&self) -> &[Aabb] {
         match self {
             Self::Aabb(aabb) => std::slice::from_ref(aabb),
@@ -84,6 +87,7 @@ impl Collider {
     //     }
     // }
 
+    /// Intersection test with another collider, returns the overlap if any.
     pub fn intersection(
         &self,
         self_transform: &Transform,
@@ -118,6 +122,7 @@ impl Collider {
         return intersection;
     }
 
+    /// Ray intersection test with the collider.
     pub fn ray_intersection(
         &self,
         collider_transform: &Transform,
@@ -144,16 +149,21 @@ impl Collider {
     }
 }
 
-// For ordering systems to remove 1-frame lag
+/// For ordering systems to remove 1-frame lag
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub struct PhysicsSystems;
 
+/// Adds physics simulation to an entity.
 #[derive(Component)]
 pub struct Physics {
     pub enabled: bool,
+    /// Set this to apply an impulse to the entity. It will reset each tick.
     pub acceleration: DVec3,
+    /// The current velocity of the entity.
     pub velocity: DVec3,
+    /// If the entity is currently blocked from moving along an axis.
     pub grounded: BVec3,
+    /// Set this if the entity should be buoyant
     pub buoyancy: Option<Buoyancy>,
 }
 
@@ -175,11 +185,11 @@ pub struct PhysicsBundle {
     collider: Collider,
 }
 
-// Makes objects float (they sink by default)
+/// Makes entities float
 pub struct Buoyancy {
-    // Floats if this is lower than the block's Y-direction drag
+    /// Floats if this is lower than the block's Y-direction drag
     pub density: f64,
-    // Where on the aabb the waterline should sit.
+    /// Where on the entity's collider the waterline should sit.
     pub waterline: f64,
 }
 
@@ -201,7 +211,7 @@ struct ObjectMap {
 }
 
 impl ObjectMap {
-    pub fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
+    fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
         return self.objects.get(chunk_position);
     }
 
@@ -239,8 +249,8 @@ impl ObjectMap {
 // BUG: Wanted to use Vec3A end to end, but the Vec3A::max_element function considers NaN to be
 // greater than any number, where Vec3::max_element is opposite.
 //
-// Moves all entities with an aabb along their velocity vector and resolves any collisions that
-// occur with the terrain.
+// Moves all entities with collider along their velocity vector and resolves any collisions that
+// occur with the environment.
 fn simulate_physics(
     world_map: Res<WorldMap>,
     time: Res<Time>,

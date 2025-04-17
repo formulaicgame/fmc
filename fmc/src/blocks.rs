@@ -27,10 +27,13 @@ use crate::{
     world::chunk::{Chunk, ChunkPosition},
 };
 
+/// Each block type is assiged a unique block id
 pub type BlockId = u16;
 
+/// The relative path to the game's block configurations.
 pub const BLOCK_CONFIG_PATH: &str = "./assets/client/blocks/";
-const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/";
+/// The relative path to the game's rendering materials
+pub const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/";
 
 // TODO: Regretting this, just make it a resource with an Arc inside so it can be cloned for
 // terrain generation.
@@ -41,6 +44,7 @@ const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/";
 // functionality, but can safely be used to extract ids and data from.
 static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::new();
 
+/// Handles loading block from their configuration files
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
     fn build(&self, app: &mut App) {
@@ -262,13 +266,16 @@ fn load_block_materials() -> HashMap<String, BlockMaterial> {
 
 // TODO: This wraps BlockConfig for no good reason? Include spawn_entity_fn in BlockConfig. The
 // name can be used for { BlockId, Option<BlockState> }?
+//
+/// A block's configuration and the optional function that will be called when the block is spawned.
 #[derive(Deref)]
 pub struct Block {
     #[deref]
-    config: BlockConfig,
+    pub config: BlockConfig,
     // This function is used to set up the ecs entity for the block if it should have
     // functionality. e.g. a furnace would need ui components and its internal smelting state.
-    pub spawn_entity_fn: Option<fn(&mut EntityCommands, Option<&BlockData>)>,
+    pub spawn_entity_fn:
+        Option<fn(entity_commands: &mut EntityCommands, block_data: Option<&BlockData>)>,
 }
 
 impl std::fmt::Debug for Block {
@@ -468,6 +475,7 @@ struct BlockVerticesJson {
     vertices: [[f32; 3]; 4],
 }
 
+/// Interaction sounds
 #[derive(Debug, Deserialize, Default)]
 pub struct Sounds {
     #[serde(default)]
@@ -607,8 +615,9 @@ impl BlockConfigJson {
 
 // TODO: 'hardness' 'tools' 'drop' 'particle_textures' are too specific. They should be handled
 // outside of library. Add a new field 'properties' with serde(flatten) on it to capture everything
-// not needed. The server implementor should then make their own 'Blocks' and 'BlockConfig'. Parse
-// the 'properties' field into it's BlockConfig and shadow Blocks.
+// not needed. The server implementer should then make their own 'BlockExtras' and read from it.
+//
+/// The configuration values of a block
 #[derive(Debug)]
 pub struct BlockConfig {
     /// Name of the block
@@ -632,7 +641,7 @@ pub struct BlockConfig {
     // Which item(s) the block drops.
     drop: Option<BlockDrop>,
     // The rendering material for the block, if it uses one.
-    pub material: Option<BlockMaterial>,
+    material: Option<BlockMaterial>,
     /// Collider used for physics and hit detection.
     pub hitbox: Option<Collider>,
     /// Rules for how the block can be placed by the player.
@@ -764,6 +773,7 @@ impl BlockConfig {
     }
 }
 
+/// Block configuration value that defines how a block can be placed.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct BlockPlacement {
@@ -795,7 +805,7 @@ impl Default for BlockPlacement {
     }
 }
 
-/// The different sides of a block
+/// The different faces of a block
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum BlockFace {
     Front,
@@ -829,6 +839,7 @@ impl BlockFace {
     }
 }
 
+/// Friction values for solid blocks.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct Friction {
     pub front: f64,
@@ -839,15 +850,21 @@ pub struct Friction {
     pub bottom: f64,
 }
 
+/// Block data is extra data that is optionally used by blocks that have their own entity. It can
+/// be used in any way the implementer chooses, but should be kept as small as possible, as it is
+/// unique to each block.
 #[derive(Component, Deref, DerefMut, Clone)]
 pub struct BlockData(pub Vec<u8>);
 
-// bits:
-//     0000 0000 0000 unused
-//     0000
-//       ^^-north/south/east/west
-//      ^---centered, overrides rotation, 1 = centered
-//     ^----upside down
+/// Common state that can be attached to blocks to alter them. Sent to clients along with the block
+/// ids in chunks.  
+///
+/// bits:
+///     0000 0000 0000 unused
+///     0000
+///       ^^-north/south/east/west
+///      ^---centered, overrides rotation, 1 = centered
+///     ^----upside down
 #[derive(Default, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct BlockState(pub u16);
 
@@ -888,7 +905,7 @@ impl BlockState {
     }
 }
 
-// TODO: Replace all occurences of IVec3 with this
+/// Required component for all blocks that have entities. Marks where they are in the world.
 #[derive(Component, Deref, DerefMut, Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct BlockPosition(pub IVec3);
 
@@ -1028,7 +1045,7 @@ struct Color {
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
-pub struct BlockMaterial {
+struct BlockMaterial {
     base_color: Option<Color>,
     transparency: String,
 }

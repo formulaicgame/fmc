@@ -15,7 +15,7 @@ use crate::{
 pub struct PlayersPlugin;
 impl Plugin for PlayersPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, send_aabb).add_systems(
+        app.add_systems(
             PreUpdate,
             (
                 handle_player_position_updates,
@@ -28,6 +28,11 @@ impl Plugin for PlayersPlugin {
     }
 }
 
+// TODO: It looks nice to listen for Added<Player>, but when consuming the library you suffer from
+// not having a good name for a state struct for players. Maybe the username should just be a
+// component.
+//
+/// Player marker struct
 #[derive(Component, Default)]
 #[require(ChunkOrigin)]
 pub struct Player {
@@ -39,7 +44,7 @@ pub struct Player {
 // system that propagates it like with normal transforms.
 //
 /// Orientation of the player's camera.
-/// The transform's translation is where the camera is relative to the player position.
+/// The camera's translation is where the camera is relative to the player position.
 #[derive(Component, Deref, DerefMut)]
 pub struct Camera(Transform);
 
@@ -48,6 +53,7 @@ impl Camera {
         Self(transform)
     }
 
+    /// Extract the camera's transform, prefer using Deref
     pub fn transform(&self) -> &Transform {
         &self.0
     }
@@ -63,7 +69,7 @@ impl Default for Camera {
 }
 
 #[derive(Bundle)]
-pub struct DefaultPlayerBundle {
+pub(crate) struct DefaultPlayerBundle {
     player: Player,
     render_distance: RenderDistance,
     transform: Transform,
@@ -87,6 +93,7 @@ impl DefaultPlayerBundle {
     }
 }
 
+// TODO: Defunct, handled in wasm plugin now. Remember to remove the protocol message
 fn send_aabb(
     net: Res<Server>,
     aabb_query: Query<(Entity, &Collider), (Changed<Collider>, With<Player>)>,
@@ -132,7 +139,7 @@ fn handle_camera_rotation_updates(
     }
 }
 
-/// Contains what the player is looking at, sorted by the distance from the camera.
+/// Contains the [Target]'s the player is looking at, sorted by the distance from the camera.
 /// The scan for targets will stop at the first entity it hits with an aabb or the first block that
 /// is solid.
 #[derive(Component, Deref, DerefMut, Debug, Default)]
@@ -158,7 +165,7 @@ impl Targets {
         return None;
     }
 }
-/// Tracks what the player is currently looking at
+/// An object that can be targeted by a player
 #[derive(Debug)]
 pub enum Target {
     Entity {
@@ -181,6 +188,7 @@ pub enum Target {
 }
 
 impl Target {
+    /// Get the distance to the target
     pub fn distance(&self) -> f64 {
         match self {
             Self::Entity { distance, .. } => *distance,
@@ -188,6 +196,7 @@ impl Target {
         }
     }
 
+    /// Get the target's entity, if it has one
     pub fn entity(&self) -> Option<Entity> {
         match self {
             Target::Entity { entity, .. } => Some(*entity),
