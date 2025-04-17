@@ -9,6 +9,7 @@ use crate::{
 
 use super::chunk::ChunkPosition;
 
+/// Holds the world's chunks. You must insert this yourself with the [TerrainGenerator] you want.
 #[derive(Resource)]
 pub struct WorldMap {
     chunks: HashMap<ChunkPosition, Chunk>,

@@ -12,10 +12,11 @@ pub mod items;
 pub mod models;
 pub mod networking;
 pub mod physics;
-/// Manages core player functionality
+/// Manages basic player functionality
 pub mod players;
 // TODO: This is just rng now, rename
 pub mod utils;
+/// Manages the blocks in the world
 pub mod world;
 
 pub use fmc_noise as noise;
@@ -56,7 +57,7 @@ pub mod prelude {
 
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 
-/// The plugins needed for a basic game, enables all available functionality.
+/// Enables basic bevy plugins and all available functionality.
 ///
 /// Click `source` above to see the list of plugins.  
 /// To disable plugins:

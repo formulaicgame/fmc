@@ -40,7 +40,7 @@ pub struct HeldInterfaceStack {
 #[derive(Component, Deref, DerefMut, Default)]
 pub(crate) struct InterfaceNodes(HashMap<String, Entity>);
 
-/// Register a interface node for a player to an entity, so that when the player interacts with the
+/// Register an interface node for a player to an entity, so that when the player interacts with the
 /// node, the entity is notified of the interaction.
 #[derive(Event)]
 pub struct RegisterInterfaceNode {

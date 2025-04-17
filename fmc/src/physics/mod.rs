@@ -153,7 +153,7 @@ impl Collider {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub struct PhysicsSystems;
 
-/// Adds physics simulation to an entity.
+/// Adds physics simulation to an entity, requires that you add a [Collider] to function.
 #[derive(Component)]
 pub struct Physics {
     pub enabled: bool,
@@ -177,12 +177,6 @@ impl Default for Physics {
             buoyancy: None,
         }
     }
-}
-
-#[derive(Bundle)]
-pub struct PhysicsBundle {
-    physics: Physics,
-    collider: Collider,
 }
 
 /// Makes entities float
