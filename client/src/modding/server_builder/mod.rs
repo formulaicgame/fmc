@@ -113,8 +113,7 @@ game = {{ version = "{}", package = "{}" }}
 
 fn cargo_command() -> std::process::Command {
     let data_dir = data_dir().unwrap();
-    let mut command =
-        std::process::Command::new(data_dir.join("fmc/rust/bin/cargo").canonicalize().unwrap());
+    let mut command = std::process::Command::new(data_dir.join("fmc/rust/bin/cargo"));
     command.env("CARGO_HOME", data_dir);
 
     command
@@ -124,7 +123,7 @@ fn cargo_command() -> std::process::Command {
 #[track_caller]
 fn data_dir() -> Option<PathBuf> {
     //dirs::data_dir()
-    Some(PathBuf::from("./build"))
+    Some(PathBuf::from("./build").canonicalize().unwrap())
 }
 
 // Returns true if a rust toolchain is available
@@ -145,6 +144,7 @@ fn get_rust() {
         return;
     }
 
+    println!("Downloading rustup...");
     let url = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => {
             "https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"

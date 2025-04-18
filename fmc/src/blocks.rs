@@ -773,7 +773,7 @@ impl BlockConfig {
     }
 }
 
-/// Block configuration value that defines how a block can be placed.
+/// Defines how a block can be placed.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct BlockPlacement {
