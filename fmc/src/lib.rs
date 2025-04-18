@@ -19,11 +19,19 @@ pub mod utils;
 /// Manages the blocks in the world
 pub mod world;
 
+/// SIMD accelerated gradient noise
+#[doc(inline)]
 pub use fmc_noise as noise;
+/// Network protocol
+#[doc(inline)]
 pub use fmc_protocol as protocol;
 
 mod bevy_extensions;
+
 pub mod bevy {
+    // This is huge. Don't want to put strain on Docs.rs by storing 250mb every time I bump
+    // the version.
+    #[doc(no_inline)]
     pub use bevy::*;
 
     // We want f64 transforms so we shadow bevy's transforms
@@ -41,14 +49,19 @@ pub mod bevy {
         pub use crate::bevy_extensions::f64_transform::TransformBundle;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
         pub use crate::bevy_extensions::f64_transform::TransformSystem;
+        // TODO: For some reason when you click this in the docs it doesn't bring you to bevy's
+        // prelude, but the prelude of bevy_internal
+        #[doc(no_inline)]
         pub use bevy::prelude::*;
     }
 }
 
 pub mod prelude {
     // XXX: https://github.com/bevyengine/bevy/issues/9831
+    #[doc(hidden)]
     pub use bevy::ecs as bevy_ecs;
 
+    #[doc(no_inline)]
     pub use bevy::prelude::*;
 
     pub use crate::bevy_extensions::f64_transform::GlobalTransform;

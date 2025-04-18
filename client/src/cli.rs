@@ -49,8 +49,8 @@ enum SubCommands {
 }
 
 fn create_server_template(path: &str) {
-    let template = r#"game = fmc_beta
-version = 1.0.0
+    let template = r#"game = fmc_vanilla
+version = 0.1.0
 
 [mods]
 # examples:
