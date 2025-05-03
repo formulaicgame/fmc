@@ -70,6 +70,8 @@ const FACE_NORMALS: [[f32; 3]; 6] = [
     [0.0, -1.0, 0.0], // Bottom
 ];
 
+const FACE_UVS: [[f32; 2]; 4] = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]];
+
 const CROSS_VERTICES: [[[f32; 3]; 4]; 2] = [
     [
         [0.0, 0.0, 0.0],
@@ -241,15 +243,38 @@ pub fn load_blocks(
                         let square = QuadPrimitive {
                             vertices: FACE_VERTICES[i],
                             normals: [FACE_NORMALS[i], FACE_NORMALS[i]],
+                            uvs: FACE_UVS.clone(),
                             texture_array_id,
                             cull_face: Some(face),
-                            light_face: face,
+                            light_face: Some(face),
                             rotate_texture: false,
                         };
 
                         mesh_primitives.push(square);
                     }
                 }
+
+                let cull_method = if only_cull_self {
+                    CullMethod::OnlySelf
+                } else {
+                    match material.alpha_mode {
+                        AlphaMode::Opaque => {
+                            if quads.is_some() {
+                                // TODO: This is because of things like stairs that have open
+                                // sections. It should be possible to define which faces a block
+                                // culls. It also uses this to determine transparency currently.
+                                //
+                                // Any block that is opaque but has custom quads does not cull
+                                // anything.
+                                CullMethod::None
+                            } else {
+                                CullMethod::All
+                            }
+                        }
+                        AlphaMode::Mask(_) => CullMethod::None,
+                        _ => CullMethod::TransparentOnly,
+                    }
+                };
 
                 let mut cull_delimiters = [None, None, None, None];
 
@@ -287,27 +312,36 @@ pub fn load_blocks(
                         let normal = Vec3::from(normals[0]);
                         let normal_max =
                             normal.abs().cmpeq(Vec3::splat(normal.abs().max_element()));
-                        let light_face = if normal_max.x {
-                            if normal.x.is_sign_positive() {
-                                BlockFace::Right
+
+                        let mut uvs: [[f32; 2]; 4] = default();
+                        for (i, vertex) in quad.vertices.into_iter().enumerate() {
+                            let uv = if normal_max.x {
+                                Vec3::from_array(vertex).zy()
+                            } else if normal_max.y {
+                                Vec3::from_array(vertex).xz()
                             } else {
-                                BlockFace::Left
+                                Vec3::from_array(vertex).xy()
+                            };
+
+                            if i == 0 {
+                                uvs[0] = [uv.x - uv.x.floor(), uv.y - uv.y.floor()];
+                            } else if i == 1 {
+                                uvs[1] = [
+                                    // This is just the fraction, but instead of using `f32::fract`
+                                    // we do this so it's inversed for negative numbers. e.g. -0.6
+                                    // yields 0.4, which is what we want because that is the distance
+                                    // from -1.0 to -0.6
+                                    uv.x - uv.x.floor(),
+                                    // Since this is on the high side of the range extracting the fract is harder since it
+                                    // can be a whole number. e.g a position of 1.0 should give a fraction of 1.0, not 0.0.
+                                    uv.y - (uv.y.ceil() - 1.0),
+                                ];
+                            } else if i == 2 {
+                                uvs[2] = [uv.x - (uv.x.ceil() - 1.0), uv.y - uv.y.floor()];
+                            } else if i == 3 {
+                                uvs[3] = [uv.x - (uv.x.ceil() - 1.0), uv.y - (uv.y.ceil() - 1.0)];
                             }
-                        } else if normal_max.y {
-                            if normal.y.is_sign_positive() {
-                                BlockFace::Top
-                            } else {
-                                BlockFace::Bottom
-                            }
-                        } else if normal_max.z {
-                            if normal.z.is_sign_positive() {
-                                BlockFace::Front
-                            } else {
-                                BlockFace::Back
-                            }
-                        } else {
-                            unreachable!();
-                        };
+                        }
 
                         match quad.cull_face {
                             Some(BlockFace::Top) | Some(BlockFace::Bottom) => (),
@@ -325,23 +359,14 @@ pub fn load_blocks(
                         mesh_primitives.push(QuadPrimitive {
                             vertices: quad.vertices,
                             normals,
+                            uvs,
                             texture_array_id,
                             cull_face: quad.cull_face,
-                            light_face,
+                            light_face: quad.cull_face,
                             rotate_texture: quad.rotate_texture,
                         });
                     }
                 }
-
-                let cull_method = if only_cull_self {
-                    CullMethod::OnlySelf
-                } else {
-                    match material.alpha_mode {
-                        AlphaMode::Opaque => CullMethod::All,
-                        AlphaMode::Mask(_) => CullMethod::None,
-                        _ => CullMethod::TransparentOnly,
-                    }
-                };
 
                 let fog_settings = if let Some(fog) = fog {
                     Some(DistanceFog {
@@ -582,16 +607,6 @@ impl Block {
         }
     }
 
-    pub fn is_transparent(&self) -> bool {
-        match self {
-            Block::Cube(c) => match c.cull_method {
-                CullMethod::All => false,
-                _ => true,
-            },
-            Block::Model(_) => true,
-        }
-    }
-
     pub fn can_have_block_state(&self) -> bool {
         match self {
             Block::Cube(cube) => {
@@ -755,7 +770,7 @@ enum BlockConfig {
         drag: Vec3,
         /// Material that should be used to render the block.
         material: String,
-        /// If the block should only cull quads from blocks of the same type.
+        /// This block will only cull the faces of other blocks when they are of the same type.
         #[serde(default)]
         only_cull_self: bool,
         /// Marking a block as interactable makes it so clicking it
@@ -893,21 +908,23 @@ pub struct QuadPrimitive {
     pub vertices: [[f32; 3]; 4],
     /// Normals for both triangles.
     pub normals: [[f32; 3]; 2],
+    /// Uv coordinates for all 4 corners
+    pub uvs: [[f32; 2]; 4],
     /// Index id in the texture array.
     pub texture_array_id: u32,
     /// Which adjacent block face culls this quad from rendering.
     pub cull_face: Option<BlockFace>,
-    /// Which blockface this quad will take it's lighting from.
-    pub light_face: BlockFace,
+    /// Which blockface this quad will be lit as. If None it will use the block's own light value.
+    pub light_face: Option<BlockFace>,
     pub rotate_texture: bool,
 }
 
 #[derive(Deserialize)]
 struct QuadPrimitiveJson {
     // indexing
-    // 1   3
-    // | \ |
     // 0   2
+    // | / |
+    // 1   3
     vertices: [[f32; 3]; 4],
     texture: String,
     cull_face: Option<BlockFace>,

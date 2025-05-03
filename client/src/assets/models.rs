@@ -362,6 +362,7 @@ impl JsonModel {
                         base_color_texture: Some(
                             asset_server.load(BLOCK_TEXTURE_PATH.to_owned() + ordered_names[i]),
                         ),
+                        alpha_mode: AlphaMode::Blend,
                         ..default()
                     });
                     gltf_mesh.primitives.push(GltfPrimitive {
@@ -649,7 +650,7 @@ fn on_gltf_load(
     mut models: ResMut<Models>,
     mut loading_models: ResMut<LoadingModels>,
     mut gltfs: ResMut<Assets<Gltf>>,
-    mut animation_clips: ResMut<Assets<AnimationClip>>,
+    //mut animation_clips: ResMut<Assets<AnimationClip>>,
     gltf_meshes: Res<Assets<GltfMesh>>,
     gltf_nodes: Res<Assets<GltfNode>>,
     meshes: Res<Assets<Mesh>>,

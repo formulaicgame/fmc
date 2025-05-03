@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 # Depend on the game you want to mod
-fmc_vanilla = { version = "0.0.1" }
+fmc_vanilla = { version = "0.1.1" }
 
 # Enable high optimizations for dependencies
 [profile.dev.package."*"]

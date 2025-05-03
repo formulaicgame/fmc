@@ -179,6 +179,7 @@ struct MeshBuilder {
     pub vertices: Vec<[f32; 3]>,
     pub triangles: Vec<u32>,
     pub normals: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
     pub packed_bits: Vec<u32>,
     //pub texture_indices: Vec<i32>,
     pub face_count: u32,
@@ -192,6 +193,7 @@ impl MeshBuilder {
         );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
         mesh.insert_attribute(materials::ATTRIBUTE_PACKED_BITS_0, self.packed_bits);
 
         mesh.insert_indices(Indices::U32(self.triangles));
@@ -225,6 +227,7 @@ impl MeshBuilder {
             vertex[2] += position[2];
             self.vertices.push(vertex);
             self.normals.push(quad.normals[i / 2]);
+            self.uvs.push(quad.uvs[i]);
             // Pack bits, from right to left:
             // 19 bits, texture index
             // 3 bits, uv, 1 bit for if it should be diagonal, 2 for coordinate index
@@ -322,10 +325,8 @@ async fn build_mesh(
                                 None
                             };
 
-                            let light = if block_config.is_transparent() {
-                                light_chunk.get_light(x, y, z)
-                            } else {
-                                match quad.light_face.rotate(block_state.rotation()) {
+                            let light = if let Some(light_face) = quad.light_face {
+                                match light_face.rotate(block_state.rotation()) {
                                     BlockFace::Right => light_chunk.get_light(x + 1, y, z),
                                     BlockFace::Left => light_chunk.get_light(x - 1, y, z),
                                     BlockFace::Front => light_chunk.get_light(x, y, z + 1),
@@ -333,6 +334,8 @@ async fn build_mesh(
                                     BlockFace::Top => light_chunk.get_light(x, y + 1, z),
                                     BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
                                 }
+                            } else {
+                                light_chunk.get_light(x, y, z)
                             };
 
                             builder.add_face(

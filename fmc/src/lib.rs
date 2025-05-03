@@ -12,11 +12,11 @@ pub mod items;
 pub mod models;
 pub mod networking;
 pub mod physics;
-/// Manages basic player functionality
+/// Basic player functionality
 pub mod players;
 // TODO: This is just rng now, rename
 pub mod utils;
-/// Manages the blocks in the world
+/// The block world
 pub mod world;
 
 /// SIMD accelerated gradient noise

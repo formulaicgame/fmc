@@ -181,9 +181,10 @@ fn play_equip_animation(
         &mut SceneRoot,
         &mut Hand,
         &mut AnimationGraphHandle,
+        &mut Visibility,
     )>,
 ) {
-    let (mut animation_player, mut scene_handle, mut hand, mut animation_graph) =
+    let (mut animation_player, mut scene_handle, mut hand, mut animation_graph, mut visibility) =
         hand_query.single_mut();
 
     if !hand.equipping {
@@ -215,9 +216,16 @@ fn play_equip_animation(
             // animations.
             animation_player.stop_all();
 
+            *visibility = Visibility::Hidden;
+
             let gltf = gltfs.get(&model.gltf_handle).unwrap();
             *scene_handle = SceneRoot(gltf.scenes[0].clone());
             *animation_graph = AnimationGraphHandle(model.animation_graph.clone().unwrap());
+        } else {
+            // TODO: This is a hack. If you let the model stay visible while it spawns it will show a single frame
+            // of the model without the animation applied. This is probably because of the delay
+            // caused by having to transfer the animation targets to the animation player.
+            *visibility = Visibility::Visible;
         }
 
         let animation = animation_player.play(animation_index);

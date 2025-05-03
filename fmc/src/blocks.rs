@@ -140,7 +140,7 @@ fn load_blocks_to_resource(
         } else if block_config_json.faces.is_some() {
             let aabb = Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
             Some(Collider::Aabb(aabb))
-        } else if let Some(quads) = block_config_json.quads {
+        } else if let Some(quads) = &block_config_json.quads {
             let mut min = Vec3::MAX;
             let mut max = Vec3::MIN;
             for quad in quads {
@@ -195,6 +195,7 @@ fn load_blocks_to_resource(
                 hitbox,
                 particle_textures,
                 sound: block_config_json.sound,
+                quads: block_config_json.quads,
             };
 
             maybe_blocks[block_id as usize] = Some(Block::new(block_config));
@@ -471,8 +472,8 @@ impl ColliderJson {
 }
 
 #[derive(Debug, Deserialize)]
-struct BlockVerticesJson {
-    vertices: [[f32; 3]; 4],
+pub struct BlockQuad {
+    pub vertices: [[f32; 3]; 4],
 }
 
 /// Interaction sounds
@@ -549,7 +550,7 @@ struct BlockConfigJson {
     // is not explicitly defined. 'model' is a gltf model, 'quads' is a set vertices and 'faces' is
     // the six faces of a cube.
     model: Option<String>,
-    quads: Option<Vec<BlockVerticesJson>>,
+    quads: Option<Vec<BlockQuad>>,
     faces: Option<BlockFaceTextures>,
     // Rules for how the block can be placed by the player.
     #[serde(default)]
@@ -652,6 +653,7 @@ pub struct BlockConfig {
     // TODO: Not needed
     /// Sound files associated with the block
     pub sound: Sounds,
+    pub quads: Option<Vec<BlockQuad>>,
 }
 
 impl BlockConfig {
