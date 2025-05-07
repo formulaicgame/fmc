@@ -118,7 +118,7 @@ fn send_position_to_server(
 
     let transform = player_transform.single();
 
-    if last_position.distance_squared(transform.translation) < 0.0001 {
+    if last_position.distance_squared(transform.translation) < 0.00001 {
         return;
     }
     *last_position = transform.translation;
