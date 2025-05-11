@@ -20,8 +20,6 @@ mod widgets;
 pub const DEFAULT_FONT_HANDLE: Handle<Font> = Handle::weak_from_u128(1491772431825224041);
 const UI_SCALE: f32 = 4.0;
 
-// These interfaces serve as the client gui and are separate from the in-game interfaces sent by
-// the server, these can be found in the 'player' module.
 pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {

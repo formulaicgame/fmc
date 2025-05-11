@@ -30,8 +30,14 @@ impl Plugin for ModelPlugin {
                 on_gltf_load.run_if(resource_exists::<Models>),
                 transfer_animation_targets.run_if(in_state(GameState::Playing)),
             ),
-        );
+        )
+        .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
+}
+
+fn cleanup(mut commands: Commands) {
+    commands.remove_resource::<Models>();
+    commands.remove_resource::<LoadingModels>();
 }
 
 // TODO: Keeping all the models loaded will probably be too expensive. Need to be able to

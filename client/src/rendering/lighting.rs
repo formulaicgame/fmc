@@ -41,8 +41,13 @@ impl Plugin for LightingPlugin {
                 )
                     .in_set(RenderSet::Light)
                     .run_if(in_state(GameState::Playing)),
-            );
+            )
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
+}
+
+fn cleanup(mut light_map: ResMut<LightMap>) {
+    light_map.chunks.clear();
 }
 
 #[derive(Resource, Default)]

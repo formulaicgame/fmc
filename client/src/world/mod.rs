@@ -10,13 +10,29 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(world_map::WorldMapPlugin)
-            .add_plugins(models::ModelPlugin);
+            .add_plugins(models::ModelPlugin)
+            .insert_resource(Origin(IVec3::ZERO))
+            .add_systems(
+                PostUpdate,
+                update_origin.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
+    }
+}
 
-        app.insert_resource(Origin(IVec3::ZERO));
-        app.add_systems(
-            PostUpdate,
-            update_origin.run_if(in_state(GameState::Playing)),
-        );
+fn cleanup(
+    mut commands: Commands,
+    mut world_map: ResMut<world_map::WorldMap>,
+    mut models: ResMut<models::ModelEntities>,
+) {
+    for (_, chunk) in world_map.chunks.drain() {
+        if let Some(entity) = chunk.entity {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+
+    for entity in models.drain() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 

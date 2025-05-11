@@ -207,6 +207,11 @@ impl ModelEntities {
     pub fn get_model_id(&self, entity: &Entity) -> Option<u32> {
         self.entity2id.get(entity).cloned()
     }
+
+    pub fn drain(&mut self) -> Vec<Entity> {
+        self.id2entity.clear();
+        self.entity2id.drain().map(|(k, _)| k).collect()
+    }
 }
 
 fn handle_model_add_delete(

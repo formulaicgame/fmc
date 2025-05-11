@@ -352,9 +352,21 @@ pub fn load_interfaces(
         });
 }
 
-fn cleanup(mut commands: Commands, cursor_item_box: Query<Entity, With<CursorItemBox>>) {
+fn cleanup(
+    mut commands: Commands,
+    cursor_item_box: Query<Entity, With<CursorItemBox>>,
+    interfaces: Option<Res<Interfaces>>,
+    mut interface_stack: ResMut<InterfaceStack>,
+) {
     if let Ok(entity) = cursor_item_box.get_single() {
         commands.entity(entity).despawn_recursive();
+    }
+
+    interface_stack.clear();
+    if let Some(interfaces) = interfaces {
+        for interface_entity in interfaces.values() {
+            commands.entity(*interface_entity).despawn_recursive();
+        }
     }
 }
 

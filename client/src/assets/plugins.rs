@@ -60,6 +60,9 @@ pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
 
     // Needed for split borrowing
     let host = host.into_inner();
+    host.enabled.clear();
+    host.disabled.clear();
+    host.store = Store::new(&host.engine, WasmState::default());
 
     for dir_entry in directory {
         let path = match dir_entry {

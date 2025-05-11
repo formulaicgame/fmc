@@ -21,7 +21,6 @@ use crate::{
 
 use super::{
     lighting::{Light, LightChunk, LightMap},
-    materials::BlockMaterial,
     RenderSet,
 };
 
@@ -130,16 +129,16 @@ fn handle_mesh_tasks(
     mut target: Local<usize>,
 ) {
     for (entity, mut task) in chunk_meshes.iter_mut() {
-        if let Some(block_meshes) = future::block_on(future::poll_once(&mut task.task)) {
+        if let Some(chunk_meshes) = future::block_on(future::poll_once(&mut task.task)) {
             // *target += 1;
             //let c = count.entry(task.position).or_insert(0);
             //*c += 1;
 
-            let mut children = Vec::with_capacity(block_meshes.len());
+            let mut children = Vec::with_capacity(chunk_meshes.len());
 
             // *target += block_meshes.len();
             // dbg!(*target);
-            for (material_handle, mesh) in block_meshes.into_iter() {
+            for (material_handle, mesh) in chunk_meshes.into_iter() {
                 children.push(
                     commands
                         .spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material_handle)))

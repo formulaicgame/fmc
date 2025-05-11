@@ -60,9 +60,11 @@ fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
 
 #[derive(Component, Default)]
 struct Hand {
-    equipping: bool,
-    // If an item is equipped, it's model is stored here so we know to unequip it.
+    // True while an item is being equipped and unequipped
+    in_equip_animation: bool,
+    // While an item is equipped it is stored here
     equipped: Option<ModelAssetId>,
+    // The model being unequipped is stored here while in the animation
     being_unequipped: Option<ModelAssetId>,
 }
 
@@ -130,10 +132,8 @@ fn equip_item(
                     .set_speed(1.0);
                 hand.being_unequipped = None;
             } else if hand.being_unequipped.is_none() {
-                // If a model is already being unequipped it should continue until finished, else
-                // start unequipping the currently equipped model.
+                // Start unequipping the currently held item
                 if let Some(equipped) = hand.equipped.take() {
-                    // Start the unequip animation
                     let model = models.get_config(&equipped).unwrap();
                     animation_player
                         .play(model.named_animations["equip"])
@@ -145,7 +145,7 @@ fn equip_item(
                 }
             }
 
-            hand.equipping = true;
+            hand.in_equip_animation = true;
 
             let model = models.get_config(&item.equip_model).unwrap();
             if !model.named_animations.contains_key("equip") {
@@ -166,7 +166,7 @@ fn equip_item(
                         .set_repeat(bevy::animation::RepeatAnimation::Count(2));
                     hand.equipped = None;
                     hand.being_unequipped = Some(equipped);
-                    hand.equipping = true;
+                    hand.in_equip_animation = true;
                 }
             }
         }
@@ -187,7 +187,7 @@ fn play_equip_animation(
     let (mut animation_player, mut scene_handle, mut hand, mut animation_graph, mut visibility) =
         hand_query.single_mut();
 
-    if !hand.equipping {
+    if !hand.in_equip_animation {
         return;
     }
 
@@ -204,6 +204,7 @@ fn play_equip_animation(
     }
 
     if hand.being_unequipped.take().is_some() {
+        // Remove the animation from the player so it doesn't linger
         animation_player.stop_all();
     }
 
@@ -235,7 +236,7 @@ fn play_equip_animation(
         }
     }
 
-    hand.equipping = false;
+    hand.in_equip_animation = false;
 }
 
 // #[derive(Component)]
