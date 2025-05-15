@@ -21,6 +21,8 @@ mod utils;
 mod world;
 
 fn main() {
+    settings::initialize();
+
     if cli::parse() {
         return;
     }
@@ -44,6 +46,7 @@ fn main() {
         )
         // .add_plugins(LogDiagnosticsPlugin::default())
         // .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(settings::SettingsPlugin)
         .add_plugins(networking::ClientPlugin)
         .add_plugins(assets::AssetPlugin)
         .add_plugins(audio::AudioPlugin)
@@ -53,7 +56,6 @@ fn main() {
         .add_plugins(player::PlayerPlugin)
         .add_plugins(world::WorldPlugin)
         .add_plugins(ui::UiPlugin)
-        .add_plugins(settings::SettingsPlugin)
         .add_plugins(singleplayer::SinglePlayerPlugin)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)
         .run();

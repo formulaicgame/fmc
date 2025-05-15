@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use super::{GuiState, Interface, Interfaces};
-use crate::{networking::Identity, ui::widgets::*};
+use crate::{networking::Identity, settings::Settings, ui::widgets::*};
 
 pub struct LoginPlugin;
 impl Plugin for LoginPlugin {
@@ -53,6 +53,7 @@ fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
 
 fn press_play(
     mut ui_state: ResMut<NextState<GuiState>>,
+    settings: Res<Settings>,
     mut identity: ResMut<Identity>,
     username: Query<&TextBox, With<Username>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<LoginButton>)>,
@@ -69,8 +70,7 @@ fn press_play(
         }
 
         identity.username = username.clone();
-
-        std::fs::write("./identity.txt", &identity.username).ok();
+        identity.save(&settings);
 
         ui_state.set(GuiState::MainMenu);
     }

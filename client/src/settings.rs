@@ -1,3 +1,8 @@
+use std::{
+    io::{prelude::*, BufReader},
+    path::PathBuf,
+};
+
 use bevy::prelude::*;
 
 use fmc_protocol::messages;
@@ -9,8 +14,23 @@ impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Settings::load()).add_systems(
             Update,
-            set_render_distance.run_if(in_state(GameState::Playing)),
+            (
+                save_settings.run_if(resource_changed::<Settings>),
+                set_render_distance.run_if(in_state(GameState::Playing)),
+            ),
         );
+    }
+}
+
+pub fn initialize() {
+    let settings = Settings::load();
+
+    if !settings.config_dir().exists() {
+        std::fs::create_dir(settings.config_dir()).unwrap();
+    }
+
+    if !settings.data_dir().exists() {
+        std::fs::create_dir(settings.data_dir()).unwrap();
     }
 }
 
@@ -19,7 +39,7 @@ impl Plugin for SettingsPlugin {
 // writing a custom fallback function for each value.
 // This makes it useless probably. It needs to replace invalids and then write the result to the
 // file again to resolve. To avoid having to notify the user through the program.
-#[derive(Resource)]
+#[derive(Resource, Debug)]
 pub struct Settings {
     /// Render distance in chunks
     pub render_distance: u32,
@@ -29,25 +49,6 @@ pub struct Settings {
     pub volume: f32,
     /// Mouse sensitivity
     pub sensitivity: f32,
-    /// Horizontal speed while flying
-    pub flight_speed: f32,
-    /// Fog that limits visibility
-    pub fog: DistanceFog,
-}
-
-impl Settings {
-    fn load() -> Self {
-        //let path = dirs::config_dir().unwrap().join("fmc/config.txt");
-        let settings = Settings::default();
-
-        return settings;
-    }
-    //fn save(&self) {
-    //    let mut contents = "".to_owned()
-    //    contents += "render_distance = " + &self.render_distance.to_string() + "\n"
-    //    contents += "fov = " + &self.fov.to_string();
-    //
-    //}
 }
 
 impl Default for Settings {
@@ -57,24 +58,123 @@ impl Default for Settings {
             fov: std::f32::consts::PI / 3.0,
             volume: 1.0,
             sensitivity: 0.00005,
-            flight_speed: 50.0,
-            fog: DistanceFog {
-                color: Color::NONE,
-                ..default()
-            },
         }
     }
 }
 
-//fn save_settings(
-//    settings: Res<Settings>
-//) {
-//    // Writes on addition too to remove any invalid values that might have been introduced by the
-//    //user.
-//    if settings.is_changed() {
-//        settings.save();
-//    }
-//}
+impl Settings {
+    // TODO: This one should be definable in the settings file.
+    pub fn data_dir(&self) -> PathBuf {
+        dirs::data_dir()
+            .expect("Missing data directory")
+            .join("fmc")
+    }
+
+    pub fn config_dir(&self) -> PathBuf {
+        dirs::config_dir()
+            .expect("Missing configuration directory")
+            .join("fmc")
+    }
+
+    fn config_file(&self) -> PathBuf {
+        self.config_dir().join("settings.ini")
+    }
+
+    fn load() -> Self {
+        let mut settings = Settings::default();
+
+        let path = settings.config_file();
+        let file = match std::fs::File::open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    settings.save();
+                } else {
+                    error!("Error reading {}: {}", path.display(), e);
+                }
+                return settings;
+            }
+        };
+        let reader = BufReader::new(file);
+
+        for (line_num, line) in reader.lines().enumerate() {
+            let line = line.unwrap();
+
+            // comments
+            if line.starts_with("#") {
+                continue;
+            }
+
+            let Some((name, value)) = line.split_once("=") else {
+                error!(
+                    "Error reading settings.ini at line {}. All settings must be of the format 'name = setting', it cannot be '{}'",
+                    line_num, line
+                );
+                continue;
+            };
+
+            let name = name.trim();
+            let value = value.trim();
+
+            let err = |property: &str, expected: &str, value: &str| {
+                error!(
+                    "The '{}' setting must be a {}, cannot be '{}'",
+                    property, expected, value
+                );
+            };
+            match name {
+                "render-distance" => {
+                    if let Ok(value) = value.parse::<u32>() {
+                        settings.render_distance = value;
+                    } else {
+                        err("render-distance", "number", value);
+                    }
+                }
+                "fov" => {
+                    if let Ok(value) = value.parse::<f32>() {
+                        settings.fov = value;
+                    } else {
+                        err("fov", "number", value);
+                    }
+                }
+                "volume" => {
+                    if let Ok(value) = value.parse::<f32>() {
+                        settings.volume = value.min(1.0).max(0.0);
+                    } else {
+                        err("volume", "number", value);
+                    }
+                }
+                "sensitivity" => {
+                    if let Ok(value) = value.parse::<f32>() {
+                        settings.sensitivity = value.min(1.0).max(0.0);
+                    } else {
+                        err("sensitivity", "number", value);
+                    }
+                }
+                _ => error!("Invalid setting '{name}' in settings.ini at line {line_num}"),
+            }
+        }
+
+        return settings;
+    }
+
+    #[rustfmt::skip]
+    fn save(&self) {
+        let contents = String::new()
+            + "render-distance = " + &self.render_distance.to_string() + "\n"
+            + "fov = " + &self.fov.to_string() + "\n"
+            + "volume = " + &self.volume.to_string() + "\n"
+            + "sensitivity = " + &self.sensitivity.to_string() + "\n";
+
+        if let Err(e) = std::fs::write(self.config_file(), contents) {
+            error!("Failed to write config file: {}", e);
+        }
+    }
+}
+
+fn save_settings(settings: Res<Settings>) {
+    settings.save();
+}
 
 fn set_render_distance(
     net: Res<NetworkClient>,

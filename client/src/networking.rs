@@ -12,7 +12,7 @@ use bevy::{
 use fmc_protocol::{messages, MessageType, ServerBound};
 use serde::Serialize;
 
-use crate::{assets::AssetState, game_state::GameState};
+use crate::{assets::AssetState, game_state::GameState, settings::Settings};
 
 // Message length (4 bytes)
 const COMPRESSION_HEADER_SIZE: usize = 4;
@@ -23,7 +23,10 @@ pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Identity::read_from_file())
+        let settings = app.world().get_resource::<Settings>().unwrap();
+        let identity = Identity::load(&settings);
+
+        app.insert_resource(identity)
             .insert_resource(NetworkClient::new())
             .add_event::<messages::AssetResponse>()
             .add_event::<messages::Disconnect>()
@@ -447,8 +450,8 @@ pub struct Identity {
 }
 
 impl Identity {
-    fn read_from_file() -> Self {
-        if let Ok(username) = std::fs::read_to_string("./identity.txt") {
+    fn load(settings: &Settings) -> Self {
+        if let Ok(username) = std::fs::read_to_string(Self::path(settings)) {
             Identity {
                 username: username.trim().to_owned(),
             }
@@ -459,8 +462,18 @@ impl Identity {
         }
     }
 
+    pub fn save(&self, settings: &Settings) {
+        if let Err(e) = std::fs::write(Self::path(settings), &self.username) {
+            error!("Failed to write user identity to file: {e}");
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         !self.username.is_empty()
+    }
+
+    fn path(settings: &Settings) -> PathBuf {
+        settings.data_dir().join("identity.txt")
     }
 }
 
