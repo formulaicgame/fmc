@@ -114,10 +114,10 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
 fn convert(image: &Rgba32FImage) -> gltf::binary::Glb {
     let mut triangle_vertices = Vec::new();
 
-    let mut add_vertices = |x: f32, y: f32, vertices: &[[f32; 3]; 6], color: &Rgba<f32>| {
+    let mut add_face = |x: f32, y: f32, z: f32, vertices: &[[f32; 3]; 6], color: &Rgba<f32>| {
         for pos in vertices.iter() {
             triangle_vertices.push(Vertex {
-                position: [pos[0] + x, pos[1] + y, pos[2]],
+                position: [pos[0] + x, pos[1] + y, pos[2] + z],
                 color: [color[0], color[1], color[2]],
             })
         }
@@ -127,7 +127,8 @@ fn convert(image: &Rgba32FImage) -> gltf::binary::Glb {
         // Center align model position, and compensate for iteration starting in the top left
         // corner, which is the minimum x value and the maximum y value.
         let model_x = x as f32 - image.width() as f32 / 2.0;
-        let model_y = image.height() as f32 / 2.0 - y as f32;
+        let model_y = image.height() as f32 / 2.0 - y as f32 - 1.0;
+        let model_z = -0.5;
 
         if color[3] == 0.0 {
             continue;
@@ -135,28 +136,28 @@ fn convert(image: &Rgba32FImage) -> gltf::binary::Glb {
 
         // Above pixel
         if y as i32 - 1 < 0 || image.get_pixel(x, y - 1)[3] == 0.0 {
-            add_vertices(model_x, model_y, &VERTICES[0], color);
+            add_face(model_x, model_y, model_z, &VERTICES[0], color);
         }
 
         // Below pixel
         if y + 1 == image.height() || image.get_pixel(x, y + 1)[3] == 0.0 {
-            add_vertices(model_x, model_y, &VERTICES[1], color);
+            add_face(model_x, model_y, model_z, &VERTICES[1], color);
         }
 
         // Left pixel
         if x as i32 - 1 < 0 || image.get_pixel(x - 1, y)[3] == 0.0 {
-            add_vertices(model_x, model_y, &VERTICES[2], color);
+            add_face(model_x, model_y, model_z, &VERTICES[2], color);
         }
 
         // Right pixel
         if x + 1 == image.width() || image.get_pixel(x + 1, y)[3] == 0.0 {
-            add_vertices(model_x, model_y, &VERTICES[3], color);
+            add_face(model_x, model_y, model_z, &VERTICES[3], color);
         }
 
         // Front and Back pixel
         if color[3] != 0.0 {
-            add_vertices(model_x, model_y, &VERTICES[4], color);
-            add_vertices(model_x, model_y, &VERTICES[5], color);
+            add_face(model_x, model_y, model_z, &VERTICES[4], color);
+            add_face(model_x, model_y, model_z, &VERTICES[5], color);
         }
     }
 

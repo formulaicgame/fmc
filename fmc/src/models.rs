@@ -231,7 +231,7 @@ pub struct ModelColor {
 }
 
 impl ModelColor {
-    const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
+    pub const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
 
     pub const fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
         Self {
