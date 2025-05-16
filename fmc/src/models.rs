@@ -76,7 +76,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
         };
 
         let mut config = ModelConfig {
-            // We change the id to the correct one when moving the configs into Models.
+            // XXX: We change the id to the correct one when moving the configs into Models.
             id: 0,
             animations: HashMap::new(),
             aabb: Aabb::default(),
@@ -87,6 +87,13 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             // Block models can be defined through json files.
             config.aabb =
                 Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
+
+            // TODO: Remove and define in the json file. Let them have parents so you don't have to
+            // copy the animations all over. There is probably even some reason to have a custom
+            // format for models beyond gltf.
+            config.animations.insert("left_click".to_owned(), 0);
+            config.animations.insert("equip".to_owned(), 1);
+            config.animations.insert("dropped".to_owned(), 2);
         } else if extension == "glb" || extension == "gltf" {
             let (gltf, buffers, _) = match gltf::import(&path) {
                 Ok(m) => m,
@@ -157,7 +164,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
                 if let Some(name) = animation.name() {
                     config
                         .animations
-                        .insert(name.to_string(), animation.index() as u32);
+                        .insert(name.to_owned(), animation.index() as u32);
                 }
             }
         } else {
