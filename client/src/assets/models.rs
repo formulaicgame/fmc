@@ -101,12 +101,18 @@ pub(super) fn load_models(
         }
     };
 
-    // This is the genertic animation applied to runtime generated models. Models loaded from gltf
+    // TODO: This has gotten too specific, let the json models include their own animations
+    //
+    // This is the generic animation applied to runtime generated models. Models loaded from gltf
     // files should supply their own animation.
     let click_animation = asset_server.add(JsonModel::click_animation());
     let equip_animation = asset_server.add(JsonModel::equip_animation());
-    let (block_animation_graph, block_animation_indices) =
-        AnimationGraph::from_clips([click_animation.clone(), equip_animation.clone()]);
+    let dropped_animation = asset_server.add(JsonModel::dropped_item());
+    let (block_animation_graph, block_animation_indices) = AnimationGraph::from_clips([
+        click_animation.clone(),
+        equip_animation.clone(),
+        dropped_animation.clone(),
+    ]);
     let block_animation_graph = asset_server.add(block_animation_graph);
 
     let mut model_configs = Models {
@@ -174,6 +180,9 @@ pub(super) fn load_models(
             gltf.animations.push(equip_animation.clone());
             gltf.named_animations
                 .insert("equip".into(), equip_animation.clone());
+            gltf.animations.push(dropped_animation.clone());
+            gltf.named_animations
+                .insert("dropped".into(), dropped_animation.clone());
             let gltf_handle = asset_server.add(gltf);
 
             loading_models.models.insert(gltf_handle.id(), *model_id);
@@ -186,6 +195,7 @@ pub(super) fn load_models(
                 named_animations: HashMap::from([
                     ("left_click".to_owned(), block_animation_indices[0]),
                     ("equip".to_owned(), block_animation_indices[1]),
+                    ("dropped".to_owned(), block_animation_indices[2]),
                 ]),
                 aabb: Aabb::from_min_max(Vec3::new(-0.5, 0.0, -0.5), Vec3::new(0.5, 1.0, 0.5)),
             }
@@ -612,6 +622,57 @@ impl JsonModel {
                     (0.1, Vec3::new(0.07331951, 0.07331951, 0.073319525)),
                 ])
                 .unwrap(),
+            ),
+        );
+
+        return animation;
+    }
+
+    fn dropped_item() -> AnimationClip {
+        // TODO: How are you meant to do this? The curve api is complex and there are no examples
+        fn smoothstep(a: &Vec3, b: &Vec3, t: f32) -> Vec3 {
+            let t = ((3.0 - 2.0 * t) * t) * t;
+            a.lerp(*b, t)
+        }
+
+        let mut animation = AnimationClip::default();
+        let name = Name::new("block_model");
+        animation.add_curve_to_target(
+            AnimationTargetId::from_name(&name),
+            AnimatableCurve::new(
+                animated_field!(Transform::translation),
+                UnevenSampleCurve::new(
+                    [
+                        (0.0, Vec3::ZERO),
+                        (1.5, Vec3::new(0.0, 0.2, 0.0)),
+                        (3.0, Vec3::ZERO),
+                        (4.5, Vec3::new(0.0, 0.2, 0.0)),
+                        (6.0, Vec3::ZERO),
+                    ],
+                    smoothstep,
+                )
+                .unwrap(),
+            ),
+        );
+
+        animation.add_curve_to_target(
+            AnimationTargetId::from_name(&name),
+            AnimatableCurve::new(
+                animated_field!(Transform::rotation),
+                UnevenSampleAutoCurve::new([
+                    (0.0, Quat::from_xyzw(0.0, 0.0, 0.0, 1.0)),
+                    (3.0, Quat::from_xyzw(0.0, 1.0, 0.0, 0.0)),
+                    (6.0, Quat::from_xyzw(0.0, 0.0, 0.0, -1.0)),
+                ])
+                .unwrap(),
+            ),
+        );
+
+        animation.add_curve_to_target(
+            AnimationTargetId::from_name(&name),
+            AnimatableCurve::new(
+                animated_field!(Transform::scale),
+                UnevenSampleAutoCurve::new([(0.0, Vec3::ONE), (6.0, Vec3::ONE)]).unwrap(),
             ),
         );
 

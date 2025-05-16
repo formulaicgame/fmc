@@ -42,7 +42,7 @@ impl Plugin for ModelPlugin {
                     //render_aabb,
                     handle_transform_updates,
                     handle_model_color,
-                    interpolate_to_new_transform,
+                    interpolation,
                     //advance_transitions,
                     play_animations.after(handle_model_add_delete),
                 )
@@ -426,7 +426,7 @@ fn handle_transform_updates(
     }
 }
 
-fn interpolate_to_new_transform(
+fn interpolation(
     origin: Res<Origin>,
     mut model_query: Query<
         (&mut Transform, &mut TransformInterpolation),
