@@ -866,6 +866,7 @@ struct BlockPlacement {
     // Set if the block can be placed by clicking the sides of adjacent blocks
     //sides: bool,
     // Set if the block should always be rotated when placed.
+    #[serde(default)]
     rotatable: bool,
     // Set if a transform should be applied when placing on a sideways adjacent block. This will
     // rotate the block even if 'rotatable' is not set, but only on sides.

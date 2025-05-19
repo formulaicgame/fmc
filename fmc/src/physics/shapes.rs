@@ -1,7 +1,7 @@
 // Yoinked this from bevy::render::Primitives so the render feature doesn't have to be
 // added.
 
-use bevy::math::{DMat3, DVec3};
+use bevy::math::{DMat3, DQuat, DVec3};
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ use crate::blocks::BlockFace;
 use crate::prelude::Transform;
 
 /// An Axis-Aligned Bounding Box
-#[derive(Clone, Debug, Default, Reflect, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Reflect, Serialize, Deserialize)]
 pub struct Aabb {
     pub center: DVec3,
     pub half_extents: DVec3,
@@ -31,7 +31,6 @@ impl Aabb {
     /// Calculate the relative radius of the AABB with respect to a plane
     #[inline]
     pub fn relative_radius(&self, p_normal: &DVec3, axes: &[DVec3]) -> f64 {
-        // NOTE: dot products on Vec3A use SIMD and even with the overhead of conversion are net faster than Vec3
         let half_extents = self.half_extents;
         DVec3::new(
             p_normal.dot(axes[0]),
@@ -52,6 +51,7 @@ impl Aabb {
         self.center + self.half_extents
     }
 
+    /// Transforms the aabb by first rotating and scaling it and then applying the translation.
     pub fn transform(&self, transform: &Transform) -> Self {
         let rot_mat = DMat3::from_quat(transform.rotation);
         // If you rotate a square normally, its aabb will grow larger at 45 degrees because the
@@ -95,20 +95,15 @@ impl Aabb {
 
     // "Slab method" ray intersection test
     /// Returns distance to intersection and which face was intersected with.
-    pub fn ray_intersection(
-        &self,
-        aabb_transform: &Transform,
-        ray_transform: &Transform,
-    ) -> Option<(f64, BlockFace)> {
-        let after_transform = self.transform(aabb_transform);
+    pub fn ray_intersection(&self, ray_transform: &Transform) -> Option<(f64, BlockFace)> {
         // let mut t_min = f64::NEG_INFINITY;
         // let mut t_max = f64::INFINITY;
 
         // The writings on this say better speed to do 1 div + n mul than n div
         let direction_reciprocal = 1.0 / ray_transform.forward();
 
-        let t1 = (after_transform.min() - ray_transform.translation) * direction_reciprocal;
-        let t2 = (after_transform.max() - ray_transform.translation) * direction_reciprocal;
+        let t1 = (self.min() - ray_transform.translation) * direction_reciprocal;
+        let t2 = (self.max() - ray_transform.translation) * direction_reciprocal;
 
         let t_min = t1.min(t2).max_element();
         let t_max = t1.max(t2).min_element();
@@ -132,7 +127,7 @@ impl Aabb {
             // be the axis of the face that was intersected. Since the aabb is at the origin we can
             // use the sign to determine which of the two faces it was.
             let point = ray_transform.translation + ray_transform.forward() * t_min;
-            let normalized = (point - after_transform.center) / after_transform.half_extents;
+            let normalized = (point - self.center) / self.half_extents;
             let abs = normalized.abs();
             let axis = abs.cmpeq(DVec3::splat(abs.max_element()));
             // bitmask() gives a u32 with bit layout 0bzyx, is always numbers 1, 2, 4 since only

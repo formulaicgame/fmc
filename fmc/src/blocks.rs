@@ -131,15 +131,30 @@ fn load_blocks_to_resource(
             None
         };
 
-        let hitbox = if let Some(hitbox) = block_config_json.hitbox {
-            Some(hitbox.to_collider())
+        // non-model blocks are defined in the 0..1 interval. This makes their collider hard to
+        // rotate as they have their center of rotation at Vec3::splat(0.5). We move it to the origin to
+        // avoid this. Model blocks don't have this problem as they are defined at the origin.
+        let colliders = if let Some(hitbox) = block_config_json.hitbox {
+            match hitbox {
+                ColliderJson::Single(aabb) => {
+                    vec![Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5)]
+                }
+                ColliderJson::Vec(aabbs) => aabbs
+                    .into_iter()
+                    .map(|aabb| Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
+                    .collect(),
+            }
         } else if let Some(model_name) = block_config_json.model {
             let model_config = models.get_by_name(&model_name);
-            let aabb = model_config.aabb.clone();
-            Some(Collider::Aabb(aabb))
+            vec![Collider::from_min_max(
+                model_config.aabb.min(),
+                model_config.aabb.max(),
+            )]
         } else if block_config_json.faces.is_some() {
-            let aabb = Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
-            Some(Collider::Aabb(aabb))
+            vec![Collider::from_min_max(
+                DVec3::splat(-0.5),
+                DVec3::splat(0.5),
+            )]
         } else if let Some(quads) = &block_config_json.quads {
             let mut min = Vec3::MAX;
             let mut max = Vec3::MIN;
@@ -149,10 +164,12 @@ fn load_blocks_to_resource(
                     max = max.max(vertex);
                 }
             }
-            let aabb = Aabb::from_min_max(min.as_dvec3(), max.as_dvec3());
-            Some(Collider::Aabb(aabb))
+            vec![Collider::from_min_max(
+                min.as_dvec3() - 0.5,
+                max.as_dvec3() - 0.5,
+            )]
         } else {
-            None
+            Vec::new()
         };
 
         let particle_textures = if let Some(particle_texture) = block_config_json.particle_texture {
@@ -192,7 +209,7 @@ fn load_blocks_to_resource(
                 drop,
                 material,
                 placement: block_config_json.placement,
-                hitbox,
+                colliders,
                 particle_textures,
                 sound: block_config_json.sound,
                 quads: block_config_json.quads,
@@ -454,21 +471,8 @@ struct AabbJson {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum ColliderJson {
-    Aabb(AabbJson),
-    Compound(Vec<AabbJson>),
-}
-
-impl ColliderJson {
-    fn to_collider(&self) -> Collider {
-        match self {
-            ColliderJson::Aabb(aabb) => Collider::Aabb(Aabb::from_min_max(aabb.min, aabb.max)),
-            ColliderJson::Compound(list) => Collider::Compound(
-                list.into_iter()
-                    .map(|aabb| Aabb::from_min_max(aabb.min, aabb.max))
-                    .collect(),
-            ),
-        }
-    }
+    Single(AabbJson),
+    Vec(Vec<AabbJson>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -644,7 +648,7 @@ pub struct BlockConfig {
     // The rendering material for the block, if it uses one.
     material: Option<BlockMaterial>,
     /// Collider used for physics and hit detection.
-    pub hitbox: Option<Collider>,
+    pub colliders: Vec<Collider>,
     /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
     // TODO: Not needed

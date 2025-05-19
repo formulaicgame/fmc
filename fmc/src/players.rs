@@ -75,7 +75,7 @@ pub(crate) struct DefaultPlayerBundle {
     transform: Transform,
     camera: Camera,
     targets: Targets,
-    aabb: Collider,
+    collider: Collider,
     interfaces: InterfaceNodes,
 }
 
@@ -87,7 +87,10 @@ impl DefaultPlayerBundle {
             transform: Transform::default(),
             camera: Camera::default(),
             targets: Targets::default(),
-            aabb: Collider::from_min_max(DVec3::new(-0.3, 0.0, -0.3), DVec3::new(0.3, 1.8, 0.3)),
+            collider: Collider::from_min_max(
+                DVec3::new(-0.3, 0.0, -0.3),
+                DVec3::new(0.3, 1.8, 0.3),
+            ),
             interfaces: InterfaceNodes::default(),
         }
     }
@@ -235,16 +238,10 @@ fn find_target(
         while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
 
-            // Block models are handled above
+            // Block models are handled separately
             if block_config.model.is_some() {
                 continue;
             }
-
-            // Blocks that don't have a hitbox cannot be targeted. This will normally be
-            // blocks that are considered void, like air, not water.
-            let Some(hitbox) = &block_config.hitbox else {
-                continue;
-            };
 
             let block_position = raycast.position();
             let rotation = world_map
@@ -255,32 +252,36 @@ fn find_target(
                 .unwrap_or_default();
 
             let block_transform = Transform {
-                translation: block_position.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
+                translation: block_position.as_dvec3() + DVec3::splat(0.5),
                 rotation,
                 ..default()
             };
 
-            if let Some((distance, block_face)) =
-                hitbox.ray_intersection(&block_transform, &camera_transform)
-            {
-                // TODO: it will add blocks with entities twice if the model is hit
-                let chunk_position = ChunkPosition::from(block_position);
-                let block_index = block_position.as_chunk_index();
-                let entity = world_map
-                    .get_chunk(&chunk_position)
-                    .map(|chunk| chunk.block_entities.get(&block_index).cloned())
-                    .flatten();
+            // Blocks that don't have a hitbox cannot be targeted. This will normally be
+            // blocks that are considered void, like air, not water.
+            for collider in block_config.colliders.iter() {
+                let collider = collider.transform(&block_transform);
 
-                distance_to_solid_block = distance;
+                if let Some((distance, block_face)) = collider.ray_intersection(&camera_transform) {
+                    // TODO: it will add blocks with entities twice if the model is hit
+                    let chunk_position = ChunkPosition::from(block_position);
+                    let block_index = block_position.as_chunk_index();
+                    let entity = world_map
+                        .get_chunk(&chunk_position)
+                        .map(|chunk| chunk.block_entities.get(&block_index).cloned())
+                        .flatten();
 
-                targets.push(Target::Block {
-                    block_position,
-                    block_id,
-                    distance,
-                    block_face,
-                    entity,
-                });
-            };
+                    distance_to_solid_block = distance;
+
+                    targets.push(Target::Block {
+                        block_position,
+                        block_id,
+                        distance,
+                        block_face,
+                        entity,
+                    });
+                }
+            }
 
             if block_config.is_solid() {
                 break;
@@ -292,7 +293,7 @@ fn find_target(
             let Some(model_entities) = model_map.get_entities(&chunk_position) else {
                 continue;
             };
-            for (entity, maybe_aabb, maybe_block, model_transform) in
+            for (entity, maybe_collider, maybe_block, model_transform) in
                 model_query.iter_many(model_entities)
             {
                 if let Some(block_position) = maybe_block {
@@ -302,29 +303,29 @@ fn find_target(
 
                     let block_config = blocks.get_config(&block_id);
 
-                    let Some(hitbox) = &block_config.hitbox else {
-                        continue;
-                    };
+                    for collider in block_config.colliders.iter() {
+                        let collider = collider.transform(&model_transform.compute_transform());
 
-                    let Some((distance, block_face)) = hitbox
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
-                    else {
-                        continue;
-                    };
+                        let Some((distance, block_face)) =
+                            collider.ray_intersection(&camera_transform)
+                        else {
+                            continue;
+                        };
 
-                    if distance < distance_to_solid_block && distance < HIT_DISTANCE {
-                        targets.push(Target::Block {
-                            block_position: *block_position,
-                            block_id,
-                            block_face,
-                            distance,
-                            entity: Some(entity),
-                        });
-                        distance_to_solid_block = distance;
+                        if distance < distance_to_solid_block && distance < HIT_DISTANCE {
+                            targets.push(Target::Block {
+                                block_position: *block_position,
+                                block_id,
+                                block_face,
+                                distance,
+                                entity: Some(entity),
+                            });
+                            distance_to_solid_block = distance;
+                        }
                     }
-                } else if let Some(aabb) = maybe_aabb {
-                    let Some((distance, face)) = aabb
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                } else if let Some(collider) = maybe_collider {
+                    let collider = collider.transform(&model_transform.compute_transform());
+                    let Some((distance, face)) = collider.ray_intersection(&camera_transform)
                     else {
                         continue;
                     };

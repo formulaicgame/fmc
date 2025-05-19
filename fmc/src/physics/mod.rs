@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::math::DVec3;
+use bevy::math::{DQuat, DVec3};
 use serde::Deserialize;
 
 use crate::{
-    blocks::{BlockFace, BlockPosition, Blocks},
+    blocks::{BlockFace, BlockPosition, BlockRotation, BlockState, Blocks},
     prelude::*,
     world::{chunk::ChunkPosition, ChangedBlockEvent, WorldMap},
 };
@@ -32,119 +32,54 @@ impl Plugin for PhysicsPlugin {
 }
 
 // TODO: Make Aabb available only through this? Either way need to replace all current occurences
-#[derive(Component, Debug, Clone, Deserialize)]
+#[derive(Component, Debug, Copy, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Collider {
     Aabb(Aabb),
-    Compound(Vec<Aabb>),
 }
 
 impl Collider {
-    // pub fn transform(&self, transform: &Transform) -> Self {
-    //     let mut new = self.clone();
-    //     for aabb in new.iter_mut() {
-    //         aabb.transf
-    //     }
-    //     match self {
-    //         Self::Aabb(aabb) => Collider::Aabb(aabb.transform(transform)),
-    //         Self::Compound(aabbs) => {
-    //             for aabb in aabbs {
-    //                 aabb.center = transform.transform_point(aabb.center)
-    //             }
-    //         }
-    //     }
-    // }
+    pub fn transform(&self, transform: &Transform) -> Self {
+        match self {
+            Self::Aabb(aabb) => Collider::Aabb(aabb.transform(transform)),
+        }
+    }
 
     /// Construct a collider from a set of aabb bounds.
     pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
         Self::Aabb(Aabb::from_min_max(min, max))
     }
 
-    /// Get the minimum and maximum bounds of the collider.
-    pub fn min_max(&self, transform: &Transform) -> (DVec3, DVec3) {
-        let mut min = DVec3::MAX;
-        let mut max = DVec3::MIN;
-        for aabb in self.iter() {
-            let aabb = aabb.transform(transform);
-            min = min.min(aabb.min());
-            max = max.max(aabb.max());
-        }
-        (min, max)
-    }
-
-    /// Iterate over the shapes of the collider
-    fn iter(&self) -> &[Aabb] {
+    /// Iterator over the block positions inside the collider
+    fn iter_block_positions(&self) -> impl IntoIterator<Item = BlockPosition> {
         match self {
-            Self::Aabb(aabb) => std::slice::from_ref(aabb),
-            Self::Compound(aabbs) => aabbs.as_slice(),
-        }
-    }
-
-    // fn iter_mut(&mut self) -> &mut [Aabb] {
-    //     match self {
-    //         Self::Aabb(aabb) => std::slice::from_mut(aabb),
-    //         Self::Compound(aabbs) => aabbs.as_mut_slice(),
-    //     }
-    // }
-
-    /// Intersection test with another collider, returns the overlap if any.
-    pub fn intersection(
-        &self,
-        self_transform: &Transform,
-        other: &Collider,
-        other_transform: &Transform,
-    ) -> Option<DVec3> {
-        fn max_intersection(lhs: Option<DVec3>, rhs: Option<DVec3>) -> Option<DVec3> {
-            let Some(lhs) = lhs else {
-                return rhs;
-            };
-
-            let Some(rhs) = rhs else {
-                return Some(lhs);
-            };
-
-            // TODO: I don't know how to properly handle the sign here. The idea of combining the
-            // intersections might not even be possible. This will certainly not work if the aabbs
-            // are more than a negligible distance from each other.
-            Some(lhs.abs().max(rhs.abs()).copysign(lhs))
-        }
-
-        let mut intersection = None;
-        for aabb in self.iter() {
-            let aabb = aabb.transform(self_transform);
-            for other_aabb in other.iter() {
-                let other_aabb = other_aabb.transform(other_transform);
-                let new_intersection = aabb.intersection(&other_aabb);
-                intersection = max_intersection(intersection, new_intersection);
+            Self::Aabb(aabb) => {
+                let min = BlockPosition::from(aabb.min());
+                let max = BlockPosition::from(aabb.max());
+                (min.x..=max.x).flat_map(move |x| {
+                    (min.z..=max.z).flat_map(move |z| {
+                        (min.y..=max.y).map(move |y| BlockPosition::new(x, y, z))
+                    })
+                })
             }
         }
+    }
+
+    /// Intersection test with another collider, returns the overlap if any.
+    pub fn intersection(&self, other: &Collider) -> Option<DVec3> {
+        let intersection = match self {
+            Collider::Aabb(aabb) => match other {
+                Collider::Aabb(other) => aabb.intersection(other),
+            },
+        };
 
         return intersection;
     }
 
     /// Ray intersection test with the collider.
-    pub fn ray_intersection(
-        &self,
-        collider_transform: &Transform,
-        ray_transform: &Transform,
-    ) -> Option<(f64, BlockFace)> {
+    pub fn ray_intersection(&self, ray_transform: &Transform) -> Option<(f64, BlockFace)> {
         match self {
-            Self::Aabb(aabb) => aabb.ray_intersection(collider_transform, ray_transform),
-            Self::Compound(aabbs) => {
-                let mut hit = None;
-                let mut distance = f64::MAX;
-                for aabb in aabbs {
-                    if let Some((new_distance, new_face)) =
-                        aabb.ray_intersection(collider_transform, ray_transform)
-                    {
-                        if new_distance < distance {
-                            hit = Some((new_distance, new_face));
-                            distance = new_distance
-                        }
-                    }
-                }
-                hit
-            }
+            Self::Aabb(aabb) => aabb.ray_intersection(ray_transform),
         }
     }
 }
@@ -276,45 +211,39 @@ fn simulate_physics(
             let pos_after_move = transform.with_translation(
                 transform.translation + directional_velocity * time.delta_secs_f64(),
             );
+            let entity_collider = entity_collider.transform(&pos_after_move);
 
             // TODO: Allocation is unnecessary
             // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();
-            let (min, max) = entity_collider.min_max(&pos_after_move);
-            let start = BlockPosition::from(min);
-            let stop = BlockPosition::from(max);
-            for x in start.x..=stop.x {
-                for y in start.y..=stop.y {
-                    for z in start.z..=stop.z {
-                        let block_pos = BlockPosition::new(x, y, z);
-                        // TODO: This looks up chunk through hashmap each time, is too bad?
-                        let block_id = match world_map.get_block(block_pos) {
-                            Some(id) => id,
-                            // If entity is player disconnect? They should always have their
-                            // surroundings loaded.
-                            None => continue,
-                        };
+            for block_position in entity_collider.iter_block_positions() {
+                let block_id = match world_map.get_block(block_position) {
+                    Some(id) => id,
+                    // If entity is player, disconnect? They should always have their
+                    // surroundings loaded.
+                    None => continue,
+                };
 
-                        let block_config = blocks.get_config(&block_id);
+                let block_config = blocks.get_config(&block_id);
+                friction = friction.max(block_config.drag);
 
-                        friction = friction.max(block_config.drag);
+                let rotation = world_map
+                    .get_block_state(block_position)
+                    .map(BlockState::rotation)
+                    .flatten()
+                    .map(BlockRotation::as_quat)
+                    .unwrap_or_default();
 
-                        let block_collider = match &block_config.hitbox {
-                            Some(c) => c,
-                            None => continue,
-                        };
+                let block_transform = Transform {
+                    translation: block_position.as_dvec3() + DVec3::splat(0.5),
+                    rotation,
+                    ..default()
+                };
 
-                        if let Some(intersection) = entity_collider.intersection(
-                            &pos_after_move,
-                            &block_collider,
-                            &Transform::from_translation(
-                                block_pos.as_dvec3() + DVec3::new(0.5, 0.0, 0.5),
-                            ),
-                        ) {
-                            collisions.push((intersection, block_config));
-                        } else {
-                            continue;
-                        };
+                for block_collider in block_config.colliders.iter() {
+                    let block_collider = block_collider.transform(&block_transform);
+                    if let Some(intersection) = entity_collider.intersection(&block_collider) {
+                        collisions.push((intersection, block_config));
                     }
                 }
             }
