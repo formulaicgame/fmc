@@ -235,7 +235,7 @@ fn find_target(
         let mut distance_to_solid_block = f64::MAX;
 
         let mut raycast = world_map.raycast(&camera_transform, HIT_DISTANCE);
-        while let Some(block_id) = raycast.next_block() {
+        'outer: while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
 
             // Block models are handled separately
@@ -280,11 +280,11 @@ fn find_target(
                         block_face,
                         entity,
                     });
-                }
-            }
 
-            if block_config.is_solid() {
-                break;
+                    if block_config.is_solid() {
+                        break 'outer;
+                    }
+                }
             }
         }
 
