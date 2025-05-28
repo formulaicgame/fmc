@@ -10,8 +10,6 @@ use super::{
     WorldMap,
 };
 
-pub mod blueprints;
-
 /// Trait to make a terrain generator that can be passed to the [WorldMap]
 pub trait TerrainGenerator: Send + Sync {
     fn generate_chunk(&self, position: ChunkPosition) -> Chunk;
@@ -39,7 +37,7 @@ pub struct TerrainFeature {
     // https://gist.github.com/daboross/976978d8200caf86e02acb6805961195 says really long at bottom
     /// The block types the feature can replace
     pub can_replace: HashSet<BlockId>,
-    /// Terrain feautres may supply a set of bounding boxes that will restrict the
+    /// Terrain features may supply a set of bounding boxes that will restrict the
     /// feature so that it is only placed where all blocks within the bounding boxes are
     /// replaceable according to its replacement rules.
     pub bounding_boxes: Vec<(BlockPosition, BlockPosition)>,
@@ -165,7 +163,7 @@ impl TerrainFeature {
         return placed_blocks;
     }
 
-    pub(crate) fn apply(self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
+    pub fn apply(self, chunk_position: ChunkPosition, chunk: &mut Chunk) {
         if !self.fits_in_chunk(chunk_position) {
             // The feature is part of many chunks, have to wait until they are loaded.
             chunk.terrain_features.push(self);

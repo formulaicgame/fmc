@@ -28,7 +28,7 @@ pub use chunk_manager::{
     ChunkUnloadEvent,
 };
 pub use map::WorldMap;
-pub use terrain_generation::{blueprints, Surface, TerrainFeature, TerrainGenerator};
+pub use terrain_generation::{Surface, TerrainFeature, TerrainGenerator};
 
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
