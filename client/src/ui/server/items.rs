@@ -9,6 +9,7 @@ use crate::{
     assets::models::{ModelAssetId, Models},
     game_state::GameState,
     networking::NetworkClient,
+    ui::CursorVisibility,
     world::blocks::{BlockId, Blocks},
 };
 
@@ -27,8 +28,9 @@ impl Plugin for ItemPlugin {
                 handle_item_box_updates,
                 initial_select_item_box,
                 discard_items.after(super::handle_toggle_events),
-                left_click_item_box,
-                right_click_item_box,
+                // TODO: Reacting to cursor visibility isn't proper.
+                (left_click_item_box, right_click_item_box)
+                    .run_if(|visibiltiy: Res<CursorVisibility>| visibiltiy.server),
                 update_cursor_image.after(left_click_item_box),
                 update_cursor_item_stack_position,
                 keyboard_select_item_box,
