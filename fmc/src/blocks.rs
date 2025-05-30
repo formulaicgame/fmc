@@ -934,6 +934,12 @@ impl From<DVec3> for BlockPosition {
     }
 }
 
+impl From<Vec3> for BlockPosition {
+    fn from(value: Vec3) -> Self {
+        Self(value.floor().as_ivec3())
+    }
+}
+
 impl From<usize> for BlockPosition {
     fn from(index: usize) -> Self {
         assert!(index < Chunk::SIZE.pow(3));
