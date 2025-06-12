@@ -15,16 +15,17 @@ mod hand;
 mod client;
 pub mod server;
 // Common widgets used by both ui systems.
-mod widgets;
+pub mod text_input;
 
 pub const DEFAULT_FONT_HANDLE: Handle<Font> = Handle::weak_from_u128(1491772431825224041);
-const UI_SCALE: f32 = 4.0;
+pub const DEFAULT_FONT_SIZE: f32 = 9.0;
+const UI_SCALE: f32 = 2.0;
 
 pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            widgets::WidgetPlugin,
+            text_input::TextInputPlugin,
             client::GuiPlugin,
             hand::HandPlugin,
             server::ServerInterfacesPlugin,

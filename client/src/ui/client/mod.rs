@@ -1,12 +1,17 @@
 use std::collections::HashMap;
 
-use bevy::{asset::embedded_asset, prelude::*, ui::FocusPolicy};
+use bevy::{asset::embedded_asset, prelude::*};
 
 mod connecting;
 mod login;
 mod main_menu;
+mod main_menu2;
 mod multiplayer;
 mod pause_menu;
+
+mod widgets;
+
+const BASE_SIZE: Val = Val::Px(4.0);
 
 pub struct GuiPlugin;
 impl Plugin for GuiPlugin {
@@ -18,6 +23,7 @@ impl Plugin for GuiPlugin {
                 main_menu::MainMenuPlugin,
                 connecting::ConnectingPlugin,
                 pause_menu::PauseMenuPlugin,
+                widgets::WidgetPlugin,
             ))
             .add_systems(Startup, setup)
             .add_systems(Update, change_interface.run_if(state_changed::<GuiState>));

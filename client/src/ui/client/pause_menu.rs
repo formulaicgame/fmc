@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css::DARK_GRAY, prelude::*, window::WindowFocused};
 
 use super::{GuiState, Interface, Interfaces};
-use crate::{game_state::GameState, networking::NetworkClient, ui::widgets::*};
+use crate::{game_state::GameState, networking::NetworkClient, ui::client::widgets::*};
 
 pub struct PauseMenuPlugin;
 impl Plugin for PauseMenuPlugin {
@@ -39,8 +39,23 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             BackgroundColor::from(DARK_GRAY.with_alpha(0.5)),
         ))
         .with_children(|parent| {
-            parent.spawn_button(200.0, "Resume").insert(ResumeButton);
-            parent.spawn_button(200.0, "Quit").insert(QuitButton);
+            parent
+                .spawn(Node {
+                    width: Val::Px(200.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Center,
+                    //align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|parent| {
+                    parent
+                        .spawn_button("Resume", Srgba::gray(0.7))
+                        .insert(ResumeButton);
+                    parent
+                        .spawn_button("Quit", Srgba::gray(0.7))
+                        .insert(QuitButton);
+                });
         })
         .id();
     interfaces.insert(GuiState::PauseMenu, entity);

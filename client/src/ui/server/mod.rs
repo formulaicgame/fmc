@@ -13,10 +13,7 @@ use serde::Deserialize;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
-    ui::{
-        widgets::{TextBox, TextShadow},
-        DEFAULT_FONT_HANDLE,
-    },
+    ui::{text_input::TextBox, DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE},
 };
 
 use self::items::{CursorItemBox, ItemBoxSection};
@@ -281,7 +278,7 @@ pub fn load_interfaces(
                                 font_smoothing: FontSmoothing::None,
                             },
                             TextColor(*color),
-                            TextShadow::default(),
+                            //TextShadow::default(),
                         ));
                     });
                 }

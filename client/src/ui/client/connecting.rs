@@ -2,7 +2,9 @@ use bevy::prelude::*;
 use fmc_protocol::messages;
 
 use super::{GuiState, Interface, Interfaces};
-use crate::{assets::AssetState, game_state::GameState, networking::NetworkClient, ui::widgets::*};
+use crate::{
+    assets::AssetState, game_state::GameState, networking::NetworkClient, ui::client::widgets::*,
+};
 
 // TODO: I think this looks better as an event architecture. You have something you want to
 // show in the connection ui -> you send an event with the string you want shown -> the ui is
@@ -39,7 +41,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             Interface,
             Node {
                 position_type: PositionType::Absolute,
-                width: Val::Percent(100.0),
+                width: Val::Px(200.0),
                 height: Val::Percent(100.0),
                 row_gap: Val::Px(20.0),
                 flex_direction: FlexDirection::Column,
@@ -62,7 +64,9 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                         .spawn_text("Connecting to server...")
                         .insert(StatusText);
                 });
-            parent.spawn_button(200.0, "Cancel").insert(CancelButton);
+            parent
+                .spawn_button("Cancel", Srgba::gray(0.7))
+                .insert(CancelButton);
         })
         .id();
     interfaces.insert(GuiState::Connecting, entity);

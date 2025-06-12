@@ -8,7 +8,7 @@ use crate::{
     game_state::GameState,
     networking::{Identity, NetworkClient},
     singleplayer::LaunchSinglePlayer,
-    ui::widgets::*,
+    ui::{client::widgets::*, text_input::TextBox},
 };
 
 pub struct MainMenuPlugin;
@@ -68,11 +68,44 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                     parent.spawn_text("").insert(DownloadStatusText);
                 });
             parent
-                .spawn_button(200.0, "Singleplayer")
-                .insert(SinglePlayerButton);
+                .spawn(Node {
+                    width: Val::Px(200.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(12.0),
+                    ..default()
+                })
+                .with_children(|parent| {
+                    parent
+                        .spawn_button("Singleplayer", Srgba::gray(0.7))
+                        .insert(Node {
+                            width: Val::Percent(100.0),
+                            aspect_ratio: Some(200.0 / 20.0),
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        })
+                        .insert(SinglePlayerButton);
 
-            parent.spawn_textbox(200.0, "127.0.0.1").insert(ServerIp);
-            parent.spawn_button(200.0, "Connect").insert(JoinButton);
+                    parent
+                        .spawn_textbox("hello")
+                        .insert(Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(60.0),
+                            ..default()
+                        })
+                        .insert(ServerIp);
+                    parent
+                        .spawn_button("Connect", Srgba::gray(0.7))
+                        .insert(Node {
+                            width: Val::Percent(100.0),
+                            aspect_ratio: Some(200.0 / 20.0),
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        })
+                        .insert(JoinButton);
+                });
         })
         .id();
     interfaces.insert(GuiState::MainMenu, entity);

@@ -5,7 +5,7 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     ui::{
-        widgets::{FocusedTextBox, TextBox, TextShadow},
+        text_input::{TextBox, TextBoxFocus},
         DEFAULT_FONT_HANDLE,
     },
 };
@@ -135,7 +135,7 @@ fn handle_text_updates(
                     linebreak: LineBreak::WordOrCharacter,
                     justify: JustifyText::Left,
                 },
-                TextShadow::default(),
+                //TextShadow::default(),
             ));
 
             if should_fade {
@@ -180,7 +180,7 @@ fn fade_lines(
 
 fn send_text(
     net: Res<NetworkClient>,
-    mut focused_text_box: Query<(&mut TextBox, &InterfaceNode), With<FocusedTextBox>>,
+    mut focused_text_box: Query<(&mut TextBox, &InterfaceNode), With<TextBoxFocus>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter) {

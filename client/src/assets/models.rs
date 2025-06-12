@@ -107,7 +107,7 @@ pub(super) fn load_models(
     // files should supply their own animation.
     let click_animation = asset_server.add(JsonModel::click_animation());
     let equip_animation = asset_server.add(JsonModel::equip_animation());
-    let dropped_animation = asset_server.add(JsonModel::dropped_item());
+    let dropped_animation = asset_server.add(JsonModel::dropped_animation());
     let (block_animation_graph, block_animation_indices) = AnimationGraph::from_clips([
         click_animation.clone(),
         equip_animation.clone(),
@@ -579,7 +579,7 @@ impl JsonModel {
         let mut mesh = Mesh::from(Cuboid {
             half_size: Vec3::splat(0.5),
         });
-        mesh.scale_by(Vec3::new(0.07331951, 0.07331951, 0.073319525));
+        mesh.scale_by(Vec3::new(0.07331951, 0.07331951, 0.07331951));
         mesh.rotate_by(Quat::from_xyzw(
             0.013405943,
             0.453133,
@@ -618,8 +618,8 @@ impl JsonModel {
             AnimatableCurve::new(
                 animated_field!(Transform::scale),
                 UnevenSampleAutoCurve::new([
-                    (0.0, Vec3::new(0.07331951, 0.07331951, 0.073319525)),
-                    (0.1, Vec3::new(0.07331951, 0.07331951, 0.073319525)),
+                    (0.0, Vec3::new(0.07331951, 0.07331951, 0.07331951)),
+                    (0.1, Vec3::new(0.07331951, 0.07331951, 0.07331951)),
                 ])
                 .unwrap(),
             ),
@@ -628,7 +628,7 @@ impl JsonModel {
         return animation;
     }
 
-    fn dropped_item() -> AnimationClip {
+    fn dropped_animation() -> AnimationClip {
         // TODO: How are you meant to do this? The curve api is complex and there are no examples
         fn smoothstep(a: &Vec3, b: &Vec3, t: f32) -> Vec3 {
             let t = ((3.0 - 2.0 * t) * t) * t;
