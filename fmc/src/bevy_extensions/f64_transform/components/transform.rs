@@ -39,7 +39,7 @@ use std::ops::Mul;
 #[derive(
     Component, Debug, PartialEq, Clone, Copy, Reflect, serde::Serialize, serde::Deserialize,
 )]
-#[require(GlobalTransform)]
+#[require(GlobalTransform, TransformTreeChanged)]
 #[reflect(Component, Default, PartialEq)]
 pub struct Transform {
     /// Position of the entity. In 2d, the last value of the `Vec3` is used for z-ordering.
@@ -391,3 +391,11 @@ impl Mul<Vec3> for Transform {
         self.transform_point(value)
     }
 }
+
+/// An optimization for transform propagation. This ZST marker component uses change detection to
+/// mark all entities of the hierarchy as "dirty" if any of their descendants have a changed
+/// `Transform`. If this component is *not* marked `is_changed()`, propagation will halt.
+#[derive(
+    Component, Clone, Copy, Default, Reflect, PartialEq, Debug, serde::Serialize, serde::Deserialize,
+)]
+pub struct TransformTreeChanged;

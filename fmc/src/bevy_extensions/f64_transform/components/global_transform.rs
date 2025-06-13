@@ -1,7 +1,9 @@
 use std::ops::Mul;
 
 use super::Transform;
-use bevy::ecs::{component::Component, reflect::ReflectComponent};
+use bevy::ecs::{
+    component::Component, hierarchy::validate_parent_has_component, reflect::ReflectComponent,
+};
 use bevy::math::{
     DAffine3 as Affine3A, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3, DVec3 as Vec3A,
 };
@@ -33,7 +35,8 @@ use bevy::reflect::{std_traits::ReflectDefault, Reflect};
 /// - [`global_vs_local_translation`]
 ///
 /// [`global_vs_local_translation`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/global_vs_local_translation.rs
-#[derive(Component, Debug, PartialEq, Clone, Copy, Reflect)]
+#[derive(Debug, PartialEq, Clone, Copy, Reflect, Component)]
+#[component(on_insert = validate_parent_has_component::<GlobalTransform>)]
 #[reflect(Component, Default, PartialEq)]
 pub struct GlobalTransform(Affine3A);
 

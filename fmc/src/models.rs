@@ -629,7 +629,7 @@ fn update_visibility(
     model_query: Query<
         (
             Entity,
-            Option<&Parent>,
+            Option<&ChildOf>,
             &Model,
             &ModelVisibility,
             Option<&ModelColor>,
@@ -643,7 +643,7 @@ fn update_visibility(
 
         // Don't send the player model to the player it belongs to.
         let player_entity = if let Some(parent) = maybe_parent {
-            if let Ok(player_entity) = player_query.get(parent.get()) {
+            if let Ok(player_entity) = player_query.get(parent.0) {
                 Some(player_entity)
             } else {
                 None
@@ -731,7 +731,7 @@ fn send_models_on_chunk_subscription(
     model_map: Res<ModelMap>,
     player_query: Query<Entity, With<Player>>,
     model_query: Query<(
-        Option<&Parent>,
+        Option<&ChildOf>,
         &Model,
         &AnimationPlayer,
         &GlobalTransform,
@@ -754,7 +754,7 @@ fn send_models_on_chunk_subscription(
 
                 // Don't send the player model to the player it belongs to.
                 if let Some(parent) = maybe_player_parent {
-                    let player_entity = player_query.get(parent.get()).unwrap();
+                    let player_entity = player_query.get(parent.0).unwrap();
                     if player_entity == chunk_sub.player_entity {
                         continue;
                     }

@@ -1,7 +1,7 @@
 use bevy::{
     math::DVec3,
+    platform::collections::{HashMap, HashSet},
     tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
-    utils::{HashMap, HashSet},
 };
 use fmc_protocol::messages;
 

@@ -38,7 +38,6 @@ pub mod bevy {
     pub mod transform {
         pub use crate::bevy_extensions::f64_transform::GlobalTransform;
         pub use crate::bevy_extensions::f64_transform::Transform;
-        pub use crate::bevy_extensions::f64_transform::TransformBundle;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
         pub use crate::bevy_extensions::f64_transform::TransformSystem;
     }
@@ -46,7 +45,6 @@ pub mod bevy {
     pub mod prelude {
         pub use crate::bevy_extensions::f64_transform::GlobalTransform;
         pub use crate::bevy_extensions::f64_transform::Transform;
-        pub use crate::bevy_extensions::f64_transform::TransformBundle;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
         pub use crate::bevy_extensions::f64_transform::TransformSystem;
         // TODO: For some reason when you click this in the docs it doesn't bring you to bevy's
@@ -103,9 +101,8 @@ impl PluginGroup for DefaultPlugins {
                 // ~60 ticks a second
                 std::time::Duration::from_millis(16),
             ))
-            .add(bevy::core::TaskPoolPlugin::default())
+            .add(bevy::app::TaskPoolPlugin::default())
             .add(bevy::time::TimePlugin::default())
-            .add(bevy::hierarchy::HierarchyPlugin::default())
             .add(bevy::log::LogPlugin::default())
             .add(bevy::transform::TransformPlugin)
             .add(assets::AssetPlugin)

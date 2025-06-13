@@ -10,7 +10,7 @@ description = "Library for creating fmc servers"
 
 [dependencies]
 #bevy = { git = "https://github.com/bevyengine/bevy", rev = "bc1f33d", default-features=false, features = ["filesystem_watcher", "multi-threaded"]}
-bevy = { version = "0.15.1", default-features=false, features = ["file_watcher", "multi_threaded", "serialize"]}
+bevy = { version = "0.16.1", default-features=false, features = ["file_watcher", "multi_threaded", "serialize", "bevy_log"]}
 
 fmc_protocol = { version = "0.1.3", git = "https://github.com/formulaicgame/fmc_protocol" } 
 fmc_noise = "0.3.0" 
