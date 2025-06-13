@@ -116,7 +116,7 @@ fn press_singleplayer_button(
     button_query: Query<&Interaction, (Changed<Interaction>, With<SinglePlayerButton>)>,
     mut launch_single_player: EventWriter<LaunchSinglePlayer>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
+    if let Ok(interaction) = button_query.single() {
         if *interaction == Interaction::Pressed {
             launch_single_player.send(LaunchSinglePlayer {});
         }
@@ -131,11 +131,11 @@ fn press_join_button(
     mut game_state: ResMut<NextState<GameState>>,
 ) {
     if play_button
-        .get_single()
+        .single()
         .is_ok_and(|interaction| *interaction == Interaction::Pressed)
         || keys.just_pressed(KeyCode::Enter)
     {
-        let mut ip = server_ip.single().text.to_owned();
+        let mut ip = server_ip.single().unwrap().text.to_owned();
 
         if !ip.contains(":") {
             ip.push_str(":42069");
@@ -175,7 +175,7 @@ fn download_progress_text(
     downloads: Query<&DownloadReporter>,
     mut timer: Local<Timer>,
 ) {
-    let (mut text, mut visibility) = status_text.single_mut();
+    let (mut text, mut visibility) = status_text.single_mut().unwrap();
 
     for reporter in downloads.iter() {
         while let Ok(status) = reporter.0.try_recv() {

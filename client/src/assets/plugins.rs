@@ -325,6 +325,7 @@ impl wit::PluginImports for WasmState {
             .world()
             .query_filtered::<&Window, With<PrimaryWindow>>()
             .single(self.world())
+            .unwrap()
             .cursor_options
             .grab_mode
             == CursorGrabMode::None
@@ -342,7 +343,7 @@ impl wit::PluginImports for WasmState {
         let transform = self
             .world()
             .query_filtered::<&Transform, With<Player>>()
-            .get_single(self.world());
+            .single(self.world());
 
         let transform = if let Ok(t) = transform {
             t
@@ -361,7 +362,7 @@ impl wit::PluginImports for WasmState {
         let Ok(mut transform) = self
             .world()
             .query_filtered::<&mut Transform, With<Player>>()
-            .get_single_mut(self.world())
+            .single_mut(self.world())
         else {
             return;
         };
@@ -376,7 +377,7 @@ impl wit::PluginImports for WasmState {
         let transform = self
             .world()
             .query_filtered::<&GlobalTransform, With<Camera>>()
-            .get_single(self.world());
+            .single(self.world());
 
         let transform = if let Ok(t) = transform {
             t
@@ -395,7 +396,7 @@ impl wit::PluginImports for WasmState {
         let Ok(mut transform) = self
             .world()
             .query_filtered::<&mut Transform, With<Camera>>()
-            .get_single_mut(self.world())
+            .single_mut(self.world())
         else {
             return;
         };

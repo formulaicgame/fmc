@@ -1,5 +1,5 @@
 use bevy::{
-    asset::load_internal_binary_asset,
+    asset::{load_internal_binary_asset, weak_handle},
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow, WindowResized},
     winit::WinitWindows,
@@ -14,10 +14,9 @@ mod hand;
 
 mod client;
 pub mod server;
-// Common widgets used by both ui systems.
 pub mod text_input;
 
-pub const DEFAULT_FONT_HANDLE: Handle<Font> = Handle::weak_from_u128(1491772431825224041);
+pub const DEFAULT_FONT_HANDLE: Handle<Font> = weak_handle!("2b53f27a-6c3b-4e46-b83c-048d60c035a7");
 pub const DEFAULT_FONT_SIZE: f32 = 9.0;
 const UI_SCALE: f32 = 2.0;
 
@@ -74,7 +73,7 @@ fn scaling_setup(
     winit_windows: NonSend<WinitWindows>,
     windows: Query<Entity, With<Window>>,
 ) {
-    let entity = windows.single();
+    let entity = windows.single().unwrap();
     let id = winit_windows.entity_to_winit.get(&entity).unwrap();
     let monitor = winit_windows.windows.get(id).unwrap();
     let monitor = monitor.available_monitors().next().unwrap();
@@ -92,7 +91,7 @@ fn scale_ui(
     resolution: Res<LogicalMonitorWidth>,
     window: Query<&Window>,
 ) {
-    let window = window.single();
+    let window = window.single().unwrap();
     let scale = window.resolution.width() / resolution.width;
     ui_scale.0 = UI_SCALE * scale;
 }
@@ -122,7 +121,7 @@ fn cursor_visibiltiy(
     cursor_visibility: Res<CursorVisibility>,
 ) {
     let should_be_visible = cursor_visibility.gui || cursor_visibility.server;
-    let mut window = window.single_mut();
+    let mut window = window.single_mut().unwrap();
 
     if should_be_visible && !window.cursor_options.visible {
         window.cursor_options.visible = true;

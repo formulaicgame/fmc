@@ -2,12 +2,12 @@ use bevy::{
     animation::{animated_field, AnimationTarget, AnimationTargetId},
     gltf::{Gltf, GltfMesh, GltfNode, GltfPrimitive},
     math::Vec3A,
+    platform::collections::HashMap,
     prelude::*,
     render::{
         mesh::MeshAabb, primitives::Aabb, render_asset::RenderAssetUsages,
         render_resource::PrimitiveTopology,
     },
-    utils::HashMap,
 };
 
 use fmc_protocol::messages;

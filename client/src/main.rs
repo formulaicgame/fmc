@@ -39,7 +39,7 @@ fn main() {
                 .set(ImagePlugin::default_nearest())
                 .set(AudioPlugin {
                     global_volume: GlobalVolume {
-                        volume: Volume::new(1.0),
+                        volume: Volume::Linear(1.0),
                     },
                     default_spatial_scale: SpatialScale::new(0.5),
                 }),

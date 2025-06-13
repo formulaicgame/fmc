@@ -37,8 +37,8 @@ struct Sun;
 struct Moon;
 
 fn cleanup(mut commands: Commands, skybox: Query<Entity, With<SkyBox>>) {
-    if let Ok(entity) = skybox.get_single() {
-        commands.entity(entity).despawn_recursive();
+    if let Ok(entity) = skybox.single() {
+        commands.entity(entity).despawn();
     }
 }
 
@@ -50,7 +50,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     commands
-        .entity(player_query.single())
+        .entity(player_query.single().unwrap())
         .with_children(|parent| {
             parent
                 .spawn((
@@ -100,6 +100,7 @@ fn setup(
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 1.0,
+        affects_lightmapped_meshes: false,
     });
 }
 
@@ -124,13 +125,13 @@ fn pass_time(
         material.sun_angle = angle;
     }
 
-    let mut sky_transform = sky_box_query.single_mut();
+    let mut sky_transform = sky_box_query.single_mut().unwrap();
     sky_transform.rotation = Quat::from_rotation_z(angle);
     // Sun/moon's rotation around its' own axis
     // One rotation per 5000 seconds
-    let mut sun_transform = sun_query.single_mut();
+    let mut sun_transform = sun_query.single_mut().unwrap();
     sun_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_secs());
-    let mut moon_transform = moon_query.single_mut();
+    let mut moon_transform = moon_query.single_mut().unwrap();
     moon_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_secs());
 
     // Max is lower so that the brightness peaks early and fades late
@@ -226,7 +227,7 @@ fn cube_mesh() -> Mesh {
 fn stars(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<SkyMaterial>,
-    parent: &mut ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
 ) {
     let min = Vec3::splat(-0.5);
     let max = Vec3::splat(0.5);

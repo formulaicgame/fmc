@@ -36,7 +36,7 @@ pub trait Widgets {
 //const BUTTON_COLOR: Color = Color::srgb_u8(66, 66, 66);
 const BUTTON_COLOR: Color = Color::srgb(0.26, 0.26, 0.26);
 
-impl Widgets for ChildBuilder<'_> {
+impl Widgets for ChildSpawnerCommands<'_> {
     fn spawn_button<'a>(&'a mut self, text: &str, color: Srgba) -> EntityCommands<'a> {
         let mut border_color_one = color * 0.9;
         border_color_one.alpha = 1.0;
@@ -261,6 +261,7 @@ impl Widgets for ChildBuilder<'_> {
                 font_size: FONT_SIZE,
                 font: DEFAULT_FONT_HANDLE,
                 font_smoothing: FontSmoothing::None,
+                ..default()
             },
             TextColor(Color::WHITE),
             Node {

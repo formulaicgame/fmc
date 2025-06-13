@@ -206,7 +206,7 @@ fn billboard_particles(
     camera_transform: Query<&GlobalTransform, With<Head>>,
     mut particles: Query<&mut Transform, (With<Particle>, Without<Player>)>,
 ) {
-    let camera_transform = camera_transform.single();
+    let camera_transform = camera_transform.single().unwrap();
 
     for mut particle_transform in particles.iter_mut() {
         // TODO: This should be "-camera_transform.forward()", maybe I did the mesh the wrong way

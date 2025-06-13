@@ -33,7 +33,7 @@ impl Plugin for ChunkMeshPlugin {
         app.add_event::<ChunkMeshEvent>();
         app.add_systems(
             Update,
-            (mesh_system, apply_deferred, handle_mesh_tasks)
+            (mesh_system, ApplyDeferred, handle_mesh_tasks)
                 .chain()
                 .in_set(RenderSet::Mesh)
                 .run_if(in_state(GameState::Playing)),
@@ -134,24 +134,20 @@ fn handle_mesh_tasks(
             //let c = count.entry(task.position).or_insert(0);
             //*c += 1;
 
-            let mut children = Vec::with_capacity(chunk_meshes.len());
-
+            commands
+                .entity(entity)
+                // Remove old meshes
+                .despawn_related::<Children>()
+                .remove::<ChunkMeshTask>();
             // *target += block_meshes.len();
             // dbg!(*target);
             for (material_handle, mesh) in chunk_meshes.into_iter() {
-                children.push(
-                    commands
-                        .spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material_handle)))
-                        .id(),
-                );
+                commands.spawn((
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(material_handle),
+                    ChildOf(entity),
+                ));
             }
-
-            commands
-                .entity(entity)
-                // Removes previous meshes
-                .despawn_descendants()
-                .remove::<ChunkMeshTask>()
-                .add_children(&children);
         }
     }
 

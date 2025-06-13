@@ -226,14 +226,14 @@ fn handle_model_add_delete(
 ) {
     for deleted_model in deleted_models.read() {
         if let Some(entity) = model_entities.remove(deleted_model.model_id) {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
     }
 
     for new_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
         if let Some(old_entity) = model_entities.remove(new_model.model_id) {
-            commands.entity(old_entity).despawn_recursive();
+            commands.entity(old_entity).despawn();
         }
 
         let Some(model_config) = models.get_config(&new_model.asset) else {
@@ -287,7 +287,7 @@ fn handle_custom_models(
     for custom_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
         if let Some(old_entity) = model_entities.remove(custom_model.model_id) {
-            commands.entity(old_entity).despawn_recursive();
+            commands.entity(old_entity).despawn();
         }
 
         let mut mesh = Mesh::new(

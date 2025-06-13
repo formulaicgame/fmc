@@ -62,7 +62,7 @@ fn update_render_distance(
     settings: Res<Settings>,
     mut projection_query: Query<&mut Projection, With<Head>>,
 ) {
-    let mut projection = projection_query.single_mut();
+    let mut projection = projection_query.single_mut().unwrap();
     let perspective_projection = match &mut *projection {
         Projection::Perspective(p) => p,
         _ => unreachable!(),
@@ -82,13 +82,13 @@ fn rotate_camera(
     mut mouse_events: EventReader<MouseMotion>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
-    let window = window.single();
+    let window = window.single().unwrap();
 
     // It empties the iterator so it can't access it after loop.
     let should_send = mouse_events.len() > 0;
 
     for ev in mouse_events.read() {
-        let mut transform = camera_query.single_mut();
+        let mut transform = camera_query.single_mut().unwrap();
 
         if window.cursor_options.grab_mode == CursorGrabMode::None {
             return;
@@ -105,7 +105,7 @@ fn rotate_camera(
 
     if should_send {
         net.send_message(messages::PlayerCameraRotation {
-            rotation: camera_query.single().rotation,
+            rotation: camera_query.single().unwrap().rotation,
         })
     }
 }
@@ -116,7 +116,7 @@ fn handle_camera_rotation_from_server(
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
     for rotation_event in camera_rotation_events.read() {
-        let mut transform = camera_q.single_mut();
+        let mut transform = camera_q.single_mut().unwrap();
         transform.rotation = rotation_event.rotation;
     }
 }
@@ -127,7 +127,7 @@ fn handle_camera_position_from_server(
     mut camera_q: Query<&mut Transform, With<Camera>>,
 ) {
     for position_event in camera_position_events.read() {
-        let mut transform = camera_q.single_mut();
+        let mut transform = camera_q.single_mut().unwrap();
         transform.translation = position_event.position;
     }
 }

@@ -39,7 +39,7 @@ fn play_sounds(
             PlaybackSettings::DESPAWN
                 .with_spatial(sound.position.is_some())
                 .with_speed(sound.speed)
-                .with_volume(Volume::new(sound.volume.clamp(0.0, 1.0))),
+                .with_volume(Volume::Linear(sound.volume.clamp(0.0, 1.0))),
         ));
     }
 }
@@ -70,7 +70,7 @@ fn play_walking_sound(
         return;
     }
 
-    let Ok((global_transform, aabb)) = player_position.get_single() else {
+    let Ok((global_transform, aabb)) = player_position.single() else {
         return;
     };
 
@@ -118,6 +118,6 @@ fn play_walking_sound(
         AudioPlayer::<AudioSource>(asset_server.load(AUDIO_PATH.to_owned() + &step_sounds[index])),
         PlaybackSettings::DESPAWN
             .with_spatial(false)
-            .with_volume(Volume::new(0.1)),
+            .with_volume(Volume::Linear(0.1)),
     ));
 }

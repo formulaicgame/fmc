@@ -27,12 +27,12 @@ fn cleanup(
 ) {
     for (_, chunk) in world_map.chunks.drain() {
         if let Some(entity) = chunk.entity {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
     }
 
     for entity in models.drain() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 
@@ -67,7 +67,7 @@ fn update_origin(
     )>,
 ) {
     let for_lifetime = positions.p0();
-    let player_transform = if let Ok(t) = for_lifetime.get_single() {
+    let player_transform = if let Ok(t) = for_lifetime.single() {
         t
     } else {
         return;

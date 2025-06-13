@@ -91,7 +91,7 @@ fn unload_chunks(
             .any()
         {
             if let Some(entity) = chunk.entity {
-                commands.entity(entity).despawn_recursive();
+                commands.entity(entity).despawn();
             }
             false
         } else {
@@ -329,13 +329,12 @@ fn handle_new_chunks(
             );
         } else {
             let entity = commands
-                .spawn(TransformBundle {
-                    local: Transform::from_translation((chunk.position - origin.0).as_vec3()),
-                    ..default()
-                })
-                .insert(VisibilityBundle::default())
-                .insert(MovesWithOrigin)
-                .insert(ChunkMarker)
+                .spawn((
+                    Transform::from_translation((chunk.position - origin.0).as_vec3()),
+                    Visibility::Visible,
+                    MovesWithOrigin,
+                    ChunkMarker,
+                ))
                 .id();
 
             world_map.insert(
@@ -383,12 +382,12 @@ pub fn handle_block_updates(
         if chunk.is_uniform() {
             chunk.convert_uniform_to_full();
             let entity = commands
-                .spawn(TransformBundle::from(Transform::from_translation(
-                    (event.chunk_position - origin.0).as_vec3(),
-                )))
-                .insert(VisibilityBundle::default())
-                .insert(MovesWithOrigin)
-                .insert(ChunkMarker)
+                .spawn((
+                    Transform::from_translation((event.chunk_position - origin.0).as_vec3()),
+                    Visibility::Visible,
+                    MovesWithOrigin,
+                    ChunkMarker,
+                ))
                 .id();
             chunk.entity = Some(entity);
         }

@@ -276,6 +276,7 @@ pub fn load_interfaces(
                                 font_size: *font_size,
                                 font: DEFAULT_FONT_HANDLE,
                                 font_smoothing: FontSmoothing::None,
+                                ..default()
                             },
                             TextColor(*color),
                             //TextShadow::default(),
@@ -355,14 +356,14 @@ fn cleanup(
     interfaces: Option<Res<Interfaces>>,
     mut interface_stack: ResMut<InterfaceStack>,
 ) {
-    if let Ok(entity) = cursor_item_box.get_single() {
-        commands.entity(entity).despawn_recursive();
+    if let Ok(entity) = cursor_item_box.single() {
+        commands.entity(entity).despawn();
     }
 
     interface_stack.clear();
     if let Some(interfaces) = interfaces {
         for interface_entity in interfaces.values() {
-            commands.entity(*interface_entity).despawn_recursive();
+            commands.entity(*interface_entity).despawn();
         }
     }
 }
@@ -418,6 +419,7 @@ enum KeyboardFocus {
 #[serde(default, deny_unknown_fields)]
 struct NodeStyle {
     display: Display,
+    box_sizing: BoxSizing,
     position_type: PositionType,
     overflow: Overflow,
     overflow_clip_margin: OverflowClipMargin,
@@ -461,6 +463,7 @@ impl Default for NodeStyle {
     fn default() -> Self {
         Self {
             display: Display::DEFAULT,
+            box_sizing: BoxSizing::DEFAULT,
             position_type: PositionType::DEFAULT,
             left: Val::Auto,
             right: Val::Auto,
@@ -506,6 +509,7 @@ impl From<NodeStyle> for Node {
     fn from(value: NodeStyle) -> Self {
         Node {
             display: value.display,
+            box_sizing: value.box_sizing,
             position_type: value.position_type,
             overflow: value.overflow,
             overflow_clip_margin: value.overflow_clip_margin,
@@ -680,11 +684,11 @@ fn handle_interface_visibility_updates(
 
         let visibility = *interface_query.get(*interface_entity).unwrap();
         if visibility == Visibility::Hidden && event.visible {
-            interface_toggle_events.send(InterfaceToggleEvent {
+            interface_toggle_events.write(InterfaceToggleEvent {
                 interface_entity: *interface_entity,
             });
         } else if visibility == Visibility::Inherited && !event.visible {
-            interface_toggle_events.send(InterfaceToggleEvent {
+            interface_toggle_events.write(InterfaceToggleEvent {
                 interface_entity: *interface_entity,
             });
         }
@@ -758,7 +762,7 @@ fn interface_visibility(
     } else if *ui_state.get() == UiState::ServerInterfaces {
         while let Some(interface_entity) = interface_stack.pop() {
             let (_, _, interface_config) = interface_query.get(interface_entity).unwrap();
-            interface_toggle_events.send(InterfaceToggleEvent { interface_entity });
+            interface_toggle_events.write(InterfaceToggleEvent { interface_entity });
 
             if interface_config.is_exclusive {
                 return;

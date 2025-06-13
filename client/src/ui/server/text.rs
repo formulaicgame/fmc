@@ -84,7 +84,7 @@ fn handle_text_updates(
                 commands.entity(entity)
             } else if let Some(child_entity) = children.unwrap().get(text_update.index as usize) {
                 let mut e = commands.entity(*child_entity);
-                e.despawn_descendants();
+                e.despawn_related::<Children>();
                 e
             } else {
                 let entity = commands.spawn(Text::default()).id();
@@ -187,7 +187,7 @@ fn send_text(
         return;
     }
 
-    if let Ok((mut text_box, interface_node)) = focused_text_box.get_single_mut() {
+    if let Ok((mut text_box, interface_node)) = focused_text_box.single_mut() {
         if text_box.text.is_empty() {
             return;
         }

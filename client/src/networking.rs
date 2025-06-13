@@ -87,7 +87,7 @@ impl ConcurrentQueue {
     }
 
     fn pop(&self) -> Result<String, ()> {
-        self.receiver.try_recv().map_err(|e| ())
+        self.receiver.try_recv().map_err(|_e| ())
     }
 }
 
@@ -522,157 +522,159 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
         match message_type {
             MessageType::AssetResponse => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.asset_response.send(message);
+                    event_writers.asset_response.write(message);
                     continue;
                 }
             }
             MessageType::Disconnect => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.disconnect.send(message);
+                    event_writers.disconnect.write(message);
                     continue;
                 }
             }
             MessageType::ServerConfig => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.server_config.send(message);
+                    event_writers.server_config.write(message);
                     continue;
                 }
             }
             MessageType::Time => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.time.send(message);
+                    event_writers.time.write(message);
                     continue;
                 }
             }
             MessageType::Chunk => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.chunk.send(message);
+                    event_writers.chunk.write(message);
                     continue;
                 }
             }
             MessageType::BlockUpdates => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.block_updates.send(message);
+                    event_writers.block_updates.write(message);
                     continue;
                 }
             }
             MessageType::NewModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.new_model.send(message);
+                    event_writers.new_model.write(message);
                     continue;
                 }
             }
             MessageType::DeleteModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.delete_model.send(message);
+                    event_writers.delete_model.write(message);
                     continue;
                 }
             }
             MessageType::ModelPlayAnimation => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_play_animation.send(message);
+                    event_writers.model_play_animation.write(message);
                     continue;
                 }
             }
             MessageType::ModelUpdateAsset => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_update_asset.send(message);
+                    event_writers.model_update_asset.write(message);
                     continue;
                 }
             }
             MessageType::ModelUpdateTransform => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_update_transform.send(message);
+                    event_writers.model_update_transform.write(message);
                     continue;
                 }
             }
             MessageType::SpawnCustomModel => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.spawn_custom_model.send(message);
+                    event_writers.spawn_custom_model.write(message);
                     continue;
                 }
             }
             MessageType::ModelColor => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_color.send(message);
+                    event_writers.model_color.write(message);
                     continue;
                 }
             }
             MessageType::PlayerAabb => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_aabb.send(message);
+                    event_writers.player_aabb.write(message);
                     continue;
                 }
             }
             MessageType::PlayerCameraPosition => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_camera_position.send(message);
+                    event_writers.player_camera_position.write(message);
                     continue;
                 }
             }
             MessageType::PlayerCameraRotation => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_camera_rotation.send(message);
+                    event_writers.player_camera_rotation.write(message);
                     continue;
                 }
             }
             MessageType::PlayerPosition => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_position.send(message);
+                    event_writers.player_position.write(message);
                     continue;
                 }
             }
             MessageType::InterfaceItemBoxUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_item_box_update.send(message);
+                    event_writers.interface_item_box_update.write(message);
                     continue;
                 }
             }
             MessageType::InterfaceNodeVisibilityUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_node_visibility_update.send(message);
+                    event_writers
+                        .interface_node_visibility_update
+                        .write(message);
                     continue;
                 }
             }
             MessageType::InterfaceTextUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_text_update.send(message);
+                    event_writers.interface_text_update.write(message);
                     continue;
                 }
             }
             MessageType::InterfaceVisibilityUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_visibility_update.send(message);
+                    event_writers.interface_visibility_update.write(message);
                     continue;
                 }
             }
             MessageType::EnableClientAudio => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.enable_client_audio.send(message);
+                    event_writers.enable_client_audio.write(message);
                     continue;
                 }
             }
             MessageType::Sound => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.sound.send(message);
+                    event_writers.sound.write(message);
                     continue;
                 }
             }
             MessageType::ParticleEffect => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.particle_effect.send(message);
+                    event_writers.particle_effect.write(message);
                     continue;
                 }
             }
             MessageType::Plugin => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.plugin.send(message);
+                    event_writers.plugin.write(message);
                     continue;
                 }
             }
             MessageType::PluginData => {
                 if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.plugin_data.send(message);
+                    event_writers.plugin_data.write(message);
                     continue;
                 }
             }

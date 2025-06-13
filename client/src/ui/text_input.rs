@@ -76,7 +76,7 @@ fn focus(
     }
 
     if new_focus {
-        if let Ok(prev_entity) = previous_focus.get_single() {
+        if let Ok(prev_entity) = previous_focus.single() {
             commands.entity(prev_entity).remove::<TextBoxFocus>();
         }
     }
@@ -97,6 +97,7 @@ fn add_text(mut commands: Commands, added_text_boxes: Query<(Entity, &TextBox), 
                     font_size: DEFAULT_FONT_SIZE,
                     font: DEFAULT_FONT_HANDLE,
                     font_smoothing: FontSmoothing::None,
+                    ..default()
                 },
                 TextColor(Color::WHITE),
                 Node {
@@ -133,7 +134,7 @@ fn edit(
     mut focused_text_box: Query<&mut TextBox, With<TextBoxFocus>>,
     mut keyboard_input: EventReader<KeyboardInput>,
 ) {
-    if let Ok(mut text_box) = focused_text_box.get_single_mut() {
+    if let Ok(mut text_box) = focused_text_box.single_mut() {
         // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has
         // no utility function for discerning if it is a valid char, you have to match the whole thing,
         // but more importantly is does not consider the repeat properties of the WM.

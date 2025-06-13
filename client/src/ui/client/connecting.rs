@@ -77,7 +77,7 @@ fn press_cancel(
     mut game_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<CancelButton>)>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
+    if let Ok(interaction) = button_query.single() {
         if *interaction == Interaction::Pressed {
             net.disconnect("");
             game_state.set(GuiState::MainMenu);
@@ -88,12 +88,12 @@ fn press_cancel(
 // TODO: Needs to display progress, but there's no visibility into it at the moment it's a Local
 // over in 'src/networking.rs'.
 fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
-    let mut text = status_text.single_mut();
+    let mut text = status_text.single_mut().unwrap();
     *text = Text::new("Downloading assets...");
 }
 
 fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
-    let mut text = status_text.single_mut();
+    let mut text = status_text.single_mut().unwrap();
     *text = Text::new("Loading assets...");
 }
 
@@ -102,7 +102,7 @@ fn disconnect_text(
     mut disconnect_events: EventReader<messages::Disconnect>,
 ) {
     for disconnect_event in disconnect_events.read() {
-        let mut text = status_text.single_mut();
+        let mut text = status_text.single_mut().unwrap();
         *text = Text::new(&disconnect_event.message);
     }
 }

@@ -1001,23 +1001,23 @@ fn propagate_light(
 
     light_update_queues.retain(|chunk_position, queue| {
         if queue.propagation.is_empty() && queue.removal.is_empty() {
-            chunk_mesh_events.send(TestFinishedLightingEvent(*chunk_position));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(*chunk_position));
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position + IVec3::new(Chunk::SIZE as i32, 0, 0),
             ));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position - IVec3::new(Chunk::SIZE as i32, 0, 0),
             ));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position + IVec3::new(0, Chunk::SIZE as i32, 0),
             ));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position - IVec3::new(0, Chunk::SIZE as i32, 0),
             ));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position + IVec3::new(0, 0, Chunk::SIZE as i32),
             ));
-            chunk_mesh_events.send(TestFinishedLightingEvent(
+            chunk_mesh_events.write(TestFinishedLightingEvent(
                 *chunk_position - IVec3::new(0, 0, Chunk::SIZE as i32),
             ));
             false
@@ -1060,7 +1060,7 @@ fn send_chunk_mesh_events(
             && !light_update_queues.contains_key(&(position + IVec3::new(0, 0, Chunk::SIZE as i32)))
             && !light_update_queues.contains_key(&(position - IVec3::new(0, 0, Chunk::SIZE as i32)))
         {
-            chunk_mesh_events.send(ChunkMeshEvent {
+            chunk_mesh_events.write(ChunkMeshEvent {
                 chunk_position: position,
             });
         }

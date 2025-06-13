@@ -66,12 +66,12 @@ fn press_play(
     username: Query<&TextBox, With<Username>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<LoginButton>)>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
+    if let Ok(interaction) = button_query.single() {
         if *interaction != Interaction::Pressed {
             return;
         }
 
-        let username = &username.single().text;
+        let username = &username.single().unwrap().text;
 
         if username.is_empty() {
             return;

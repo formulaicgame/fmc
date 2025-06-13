@@ -66,7 +66,7 @@ fn quit_button(
     mut gui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
+    if let Ok(interaction) = button_query.single() {
         if *interaction == Interaction::Pressed {
             gui_state.set(GuiState::MainMenu);
             net.disconnect("");
@@ -78,7 +78,7 @@ fn resume_button(
     mut gui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
 ) {
-    if let Ok(interaction) = button_query.get_single() {
+    if let Ok(interaction) = button_query.single() {
         if *interaction == Interaction::Pressed {
             gui_state.set(GuiState::None);
         }

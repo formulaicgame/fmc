@@ -44,7 +44,7 @@ impl Plugin for HandPlugin {
 }
 
 fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
-    let camera_entity = player_camera.single();
+    let camera_entity = player_camera.single().unwrap();
     commands.entity(camera_entity).with_children(|parent| {
         parent.spawn((
             Hand::default(),
@@ -97,7 +97,7 @@ fn equip_item(
             continue;
         }
 
-        if let Ok(entity) = equipped_entity_query.get_single() {
+        if let Ok(entity) = equipped_entity_query.single() {
             commands.entity(entity).remove::<EquippedItem>();
         }
 
@@ -112,7 +112,7 @@ fn equip_item(
 
     // equip new item when the selected item changes.
     for item_box in changed_equipped_item_query.iter() {
-        let (mut hand, mut animation_player) = hand_query.single_mut();
+        let (mut hand, mut animation_player) = hand_query.single_mut().unwrap();
 
         if let Some(item_id) = item_box.item_stack.item() {
             let item = items.get(&item_id);
@@ -185,7 +185,7 @@ fn play_equip_animation(
     )>,
 ) {
     let (mut animation_player, mut scene_handle, mut hand, mut animation_graph, mut visibility) =
-        hand_query.single_mut();
+        hand_query.single_mut().unwrap();
 
     if !hand.in_equip_animation {
         return;
@@ -334,7 +334,7 @@ fn play_equip_animation(
 // }
 
 fn remove_finished_animations(mut animation_player: Query<&mut AnimationPlayer, With<Hand>>) {
-    let mut animation_player = animation_player.single_mut();
+    let mut animation_player = animation_player.single_mut().unwrap();
     let mut to_stop = Vec::new();
     for (index, animation) in animation_player.playing_animations() {
         if animation.is_finished() {
@@ -358,11 +358,11 @@ fn play_use_animation(
     // TODO: Needs a robust way to see if interface is open
     //
     // Only play if not in interface
-    if window.single().cursor_options.visible {
+    if window.single().unwrap().cursor_options.visible {
         return;
     }
 
-    let (mut animation_player, hand) = hand_query.single_mut();
+    let (mut animation_player, hand) = hand_query.single_mut().unwrap();
 
     let Some(model) = &hand.equipped else {
         return;
@@ -406,7 +406,7 @@ fn send_clicks(
     window: Query<&Window, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
-    if window.single().cursor_options.grab_mode != CursorGrabMode::None {
+    if window.single().unwrap().cursor_options.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
             net.send_message(messages::LeftClick::Press);
         } else if mouse_button_input.just_released(MouseButton::Left) {

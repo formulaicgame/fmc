@@ -283,7 +283,7 @@ trait MainMenuWidgets {
     ) -> EntityCommands<'a>;
 }
 
-impl MainMenuWidgets for ChildBuilder<'_> {
+impl MainMenuWidgets for ChildSpawnerCommands<'_> {
     fn spawn_tab<'a>(&'a mut self, text: &str, tab: Tab) -> EntityCommands<'a> {
         let mut entity_commands = if tab == Tab::Worlds {
             self.spawn((
@@ -790,7 +790,7 @@ fn edit_text_box(
     mut focused_text_box: Query<&mut TextBox, With<TextBoxFocus>>,
     mut keyboard_input: EventReader<KeyboardInput>,
 ) {
-    if let Ok(mut text_box) = focused_text_box.get_single_mut() {
+    if let Ok(mut text_box) = focused_text_box.single_mut() {
         // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has
         // no utility function for discerning if it is a valid char, you have to match the whole thing,
         // but more importantly is does not consider the repeat properties of the WM.
@@ -856,9 +856,9 @@ fn scroll(
         };
 
         let mut scroll_position = if open_tab == Tab::Worlds {
-            world_list.get_single_mut().unwrap()
+            world_list.single_mut().unwrap()
         } else {
-            server_list.get_single_mut().unwrap()
+            server_list.single_mut().unwrap()
         };
 
         scroll_position.offset_y -= dy;
@@ -892,7 +892,7 @@ fn text_box_focus(
     }
 
     if new_focus {
-        if let Ok(prev_entity) = previous_focus.get_single() {
+        if let Ok(prev_entity) = previous_focus.single() {
             commands.entity(prev_entity).remove::<TextBoxFocus>();
         }
     }
@@ -997,7 +997,7 @@ fn search(
         false
     }
 
-    if let Ok(textbox) = world_search_bar.get_single() {
+    if let Ok(textbox) = world_search_bar.single() {
         for (mut node, item) in worlds_and_servers.iter_mut() {
             if item.is_server() {
                 continue;
@@ -1011,7 +1011,7 @@ fn search(
         }
     };
 
-    if let Ok(textbox) = server_search_bar.get_single() {
+    if let Ok(textbox) = server_search_bar.single() {
         for (mut node, item) in worlds_and_servers.iter_mut() {
             if item.is_world() {
                 continue;
@@ -1072,14 +1072,14 @@ fn handle_clicks(
                 dbg!("delete");
             }
             ButtonType::Connect => {
-                let mut server_input = server_input.get_single().unwrap().text.clone();
+                let mut server_input = server_input.single().unwrap().text.clone();
                 if !server_input.contains(":") {
                     server_input.push_str(":42069");
                 }
                 dbg!(server_input.to_socket_addrs());
             }
             ButtonType::NewWorld => {
-                let world_input = world_input.get_single().unwrap().text.clone();
+                let world_input = world_input.single().unwrap().text.clone();
                 let mut path = PathBuf::from("./local/share/fmc/worlds/");
                 path.push(&world_input);
 
@@ -1099,7 +1099,7 @@ fn handle_clicks(
                 // to specify the order of newly spawned children, they're always appended.
                 // let mut new_item = Entity::PLACEHOLDER;
                 // commands
-                //     .entity(world_list.get_single().unwrap())
+                //     .entity(world_list.single().unwrap())
                 //     .with_children(|parent| {
                 //         let list_item = ListItem::World(path);
                 //         new_item = parent

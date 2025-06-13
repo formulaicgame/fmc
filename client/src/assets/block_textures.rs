@@ -35,7 +35,7 @@ pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Ima
 
     let mut texture_array_indices: HashMap<String, u32> = HashMap::new();
 
-    let mut final_image_data = Vec::new();
+    let mut final_image_data: Vec<u8> = Vec::new();
     let mut id = 0;
     for dir_entry in std::fs::read_dir(textures_path).unwrap() {
         let path = match dir_entry {
@@ -58,6 +58,7 @@ pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Ima
         image_buffer.clear();
         file.read_to_end(&mut image_buffer).ok();
 
+        // TODO: Panic not allowed
         let image = Image::from_buffer(
             &image_buffer,
             ImageType::MimeType("image/png"),
@@ -72,7 +73,8 @@ pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Ima
         assert!(image.size()[0] == 16);
 
         let id_increment = image.height() / 16;
-        final_image_data.extend(image.data);
+        // TODO: Panic not allowed?
+        final_image_data.extend(image.data.unwrap());
 
         let name = path.file_name().unwrap().to_string_lossy();
         texture_array_indices.insert(name.to_string(), id);

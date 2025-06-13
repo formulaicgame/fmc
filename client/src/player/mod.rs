@@ -81,7 +81,7 @@ fn handle_aabb_update(
     mut aabb_query: Query<&mut Aabb, With<Player>>,
 ) {
     for aabb_event in aabb_events.read() {
-        let mut aabb = aabb_query.single_mut();
+        let mut aabb = aabb_query.single_mut().unwrap();
         *aabb = Aabb {
             center: aabb_event.center.into(),
             half_extents: aabb_event.half_extents.into(),
@@ -95,7 +95,7 @@ fn handle_position_updates_from_server(
     mut player_query: Query<&mut Transform, With<Player>>,
 ) {
     for event in position_events.read() {
-        let mut transform = player_query.single_mut();
+        let mut transform = player_query.single_mut().unwrap();
         transform.translation = (event.position - origin.as_dvec3()).as_vec3();
     }
 }
@@ -116,7 +116,7 @@ fn send_position_to_server(
     }
     *last_time = 0.0;
 
-    let transform = player_transform.single();
+    let transform = player_transform.single().unwrap();
 
     if last_position.distance_squared(transform.translation) < 0.00001 {
         return;

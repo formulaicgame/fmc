@@ -394,42 +394,21 @@ fn handle_item_box_updates(
 
                     let mut entity_commands = if item_box_update.replace || children.is_none() {
                         let mut entity_commands = commands.spawn_empty();
-                        entity_commands.set_parent(*entity);
+                        entity_commands.insert(ChildOf(*entity));
                         entity_commands
                     } else if let Some(child_entity) =
                         children.unwrap().get(item_box.index as usize)
                     {
                         let mut entity_commands = commands.entity(*child_entity);
-                        entity_commands.despawn_descendants();
+                        entity_commands.despawn_related::<Children>();
                         entity_commands
                     } else {
                         let mut entity_commands = commands.spawn_empty();
-                        entity_commands.set_parent(*entity);
+                        entity_commands.insert(ChildOf(*entity));
                         entity_commands
                     };
 
-                    // Item count text
-                    entity_commands.with_children(|parent| {
-                        parent.spawn((
-                            Node {
-                                top: Val::Px(1.0),
-                                left: Val::Px(2.0),
-                                ..default()
-                            },
-                            Text(item_stack.size.to_string()),
-                            TextColor::from(if item_stack.size > 1 {
-                                Color::WHITE
-                            } else {
-                                Color::NONE
-                            }),
-                            TextFont {
-                                font: asset_server.load("server_assets/active/font.otf"),
-                                font_size: 8.0,
-                                font_smoothing: FontSmoothing::None,
-                            },
-                        ));
-                    });
-
+                    let item_stack_size = item_stack.size;
                     entity_commands.insert((
                         ImageNode {
                             image: if let Some(item_id) = &item_stack.item {
@@ -474,6 +453,29 @@ fn handle_item_box_updates(
                             index: item_box.index as usize,
                         },
                     ));
+
+                    // Item count text
+                    entity_commands.with_children(|parent| {
+                        parent.spawn((
+                            Node {
+                                top: Val::Px(1.0),
+                                left: Val::Px(2.0),
+                                ..default()
+                            },
+                            Text(item_stack_size.to_string()),
+                            TextColor::from(if item_stack_size > 1 {
+                                Color::WHITE
+                            } else {
+                                Color::NONE
+                            }),
+                            TextFont {
+                                font: asset_server.load("server_assets/active/font.otf"),
+                                font_size: 8.0,
+                                font_smoothing: FontSmoothing::None,
+                                ..default()
+                            },
+                        ));
+                    });
                 }
             }
         }
@@ -540,7 +542,7 @@ fn left_click_item_box(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
-    mut item_box_query: Query<(&mut ItemBox, &Interaction, &Parent), Changed<Interaction>>,
+    mut item_box_query: Query<(&mut ItemBox, &Interaction, &ChildOf), Changed<Interaction>>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
     mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
 ) {
@@ -549,8 +551,8 @@ fn left_click_item_box(
             return;
         }
 
-        let mut cursor_box = cursor_item_box_query.single_mut();
-        let (item_box_section, interface_node) = item_box_section_query.get(parent.get()).unwrap();
+        let mut cursor_box = cursor_item_box_query.single_mut().unwrap();
+        let (item_box_section, interface_node) = item_box_section_query.get(parent.0).unwrap();
 
         if mouse_button_input.just_pressed(MouseButton::Left)
             && !keyboard_input.pressed(KeyCode::ShiftLeft)
@@ -611,7 +613,7 @@ fn left_click_item_box(
         // interfaces. Instead of changing it in both places, we construct a false server update.
         // The server update is processed as normal, and the change will be shown in both
         // interfaces.
-        item_box_update_events.send(item_box_update);
+        item_box_update_events.write(item_box_update);
     }
 }
 
@@ -620,7 +622,7 @@ fn right_click_item_box(
     items: Res<Items>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
-    mut item_box_query: Query<(&mut ItemBox, &Interaction, &Parent)>,
+    mut item_box_query: Query<(&mut ItemBox, &Interaction, &ChildOf)>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
     mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
 ) {
@@ -639,8 +641,8 @@ fn right_click_item_box(
         return;
     };
 
-    let mut cursor_box = cursor_item_box_query.single_mut();
-    let (item_box_section, interface_node) = item_box_section_query.get(parent.get()).unwrap();
+    let mut cursor_box = cursor_item_box_query.single_mut().unwrap();
+    let (item_box_section, interface_node) = item_box_section_query.get(parent.0).unwrap();
 
     if cursor_box.is_empty() && !item_box.is_empty() {
         // TODO: This is a special condition for item boxes that are considered
@@ -724,10 +726,10 @@ fn right_click_item_box(
     // Multiple interfaces might share the same content, like a hotbar will be
     // represented both in the players inventory, and at the bottom of the screen. We only
     // change one of the item stacks here, and we need the change to be reflected in both
-    // interfaces. Instead of changing it in both places, we construct a false server update.
+    // interfaces. Instead of changing it in both places, we construct a fake server update.
     // The server update is processed as normal, and the change will be shown in both
     // interfaces.
-    item_box_update_events.send(item_box_update);
+    item_box_update_events.write(item_box_update);
 }
 
 fn update_cursor_item_stack_position(
@@ -736,7 +738,7 @@ fn update_cursor_item_stack_position(
     mut held_item_stack_query: Query<&mut Node, With<CursorItemBox>>,
 ) {
     for cursor_movement in cursor_move_event.read() {
-        let mut node = held_item_stack_query.single_mut();
+        let mut node = held_item_stack_query.single_mut().unwrap();
         node.left = Val::Px(cursor_movement.position.x / ui_scale.0 as f32 - 8.0);
         node.top = Val::Px(cursor_movement.position.y / ui_scale.0 as f32 - 8.0);
     }
@@ -760,6 +762,7 @@ fn update_cursor_image(
                 font: asset_server.load("server_assets/active/font.otf"),
                 font_size: 8.0,
                 font_smoothing: FontSmoothing::None,
+                ..default()
             };
             *color = TextColor(if cursor_box.item_stack.size > 1 {
                 Color::WHITE
@@ -776,6 +779,7 @@ fn update_cursor_image(
                 font: asset_server.load("server_assets/active/font.otf"),
                 font_size: 6.0,
                 font_smoothing: FontSmoothing::None,
+                ..default()
             };
             *color = TextColor(Color::NONE);
         }
@@ -794,14 +798,14 @@ pub struct SelectedItemBox(pub Entity);
 fn initial_select_item_box(
     mut commands: Commands,
     item_box_section_query: Query<&ItemBoxSection>,
-    added_itembox_query: Query<(Entity, &ItemBox, &Parent), Added<ItemBox>>,
+    added_itembox_query: Query<(Entity, &ItemBox, &ChildOf), Added<ItemBox>>,
 ) {
     for (box_entity, item_box, parent) in added_itembox_query.iter() {
         if item_box.index == 0 {
-            let item_box_section = item_box_section_query.get(parent.get()).unwrap();
+            let item_box_section = item_box_section_query.get(parent.0).unwrap();
             if item_box_section.is_equipment {
                 commands
-                    .entity(parent.get())
+                    .entity(parent.0)
                     .insert(SelectedItemBox(box_entity));
             }
         }
