@@ -202,20 +202,32 @@ impl MessageBuffer {
     // and I somewhat prefer having all the methods, makes you aware you are doing something
     // dangerous.
     fn index(&self, index: usize) -> &mut u8 {
-        unsafe { &mut (*self.0.get())[index] }
+        unsafe {
+            let vec = &mut *self.0.get();
+            &mut vec[index]
+        }
     }
 
     fn range(&self, index: Range<usize>) -> &mut [u8] {
-        unsafe { &mut (*self.0.get())[index] }
+        unsafe {
+            let vec = &mut *self.0.get();
+            &mut vec[index]
+        }
     }
 
     #[track_caller]
     fn range_to(&self, index: RangeTo<usize>) -> &mut [u8] {
-        unsafe { &mut (*self.0.get())[index] }
+        unsafe {
+            let vec = &mut *self.0.get();
+            &mut vec[index]
+        }
     }
 
     fn range_from(&self, index: RangeFrom<usize>) -> &mut [u8] {
-        unsafe { &mut (*self.0.get())[index] }
+        unsafe {
+            let vec = &mut *self.0.get();
+            &mut vec[index]
+        }
     }
 }
 
