@@ -13,7 +13,7 @@ struct Vertex {
 #ifdef VERTEX_NORMALS
     @location(1) normal: vec3<f32>,
 #endif
-#ifdef VERTEX_UVS
+#ifdef VERTEX_UVS_A
     @location(2) uv: vec2<f32>,
 #endif
 #ifdef VERTEX_UVS_B
@@ -28,6 +28,9 @@ struct Vertex {
 #ifdef SKINNED
     @location(6) joint_indices: vec4<u32>,
     @location(7) joint_weights: vec4<f32>,
+#endif
+#ifdef MORPH_TARGETS
+    @builtin(vertex_index) index: u32,
 #endif
     @location(8) packed_bits: u32,
 };
@@ -53,21 +56,30 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
 #ifdef SKINNED
-    var model = bevy_pbr::skinning::skin_model(vertex.joint_indices, vertex.joint_weights);
+    var world_from_local = bevy_pbr::skinning::skin_model(
+        vertex.joint_indices,
+        vertex.joint_weights,
+        vertex.instance_index
+    );
 #else
-    var model = mesh_functions::get_world_from_local(vertex.instance_index);
+    // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+    // See https://github.com/gfx-rs/naga/issues/2416 .
+    var world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
 #endif
 
 #ifdef VERTEX_NORMALS
 #ifdef SKINNED
-    out.world_normal = bevy_pbr::skinning::skin_normals(model, vertex.normal);
+    out.world_normal = bevy_pbr::skinning::skin_normals(world_from_local, vertex.normal);
 #else
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
 #endif
 
 #ifdef VERTEX_POSITIONS
-    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
+    out.world_position = mesh_functions::mesh_position_local_to_world(
+        world_from_local,
+        vec4<f32>(vertex.position, 1.0)
+    );
     out.position = view_transformations::position_world_to_clip(out.world_position.xyz);
 #endif
 
@@ -76,7 +88,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #endif
 
 #ifdef VERTEX_TANGENTS
-    out.world_tangent = mesh_functions::mesh_tangent_local_to_world(model, vertex.tangent);
+    out.world_tangent = mesh_functions::mesh_tangent_local_to_world(world_from_local, vertex.tangent, vertex.instance_index);
 #endif
 
 #ifdef VERTEX_COLORS
