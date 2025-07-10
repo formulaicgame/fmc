@@ -81,7 +81,7 @@ impl Chunk {
         return self.block_state.get(&index).copied();
     }
 
-    pub fn iter_blocks(&self) -> std::iter::Enumerate<std::slice::Iter<BlockId>> {
+    pub fn iter_blocks(&self) -> std::iter::Enumerate<std::slice::Iter<'_, BlockId>> {
         self.blocks.iter().enumerate()
     }
 }

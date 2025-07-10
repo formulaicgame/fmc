@@ -49,7 +49,7 @@ impl Plugin for WorldPlugin {
             )
             .add_systems(
                 PostUpdate,
-                (handle_block_updates, apply_deferred)
+                (handle_block_updates, ApplyDeferred)
                     // We want block models to be sent immediately as they are spawned
                     // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
                     .before(TransformSystem::TransformPropagate),
@@ -103,7 +103,7 @@ fn change_player_render_distance(
             .get_mut(render_distance_update.player_entity)
             .unwrap();
 
-        if render_distance.chunks > max_render_distance.chunks {
+        if render_distance_update.chunks > max_render_distance.chunks {
             if net.disconnect(render_distance_update.player_entity) {
                 error!(
                     "Player tried to set their render distance to {}, but the max allowed is {}, disconnecting.",
@@ -241,7 +241,7 @@ fn handle_block_updates(
 
                 if let BlockUpdate::Replace { block_data, .. } = &event {
                     if let Some(old_entity) = chunk.block_entities.remove(&block_index) {
-                        commands.entity(old_entity).despawn_recursive();
+                        commands.entity(old_entity).despawn();
                     }
 
                     let block_config = Blocks::get().get_config(&block_id);
@@ -433,7 +433,7 @@ fn send_changed_block_event(
     block_id: BlockId,
     block_state: Option<BlockState>,
 ) {
-    changed_block_events.send(ChangedBlockEvent {
+    changed_block_events.write(ChangedBlockEvent {
         position,
         from: (prev_block_id, prev_block_state),
         to: (block_id, block_state),

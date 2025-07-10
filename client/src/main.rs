@@ -1,5 +1,5 @@
 use bevy::{
-    audio::{AudioPlugin, SpatialScale, Volume},
+    audio::{AudioPlugin, SpatialScale},
     // diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
     window::WindowFocused,
@@ -38,10 +38,8 @@ fn main() {
                 })
                 .set(ImagePlugin::default_nearest())
                 .set(AudioPlugin {
-                    global_volume: GlobalVolume {
-                        volume: Volume::Linear(1.0),
-                    },
                     default_spatial_scale: SpatialScale::new(0.5),
+                    ..default()
                 }),
         )
         // .add_plugins(LogDiagnosticsPlugin::default())

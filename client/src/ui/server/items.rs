@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::{prelude::*, text::FontSmoothing, ui::FocusPolicy};
+use bevy::{prelude::*, ui::FocusPolicy};
 
 use fmc_protocol::messages;
 use serde::{Deserialize, Serialize};
@@ -471,7 +471,6 @@ fn handle_item_box_updates(
                             TextFont {
                                 font: asset_server.load("server_assets/active/font.otf"),
                                 font_size: 8.0,
-                                font_smoothing: FontSmoothing::None,
                                 ..default()
                             },
                         ));
@@ -761,7 +760,6 @@ fn update_cursor_image(
             *font = TextFont {
                 font: asset_server.load("server_assets/active/font.otf"),
                 font_size: 8.0,
-                font_smoothing: FontSmoothing::None,
                 ..default()
             };
             *color = TextColor(if cursor_box.item_stack.size > 1 {
@@ -778,7 +776,6 @@ fn update_cursor_image(
             *font = TextFont {
                 font: asset_server.load("server_assets/active/font.otf"),
                 font_size: 6.0,
-                font_smoothing: FontSmoothing::None,
                 ..default()
             };
             *color = TextColor(Color::NONE);

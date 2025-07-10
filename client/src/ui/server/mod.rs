@@ -5,7 +5,6 @@ use bevy::{
     image::{CompressedImageFormats, ImageSampler},
     prelude::*,
     render::render_asset::RenderAssetUsages,
-    text::FontSmoothing,
 };
 use fmc_protocol::messages;
 use serde::Deserialize;
@@ -119,6 +118,8 @@ pub fn load_interfaces(
 
         let node_config: NodeConfig = match serde_json::from_reader(&file) {
             Ok(c) => c,
+            // Skip non-game interfaces, they have their own directory
+            Err(e) if e.io_error_kind() == Some(std::io::ErrorKind::IsADirectory) => continue,
             Err(e) => {
                 net.disconnect(format!(
                     "Misconfigured assets: Failed to read interface configuration at: '{}'\n\
@@ -258,7 +259,7 @@ pub fn load_interfaces(
                     }
                 }
                 NodeContent::TextBox => {
-                    entity_commands.insert(TextBox::default());
+                    entity_commands.insert(TextBox::default().with_autofocus());
                 }
                 NodeContent::Text {
                     text,
@@ -275,11 +276,13 @@ pub fn load_interfaces(
                             TextFont {
                                 font_size: *font_size,
                                 font: DEFAULT_FONT_HANDLE,
-                                font_smoothing: FontSmoothing::None,
                                 ..default()
                             },
                             TextColor(*color),
-                            //TextShadow::default(),
+                            TextShadow {
+                                offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                                ..default()
+                            },
                         ));
                     });
                 }
@@ -616,7 +619,7 @@ struct InterfaceStack(Vec<Entity>);
 // over and the button is released. https://github.com/bevyengine/bevy/pull/9240 is fix I think.
 // Remember to also change it for the client GUI buttons, it will solve the problem
 // of mouse button spillover. Currently it plays the item use animation when you come out of the
-// pause menu.
+// pause interface.
 fn button_interaction(
     net: Res<NetworkClient>,
     button_query: Query<(&Interaction, &InterfaceNode), (Changed<Interaction>, With<Button>)>,

@@ -1,9 +1,15 @@
-use std::process::{Child, Stdio};
+use std::{
+    path::PathBuf,
+    process::{Child, Stdio},
+};
 
 use bevy::prelude::*;
 use fmc_protocol::messages;
 
-use crate::{game_state::GameState, networking::NetworkClient};
+use crate::{
+    game_state::GameState,
+    networking::{ConnectionEvent, NetworkClient},
+};
 
 pub struct SinglePlayerPlugin;
 impl Plugin for SinglePlayerPlugin {
@@ -21,7 +27,9 @@ impl Plugin for SinglePlayerPlugin {
 }
 
 #[derive(Event)]
-pub struct LaunchSinglePlayer {}
+pub struct LaunchSinglePlayer {
+    pub path: PathBuf,
+}
 
 #[derive(Resource)]
 struct ServerProcess(Option<Child>);
@@ -37,9 +45,9 @@ impl Drop for ServerProcess {
 
 fn launch_singleplayer_server(
     mut net: ResMut<NetworkClient>,
-    mut game_state: ResMut<NextState<GameState>>,
     mut server_process: ResMut<ServerProcess>,
     mut launch_events: EventReader<LaunchSinglePlayer>,
+    mut connection_events: EventWriter<ConnectionEvent>,
 ) {
     for _ in launch_events.read() {
         if server_process.0.is_some() {
@@ -57,8 +65,7 @@ fn launch_singleplayer_server(
         match std::process::Command::new(&std::fs::canonicalize(path).unwrap())
             .current_dir("fmc_server")
             // The server listens for this in order to organize its files differently when running
-            // as a cargo project. We don't want it to do this when the client is run as a cargo
-            // project.
+            // as a cargo project. We don't want that when running it through the client.
             .env_remove("CARGO")
             .stdin(Stdio::piped())
             .spawn()
@@ -70,13 +77,9 @@ fn launch_singleplayer_server(
             Ok(c) => *server_process = ServerProcess(Some(c)),
         };
 
-        // TODO: Despite the connect function having a timeout it will still instantly return
-        // "connection refused" while the server is starting up. How do you go about waiting for it
-        // to finish startup?
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        net.connect("127.0.0.1:42069".parse().unwrap());
-        game_state.set(GameState::Connecting);
+        connection_events.write(ConnectionEvent {
+            address: "127.0.0.1".to_owned(),
+        });
     }
 }
 

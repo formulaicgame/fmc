@@ -155,10 +155,12 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
 
     output_color = pbr_functions::alpha_discard(pbr_bindings::material, output_color);
 
+#ifdef DISTANCE_FOG
     // fog
-    if (fog.mode != FOG_MODE_OFF && (pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
+    if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
         output_color = pbr_functions::apply_fog(fog, output_color, in.world_position.xyz, view.world_position.xyz);
     }
+#endif // DISTANCE_FOG
 
 #ifdef TONEMAP_IN_SHADER
     // TODO: This makes the colors so bland...

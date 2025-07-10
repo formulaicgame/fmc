@@ -43,21 +43,24 @@ pub fn initialize() {
 pub struct Settings {
     /// Render distance in chunks
     pub render_distance: u32,
-    /// Field of view of camera
+    /// Field of view in degrees
     pub fov: f32,
-    /// Sound volume
+    /// Audio volume
     pub volume: f32,
     /// Mouse sensitivity
     pub sensitivity: f32,
+    /// Interface scale
+    pub ui_scale: f32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             render_distance: 16,
-            fov: std::f32::consts::PI / 3.0,
-            volume: 1.0,
-            sensitivity: 0.00005,
+            fov: 90.0,
+            volume: 0.5,
+            sensitivity: 1.0,
+            ui_scale: 1.0,
         }
     }
 }
@@ -151,6 +154,13 @@ impl Settings {
                         err("sensitivity", "number", value);
                     }
                 }
+                "ui_scale" => {
+                    if let Ok(value) = value.parse::<f32>() {
+                        settings.ui_scale = value.min(2.0).max(0.0);
+                    } else {
+                        err("ui_scale", "number", value);
+                    }
+                }
                 _ => error!("Invalid setting '{name}' in settings.ini at line {line_num}"),
             }
         }
@@ -164,7 +174,8 @@ impl Settings {
             + "render-distance = " + &self.render_distance.to_string() + "\n"
             + "fov = " + &self.fov.to_string() + "\n"
             + "volume = " + &self.volume.to_string() + "\n"
-            + "sensitivity = " + &self.sensitivity.to_string() + "\n";
+            + "sensitivity = " + &self.sensitivity.to_string() + "\n"
+            + "ui_scale = " + &self.ui_scale.to_string() + "\n";
 
         if let Err(e) = std::fs::write(self.config_file(), contents) {
             error!("Failed to write config file: {}", e);

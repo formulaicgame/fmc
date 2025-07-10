@@ -6,7 +6,7 @@ use crate::{
     networking::NetworkClient,
     ui::{
         text_input::{TextBox, TextBoxFocus},
-        DEFAULT_FONT_HANDLE,
+        DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE,
     },
 };
 
@@ -101,13 +101,6 @@ fn handle_text_updates(
             };
 
             entity_commands.insert((
-                Node {
-                    // XXX: Since the fake shadow text extends a little farther it
-                    // often wraps before the real text. To counteract this the real
-                    // text is made to wrap a little sooner by shrinking the width.
-                    width: Val::Percent(98.0),
-                    ..default()
-                },
                 BackgroundColor::from(text_container.text_background_color),
                 Line,
             ));
@@ -135,7 +128,10 @@ fn handle_text_updates(
                     linebreak: LineBreak::WordOrCharacter,
                     justify: JustifyText::Left,
                 },
-                //TextShadow::default(),
+                TextShadow {
+                    offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                    ..default()
+                },
             ));
 
             if should_fade {

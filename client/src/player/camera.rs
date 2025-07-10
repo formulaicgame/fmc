@@ -1,6 +1,7 @@
 use bevy::{
     input::mouse::MouseMotion,
     prelude::*,
+    render::view::RenderLayers,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
@@ -35,27 +36,35 @@ impl Plugin for CameraPlugin {
     }
 }
 
-#[derive(Bundle)]
-pub struct CameraBundle {
-    camera_3d: Camera3d,
-    projection: Projection,
-    fog_settings: DistanceFog,
-}
-
-impl Default for CameraBundle {
-    fn default() -> Self {
-        Self {
-            camera_3d: Camera3d::default(),
-            projection: Projection::Perspective(PerspectiveProjection {
+pub fn camera_bundle(settings: &Settings) -> impl Bundle {
+    (
+        Camera3d::default(),
+        Camera {
+            order: 0,
+            ..default()
+        },
+        Projection::Perspective(PerspectiveProjection {
+            fov: settings.fov.to_radians(),
+            ..default()
+        }),
+        DistanceFog {
+            color: Color::NONE,
+            ..default()
+        },
+        // Renders the equipped item
+        children![(
+            Camera3d::default(),
+            Camera {
+                order: 1,
+                ..default()
+            },
+            Projection::Perspective(PerspectiveProjection {
                 fov: std::f32::consts::PI / 3.0,
                 ..default()
             }),
-            fog_settings: DistanceFog {
-                color: Color::NONE,
-                ..default()
-            },
-        }
-    }
+            RenderLayers::layer(1),
+        )],
+    )
 }
 
 fn update_render_distance(
@@ -80,7 +89,7 @@ fn rotate_camera(
     settings: Res<Settings>,
     net: Res<NetworkClient>,
     mut mouse_events: EventReader<MouseMotion>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    mut camera_query: Query<&mut Transform, With<Head>>,
 ) {
     let window = window.single().unwrap();
 
@@ -95,8 +104,9 @@ fn rotate_camera(
         }
 
         let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
-        yaw -= (settings.sensitivity * ev.delta.x * window.width()).to_radians();
-        pitch -= (settings.sensitivity * ev.delta.y * window.height()).to_radians();
+        let magic = 0.00005;
+        yaw -= (magic * settings.sensitivity * ev.delta.x * window.width()).to_radians();
+        pitch -= (magic * settings.sensitivity * ev.delta.y * window.height()).to_radians();
         pitch = pitch.clamp(-1.57, 1.57);
 
         transform.rotation =
@@ -113,7 +123,7 @@ fn rotate_camera(
 // Forced camera rotation by the server.
 fn handle_camera_rotation_from_server(
     mut camera_rotation_events: EventReader<messages::PlayerCameraRotation>,
-    mut camera_q: Query<&mut Transform, With<Camera>>,
+    mut camera_q: Query<&mut Transform, With<Head>>,
 ) {
     for rotation_event in camera_rotation_events.read() {
         let mut transform = camera_q.single_mut().unwrap();
@@ -124,7 +134,7 @@ fn handle_camera_rotation_from_server(
 // Forced camera position by the server
 fn handle_camera_position_from_server(
     mut camera_position_events: EventReader<messages::PlayerCameraPosition>,
-    mut camera_q: Query<&mut Transform, With<Camera>>,
+    mut camera_q: Query<&mut Transform, With<Head>>,
 ) {
     for position_event in camera_position_events.read() {
         let mut transform = camera_q.single_mut().unwrap();
@@ -194,7 +204,7 @@ fn fog(
 // Target the block the player is looking at.
 //fn outline_selected_block(
 //    world_map: Res<WorldMap>,
-//    camera_query: Query<&GlobalTransform, (With<Camera>, Changed<GlobalTransform>)>,
+//    camera_query: Query<&GlobalTransform, (With<Head>, Changed<GlobalTransform>)>,
 //) {
 //    let camera_transform = camera_query.single();
 //

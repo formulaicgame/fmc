@@ -1,9 +1,12 @@
 use bevy::prelude::*;
 use fmc_protocol::messages;
 
-use super::{GuiState, Interface, Interfaces};
+use super::{GuiState, Interface, Interfaces, BACKGROUND};
 use crate::{
-    assets::AssetState, game_state::GameState, networking::NetworkClient, ui::client::widgets::*,
+    assets::AssetState,
+    game_state::GameState,
+    networking::NetworkClient,
+    ui::client::{widgets::*, BASE_SIZE},
 };
 
 // TODO: I think this looks better as an event architecture. You have something you want to
@@ -41,7 +44,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             Interface,
             Node {
                 position_type: PositionType::Absolute,
-                width: Val::Px(200.0),
+                width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 row_gap: Val::Px(20.0),
                 flex_direction: FlexDirection::Column,
@@ -49,14 +52,17 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor::from(Color::srgb_u8(33, 33, 33)),
+            ImageNode {
+                image: BACKGROUND,
+                ..default()
+            },
         ))
         .with_children(|parent| {
             parent
                 .spawn(Node {
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
-                    width: Val::Percent(100.0),
+                    width: Val::Percent(20.0),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -65,7 +71,15 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                         .insert(StatusText);
                 });
             parent
-                .spawn_button("Cancel", Srgba::gray(0.7))
+                .spawn_button(
+                    "Cancel",
+                    ButtonStyle {
+                        color: Color::srgb_u8(102, 97, 95),
+                        width: Val::Percent(20.0),
+                        height: BASE_SIZE * 20.0,
+                        ..default()
+                    },
+                )
                 .insert(CancelButton);
         })
         .id();
@@ -74,18 +88,18 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
 
 fn press_cancel(
     net: Res<NetworkClient>,
-    mut game_state: ResMut<NextState<GuiState>>,
+    mut gui_state: ResMut<NextState<GuiState>>,
     button_query: Query<&Interaction, (Changed<Interaction>, With<CancelButton>)>,
 ) {
     if let Ok(interaction) = button_query.single() {
         if *interaction == Interaction::Pressed {
             net.disconnect("");
-            game_state.set(GuiState::MainMenu);
+            gui_state.set(GuiState::MainMenu);
         }
     }
 }
 
-// TODO: Needs to display progress, but there's no visibility into it at the moment it's a Local
+// TODO: Needs to display progress, but there's no visibility into it at the moment it's a [Local]
 // over in 'src/networking.rs'.
 fn downloading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     let mut text = status_text.single_mut().unwrap();
@@ -121,7 +135,11 @@ fn show_when_disconnected_for_reason(
     }
 }
 
-fn show_when_connecting(mut gui_state: ResMut<NextState<GuiState>>) {
+fn show_when_connecting(
+    mut status_text: Query<&mut Text, With<StatusText>>,
+    mut gui_state: ResMut<NextState<GuiState>>,
+) {
+    *status_text.single_mut().unwrap() = Text::new("Connecting to server...");
     gui_state.set(GuiState::Connecting);
 }
 

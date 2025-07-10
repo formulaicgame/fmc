@@ -112,7 +112,7 @@ fn add_and_remove_subscribers(
                     .chunk_to_subscribers
                     .remove(&chunk_position);
                 if world_map.contains_chunk(&chunk_position) {
-                    unload_chunk_events.send(ChunkUnloadEvent {
+                    unload_chunk_events.write(ChunkUnloadEvent {
                         position: chunk_position,
                     });
                 }
@@ -244,7 +244,7 @@ fn manage_subscriptions(
                     .chunk_to_subscribers
                     .remove(&chunk_position);
                 if world_map.contains_chunk(&chunk_position) {
-                    unload_chunk_events.send(ChunkUnloadEvent {
+                    unload_chunk_events.write(ChunkUnloadEvent {
                         position: chunk_position,
                     });
                 }
@@ -299,7 +299,7 @@ fn subscribe_to_visible_chunks(
             .unwrap();
 
         if !subscribed_chunks.contains(&chunk_tracker.current_origin) {
-            subscription_events.send(ChunkSubscriptionEvent {
+            subscription_events.write(ChunkSubscriptionEvent {
                 player_entity,
                 chunk_position: chunk_tracker.current_origin,
             });
@@ -325,7 +325,7 @@ fn subscribe_to_visible_chunks(
         // main_face = The chunk face entered through at the start of the search.
         while let Some((chunk_position, from_face, main_face)) = queue.pop() {
             if !subscribed_chunks.contains(&chunk_position) {
-                subscription_events.send(ChunkSubscriptionEvent {
+                subscription_events.write(ChunkSubscriptionEvent {
                     player_entity,
                     chunk_position,
                 });
@@ -392,7 +392,7 @@ fn handle_chunk_loading_tasks(
         {
             commands.entity(entity).despawn();
 
-            chunk_load_event_writer.send(ChunkLoadEvent {
+            chunk_load_event_writer.write(ChunkLoadEvent {
                 position: new_chunk_position,
             });
 
@@ -537,7 +537,7 @@ fn unload_chunks(
         };
 
         for entity in chunk.block_entities.values() {
-            commands.entity(*entity).despawn_recursive();
+            commands.entity(*entity).despawn();
         }
     }
 }
@@ -593,7 +593,7 @@ fn update_simulated_chunks(
 ) {
     for chunk_load_event in chunk_load_events.read() {
         if simulated_chunks.is_simulated(&chunk_load_event.position) {
-            simulation_event_writer.send(ChunkSimulationEvent::Start(chunk_load_event.position));
+            simulation_event_writer.write(ChunkSimulationEvent::Start(chunk_load_event.position));
         }
     }
 
@@ -612,7 +612,7 @@ fn update_simulated_chunks(
                             && world_map.contains_chunk(&chunk_position)
                         {
                             simulation_event_writer
-                                .send(ChunkSimulationEvent::Start(chunk_position));
+                                .write(ChunkSimulationEvent::Start(chunk_position));
                         }
                     }
                 }
@@ -638,7 +638,7 @@ fn update_simulated_chunks(
                                 && world_map.contains_chunk(&new_position)
                             {
                                 simulation_event_writer
-                                    .send(ChunkSimulationEvent::Start(new_position));
+                                    .write(ChunkSimulationEvent::Start(new_position));
                             }
                         }
 
@@ -652,7 +652,7 @@ fn update_simulated_chunks(
                                 && world_map.contains_chunk(&old_position)
                             {
                                 simulation_event_writer
-                                    .send(ChunkSimulationEvent::Stop(old_position));
+                                    .write(ChunkSimulationEvent::Stop(old_position));
                             }
                         }
                     }
@@ -663,7 +663,7 @@ fn update_simulated_chunks(
 
     for chunk_unload_event in chunk_unload_events.read() {
         if simulated_chunks.is_simulated(&chunk_unload_event.position) {
-            simulation_event_writer.send(ChunkSimulationEvent::Stop(chunk_unload_event.position));
+            simulation_event_writer.write(ChunkSimulationEvent::Stop(chunk_unload_event.position));
         }
     }
 }

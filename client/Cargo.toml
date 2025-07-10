@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.16.1", features = ["serialize"]}
+bevy = { version = "0.16.1", features = ["serialize", "wayland"]}
 
 fmc_protocol = { version = "0.1.1", git = "https://github.com/formulaicgame/fmc_protocol" }
 serde_json = "1.0.128"
@@ -35,7 +35,7 @@ strip = "debuginfo"
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:
 [profile.dev.package."*"]
 opt-level = 3
-#https://github.com/bevyengine/bevy/issues/14291
+# https//github.com/bevyengine/bevy/issues/14291
 debug-assertions = false
 
 [profile.release]

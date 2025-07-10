@@ -7,7 +7,6 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
-        client::GuiState,
         server::{InterfaceToggleEvent, Interfaces},
         UiState,
     },
@@ -115,7 +114,6 @@ fn handle_key_presses(
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
-    mut next_gui_state: ResMut<NextState<GuiState>>,
     mut interface_events: EventWriter<InterfaceToggleEvent>,
 ) {
     for pressed_key in input.get_just_pressed() {
@@ -138,8 +136,9 @@ fn handle_key_presses(
             }
         }
 
+        // Reserved escape hatch if the server decides to be evil, escape will always take you to
+        // the safety of the pause interface.
         if *pressed_key == KeyCode::Escape {
-            next_gui_state.set(GuiState::PauseMenu);
             return;
         }
 

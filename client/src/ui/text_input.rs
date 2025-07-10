@@ -6,7 +6,6 @@ use bevy::{
         ButtonState,
     },
     prelude::*,
-    text::FontSmoothing,
 };
 
 use super::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE};
@@ -22,9 +21,12 @@ impl Plugin for TextInputPlugin {
 /// entity is explicitly provided.
 #[derive(Component)]
 pub struct TextBox {
+    pub width: Val,
+    pub height: Val,
     pub text_entity: Entity,
     pub text: String,
     pub placeholder_text: String,
+    pub autofocus: bool,
 }
 
 impl TextBox {
@@ -34,14 +36,27 @@ impl TextBox {
             ..default()
         }
     }
+
+    pub fn with_autofocus(mut self) -> Self {
+        self.autofocus = true;
+        self
+    }
+
+    pub fn with_text(mut self, text: &str) -> Self {
+        self.text = text.to_owned();
+        self
+    }
 }
 
 impl Default for TextBox {
     fn default() -> Self {
         Self {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
             text_entity: Entity::PLACEHOLDER,
             text: String::new(),
             placeholder_text: String::new(),
+            autofocus: false,
         }
     }
 }
@@ -51,8 +66,12 @@ pub struct TextBoxFocus;
 
 fn focus(
     mut commands: Commands,
-    clicked_text_box: Query<(Entity, &Interaction), (With<TextBox>, Changed<Interaction>)>,
-    previous_focus: Query<Entity, With<TextBoxFocus>>,
+    clicked_text_box: Query<
+        (Entity, &Interaction),
+        (With<TextBox>, Changed<Interaction>, Without<TextBoxFocus>),
+    >,
+    newly_visible: Query<(Entity, &TextBox, &InheritedVisibility), Changed<InheritedVisibility>>,
+    previous_focus: Query<(Entity, &InheritedVisibility), With<TextBoxFocus>>,
     mut keyboard_input: EventReader<KeyboardInput>,
 ) {
     let mut new_focus = false;
@@ -61,6 +80,15 @@ fn focus(
         if *interaction == Interaction::Pressed {
             commands.entity(entity).insert(TextBoxFocus);
             new_focus = true;
+            break;
+        }
+    }
+
+    for (entity, text_box, visibility) in newly_visible.iter() {
+        if text_box.autofocus && visibility.get() {
+            commands.entity(entity).insert(TextBoxFocus);
+            new_focus = true;
+            break;
         }
     }
 
@@ -75,36 +103,44 @@ fn focus(
         }
     }
 
-    if new_focus {
-        if let Ok(prev_entity) = previous_focus.single() {
-            commands.entity(prev_entity).remove::<TextBoxFocus>();
+    if let Ok((entity, visibility)) = previous_focus.single() {
+        if new_focus || !visibility.get() {
+            commands.entity(entity).remove::<TextBoxFocus>();
         }
     }
 }
 
 // TODO: Do this as hook? No need to keep it running, it only happens on gui setup and server
 // interface setup
-fn add_text(mut commands: Commands, added_text_boxes: Query<(Entity, &TextBox), Added<TextBox>>) {
-    for (entity, text_box) in added_text_boxes.iter() {
+fn add_text(
+    mut commands: Commands,
+    mut added_text_boxes: Query<(Entity, &mut TextBox), Added<TextBox>>,
+) {
+    for (entity, mut text_box) in added_text_boxes.iter_mut() {
         if text_box.text_entity != Entity::PLACEHOLDER {
             continue;
         }
 
         commands.entity(entity).with_children(|parent| {
-            parent.spawn((
-                Text::new(&text_box.text),
-                TextFont {
-                    font_size: DEFAULT_FONT_SIZE,
-                    font: DEFAULT_FONT_HANDLE,
-                    font_smoothing: FontSmoothing::None,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                Node {
-                    position_type: PositionType::Absolute,
-                    ..default()
-                },
-            ));
+            text_box.text_entity = parent
+                .spawn((
+                    Text::new(&text_box.text),
+                    TextFont {
+                        font_size: DEFAULT_FONT_SIZE,
+                        font: DEFAULT_FONT_HANDLE,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        ..default()
+                    },
+                    TextShadow {
+                        offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                        ..default()
+                    },
+                ))
+                .id();
         });
     }
 }

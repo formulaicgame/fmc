@@ -45,6 +45,7 @@ impl Plugin for ServerPlugin {
             .add_event::<NetworkMessage<messages::InterfaceEquipItem>>()
             .add_event::<NetworkMessage<messages::InterfaceInteraction>>()
             .add_event::<NetworkMessage<messages::InterfaceTextInput>>()
+            .add_event::<NetworkMessage<messages::GuiSetting>>()
             .add_systems(First, read_messages)
             .add_systems(
                 PreUpdate,
@@ -539,7 +540,7 @@ fn handle_new_connections(
                 .connections
                 .insert(player_entity, uninitialized.connection.take().unwrap());
 
-            network_events.send(NetworkEvent::Connected {
+            network_events.write(NetworkEvent::Connected {
                 entity: player_entity,
             });
 
@@ -560,7 +561,7 @@ fn disconnect_players(mut network_events: EventWriter<NetworkEvent>, server: Res
 
     for connection_entity in server.to_disconnect.lock().unwrap().drain() {
         if server.connections.remove(&connection_entity).is_some() {
-            network_events.send(NetworkEvent::Disconnected {
+            network_events.write(NetworkEvent::Disconnected {
                 entity: connection_entity,
             });
         }
@@ -573,7 +574,7 @@ fn remove_disconnected_player_entities(
 ) {
     for network_event in network_events.read() {
         if let NetworkEvent::Disconnected { entity } = network_event {
-            commands.entity(*entity).despawn_recursive();
+            commands.entity(*entity).despawn();
         }
     }
 }
@@ -620,6 +621,7 @@ struct EventWriters<'w> {
     interface_equip_item: EventWriter<'w, NetworkMessage<messages::InterfaceEquipItem>>,
     interface_interaction: EventWriter<'w, NetworkMessage<messages::InterfaceInteraction>>,
     interface_text_input: EventWriter<'w, NetworkMessage<messages::InterfaceTextInput>>,
+    gui_setting: EventWriter<'w, NetworkMessage<messages::GuiSetting>>,
 }
 
 fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
@@ -641,7 +643,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
             match message_type {
                 MessageType::LeftClick => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.left_click.send(NetworkMessage {
+                        event_writers.left_click.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -654,7 +656,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::RightClick => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.right_click.send(NetworkMessage {
+                        event_writers.right_click.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -667,7 +669,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::RenderDistance => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.render_distance.send(NetworkMessage {
+                        event_writers.render_distance.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -680,7 +682,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::PlayerCameraRotation => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.player_camera_rotation.send(NetworkMessage {
+                        event_writers.player_camera_rotation.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -693,7 +695,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::PlayerPosition => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.player_position.send(NetworkMessage {
+                        event_writers.player_position.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -706,7 +708,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::InterfaceEquipItem => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_equip_item.send(NetworkMessage {
+                        event_writers.interface_equip_item.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -719,7 +721,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::InterfaceInteraction => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_interaction.send(NetworkMessage {
+                        event_writers.interface_interaction.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });
@@ -732,7 +734,20 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                 }
                 MessageType::InterfaceTextInput => {
                     if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_text_input.send(NetworkMessage {
+                        event_writers.interface_text_input.write(NetworkMessage {
+                            player_entity: *entity,
+                            message,
+                        });
+                    } else {
+                        server.to_disconnect.insert(*entity);
+                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address);
+                        break;
+                    }
+                }
+                MessageType::GuiSetting => {
+                    if let Ok(message) = bincode::deserialize(message_data) {
+                        event_writers.gui_setting.write(NetworkMessage {
                             player_entity: *entity,
                             message,
                         });

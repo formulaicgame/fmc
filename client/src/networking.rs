@@ -1,6 +1,6 @@
 use std::{
     io::{Read, Write},
-    net::{Shutdown, SocketAddr, TcpStream},
+    net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
     path::PathBuf,
 };
 
@@ -28,6 +28,7 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(identity)
             .insert_resource(NetworkClient::new())
+            .add_event::<ConnectionEvent>()
             .add_event::<messages::AssetResponse>()
             .add_event::<messages::Disconnect>()
             .add_event::<messages::ServerConfig>()
@@ -49,6 +50,7 @@ impl Plugin for ClientPlugin {
             .add_event::<messages::InterfaceNodeVisibilityUpdate>()
             .add_event::<messages::InterfaceTextUpdate>()
             .add_event::<messages::InterfaceVisibilityUpdate>()
+            .add_event::<messages::GuiSetting>()
             .add_event::<messages::EnableClientAudio>()
             .add_event::<messages::Sound>()
             .add_event::<messages::ParticleEffect>()
@@ -60,7 +62,8 @@ impl Plugin for ClientPlugin {
                 PreUpdate,
                 (
                     read_messages.run_if(in_state(GameState::Playing)),
-                    (connect, initialize_connection).run_if(in_state(GameState::Connecting)),
+                    connect.run_if(not(in_state(GameState::Playing))),
+                    initialize_connection.run_if(in_state(GameState::Connecting)),
                     (
                         register_client_disconnect_events.before(disconnect),
                         disconnect,
@@ -69,6 +72,11 @@ impl Plugin for ClientPlugin {
                 ),
             );
     }
+}
+
+#[derive(Event)]
+pub struct ConnectionEvent {
+    pub address: String,
 }
 
 struct ConcurrentQueue {
@@ -122,14 +130,6 @@ impl NetworkClient {
         if self.connection.is_some() || self.connection_task.is_some() {
             panic!("Already connected");
         }
-
-        self.connection_task = Some(AsyncComputeTaskPool::get().spawn(async move {
-            TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10)).and_then(|tcp| {
-                tcp.set_nonblocking(true)?;
-                tcp.set_nodelay(true)?;
-                Ok(tcp)
-            })
-        }));
     }
 
     pub fn send_message<T: ServerBound + Serialize>(&self, message: T) {
@@ -297,7 +297,12 @@ fn send_client_ready(net: Res<NetworkClient>) {
     net.send_message(messages::ClientReady);
 }
 
-fn connect(mut net: ResMut<NetworkClient>, identity: Res<Identity>) {
+fn connect(
+    mut net: ResMut<NetworkClient>,
+    identity: Res<Identity>,
+    mut connection_events: EventReader<ConnectionEvent>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
     if let Some(Some(result)) = net
         .connection_task
         .as_mut()
@@ -309,11 +314,49 @@ fn connect(mut net: ResMut<NetworkClient>, identity: Res<Identity>) {
                 net.send_message(messages::ClientIdentification {
                     name: identity.username.clone(),
                 });
+                game_state.set(GameState::Connecting);
             }
-            Err(e) => net.disconnect(e.kind().to_string()),
+            Err(e) => net.disconnect(e.to_string()),
         };
 
         net.connection_task.take();
+    } else if net.connection.is_none() && net.connection_task.is_none() {
+        for connection_event in connection_events.read().take(1) {
+            let mut address = connection_event.address.clone();
+            if !address.contains(":") {
+                address.push_str(":42069");
+            }
+
+            net.connection_task = Some(AsyncComputeTaskPool::get().spawn(async move {
+                let socket_addrs = address.to_socket_addrs()?.cycle();
+
+                let start = std::time::Instant::now();
+                let timeout = std::time::Duration::from_secs(5);
+                for address in socket_addrs.cycle() {
+                    let stream = TcpStream::connect_timeout(&address, timeout).and_then(|tcp| {
+                        tcp.set_nonblocking(true)?;
+                        tcp.set_nodelay(true)?;
+                        Ok(tcp)
+                    });
+
+                    if stream.is_ok() {
+                        return stream;
+                    } else if start.elapsed() <= timeout {
+                        // TODO: The docs say this is not cool, but does not say why. I assume it's
+                        // fine, blocking a thread is no big deal as long as this is the only thing being
+                        // done. Do it in a separate thread instead if it blocks execution
+                        // completely.
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                    } else {
+                        return stream;
+                    }
+                }
+
+                return Err(std::io::Error::other("Address not recognized"));
+            }));
+
+            game_state.set(GameState::Connecting);
+        }
     }
 }
 
@@ -437,7 +480,6 @@ fn disconnect(
             connection.shutdown(Shutdown::Both).ok();
         }
 
-        // Tasks are canceled when dropped (eventually)
         net.connection_task.take();
 
         game_state.set(GameState::Launcher);
@@ -501,6 +543,7 @@ struct EventWriters<'w> {
     interface_node_visibility_update: EventWriter<'w, messages::InterfaceNodeVisibilityUpdate>,
     interface_text_update: EventWriter<'w, messages::InterfaceTextUpdate>,
     interface_visibility_update: EventWriter<'w, messages::InterfaceVisibilityUpdate>,
+    gui_setting: EventWriter<'w, messages::GuiSetting>,
     enable_client_audio: EventWriter<'w, messages::EnableClientAudio>,
     sound: EventWriter<'w, messages::Sound>,
     particle_effect: EventWriter<'w, messages::ParticleEffect>,
@@ -645,6 +688,12 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
             MessageType::InterfaceVisibilityUpdate => {
                 if let Ok(message) = bincode::deserialize(message_data) {
                     event_writers.interface_visibility_update.write(message);
+                    continue;
+                }
+            }
+            MessageType::GuiSetting => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    event_writers.gui_setting.write(message);
                     continue;
                 }
             }

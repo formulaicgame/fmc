@@ -268,7 +268,8 @@ fn fragment(
 //        output_color = alpha_discard(material, output_color);
 //    }
 //
-    if (fog.mode != FOG_MODE_OFF && (material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
+#ifdef DISTANCE_FOG
+    if ((material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
         var fog_copy = fog;
         // TODO: Make the fog go black to reduce visibility at night, maybe
         // reduce the fog distance too?
@@ -276,6 +277,7 @@ fn fragment(
         fog_copy.base_color = vec4(fog_copy.base_color.rgb * lights.ambient_color.a, fog_copy.base_color.a);
         output_color = linear_fog(fog_copy, output_color, world_position);
     }
+#endif // DISTANCE_FOG
 
 #ifdef TONEMAP_IN_SHADER
     // TODO: Makes it look so bland...

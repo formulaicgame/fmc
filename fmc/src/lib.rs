@@ -68,7 +68,7 @@ pub mod prelude {
 
 use bevy::app::{PluginGroup, PluginGroupBuilder};
 
-/// Enables basic bevy plugins and all available functionality.
+/// Enables all available functionality.
 ///
 /// Click `source` above to see the list of plugins.  
 /// To disable plugins:
@@ -93,7 +93,7 @@ impl PluginGroup for DefaultPlugins {
     // Ideally I would want to just cram everything into Startup and mark each loading function
     // with a .run_if(this_or_that_resource.exists()) and have them magically ordered by bevy.
     // Development: I think this is possible to do with systemsets now. Looks like it does
-    // apply_deferred when it's necessary if the sets are chained.
+    // ApplyDeffered when it's necessary if the sets are chained.
     fn build(self) -> PluginGroupBuilder {
         let group = PluginGroupBuilder::start::<Self>();
         group

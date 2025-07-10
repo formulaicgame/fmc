@@ -4,6 +4,7 @@ use fmc_protocol::messages;
 use crate::{
     game_state::GameState,
     player::Player,
+    settings::Settings,
     world::{blocks::Blocks, world_map::WorldMap, Origin},
 };
 
@@ -13,12 +14,17 @@ pub struct AudioPlugin;
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClientSideAudio { enabled: true })
+            .add_systems(Startup, setup)
             .add_systems(
                 Update,
                 (play_sounds, toggle_client_side_sound, play_walking_sound)
                     .run_if(in_state(GameState::Playing)),
             );
     }
+}
+
+fn setup(mut commands: Commands, settings: Res<Settings>) {
+    commands.insert_resource(GlobalVolume::new(Volume::Linear(settings.volume)));
 }
 
 #[derive(Resource)]

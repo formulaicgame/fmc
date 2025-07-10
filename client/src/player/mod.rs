@@ -4,6 +4,7 @@ use fmc_protocol::messages;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
+    settings::Settings,
     world::{MovesWithOrigin, Origin},
 };
 
@@ -31,12 +32,12 @@ impl Plugin for PlayerPlugin {
 }
 
 #[derive(Component)]
-pub struct Head;
-
-#[derive(Component)]
 pub struct Player;
 
-fn setup_player(mut commands: Commands) {
+#[derive(Component)]
+pub struct Head;
+
+fn setup_player(mut commands: Commands, settings: Res<Settings>) {
     // This is replaced by the server, serves as a default
     let aabb = Aabb::from_min_max(
         Vec3::new(
@@ -53,7 +54,7 @@ fn setup_player(mut commands: Commands) {
 
     let head = commands
         .spawn((
-            camera::CameraBundle::default(),
+            camera::camera_bundle(&settings),
             // TODO: This has to be inverted or the audio will be
             SpatialListener {
                 left_ear_offset: Vec3::X * 0.2 / 2.0,
@@ -96,7 +97,7 @@ fn handle_position_updates_from_server(
 ) {
     for event in position_events.read() {
         let mut transform = player_query.single_mut().unwrap();
-        transform.translation = (event.position - origin.as_dvec3()).as_vec3();
+        transform.translation = origin.to_local(event.position);
     }
 }
 

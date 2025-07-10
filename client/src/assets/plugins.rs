@@ -15,7 +15,7 @@ use crate::{
     assets::models::{Model, Models},
     game_state::GameState,
     networking::NetworkClient,
-    player::Player,
+    player::{Head, Player},
     world::{blocks::Blocks, models::ModelEntities, world_map::WorldMap, Origin},
 };
 
@@ -376,7 +376,7 @@ impl wit::PluginImports for WasmState {
         let def = GlobalTransform::default();
         let transform = self
             .world()
-            .query_filtered::<&GlobalTransform, With<Camera>>()
+            .query_filtered::<&GlobalTransform, With<Head>>()
             .single(self.world());
 
         let transform = if let Ok(t) = transform {
@@ -395,7 +395,7 @@ impl wit::PluginImports for WasmState {
     fn set_camera_transform(&mut self, new_transform: wit::Transform) {
         let Ok(mut transform) = self
             .world()
-            .query_filtered::<&mut Transform, With<Camera>>()
+            .query_filtered::<&mut Transform, With<Head>>()
             .single_mut(self.world())
         else {
             return;

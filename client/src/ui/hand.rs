@@ -2,6 +2,8 @@ use bevy::{
     animation::AnimationTarget,
     gltf::Gltf,
     prelude::*,
+    render::view::RenderLayers,
+    scene::SceneInstanceReady,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_protocol::messages;
@@ -43,18 +45,43 @@ impl Plugin for HandPlugin {
     }
 }
 
+/// Currently [`RenderLayers`] are not applied to children of a scene.
+/// This [`SceneInstanceReady`] observer applies the [`RenderLayers`]
+/// of a [`SceneRoot`] to all children with a [`Transform`] and without a [`RenderLayers`].
+///
+/// See [#12461](https://github.com/bevyengine/bevy/issues/12461) for current status.
+pub fn apply_render_layers(
+    trigger: Trigger<SceneInstanceReady>,
+    mut commands: Commands,
+    children: Query<&Children>,
+    transforms: Query<&Transform, Without<RenderLayers>>,
+    query: Query<(Entity, &RenderLayers)>,
+) {
+    let Ok((parent, render_layers)) = query.get(trigger.target()) else {
+        return;
+    };
+    children.iter_descendants(parent).for_each(|entity| {
+        if transforms.contains(entity) {
+            commands.entity(entity).insert(render_layers.clone());
+        }
+    });
+}
+
 fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
     let camera_entity = player_camera.single().unwrap();
     commands.entity(camera_entity).with_children(|parent| {
-        parent.spawn((
-            Hand::default(),
-            SceneRoot::default(),
-            // This is linked to animation targets by the same system that does it for models. The
-            // animation graph must be added manually.
-            AnimationPlayer::default(),
-            AnimationTransitions::default(),
-            AnimationGraphHandle::default(),
-        ));
+        parent
+            .spawn((
+                Hand::default(),
+                SceneRoot::default(),
+                // This is linked to animation targets by the same system that does it for server models. The
+                // animation graph must be added manually.
+                AnimationPlayer::default(),
+                AnimationTransitions::default(),
+                AnimationGraphHandle::default(),
+                RenderLayers::layer(1),
+            ))
+            .observe(apply_render_layers);
     });
 }
 
