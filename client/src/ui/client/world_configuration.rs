@@ -481,7 +481,7 @@ fn build_interface(
                 // The server listens for this in order to organize its files differently when running
                 // as a cargo project. We don't want that when running it through the client.
                 .env_remove("CARGO")
-                .arg("extract-assets")
+                .arg("--extract-assets")
                 .status()
         }));
     }
