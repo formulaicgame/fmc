@@ -28,6 +28,8 @@ pub const PLAY_BUTTON: Handle<Image> = weak_handle!("ab907f7d-9c04-46c6-b13f-715
 pub const EDIT_BUTTON: Handle<Image> = weak_handle!("2f9842c2-b1dd-4c8a-aa80-75b8b00f2a88");
 pub const DELETE_BUTTON: Handle<Image> = weak_handle!("cdab585e-f900-4c18-ab59-3eecfd1bff79");
 pub const LIST_ITEM_TEXTURE: Handle<Image> = weak_handle!("cee5b158-a6f0-4639-ba29-fa9e343768b4");
+pub const LIST_ITEM_PLACEHOLDER_IMAGE: Handle<Image> =
+    weak_handle!("13d6092a-bcb3-4583-8581-d1701f3463e9");
 
 const CONTENT_WIDTH: Val = Val::Percent(56.0);
 
@@ -79,15 +81,16 @@ impl Plugin for MainMenuPlugin {
             "../../../assets/ui/list_item.png",
             load_image
         );
+        load_internal_binary_asset!(
+            app,
+            LIST_ITEM_PLACEHOLDER_IMAGE,
+            "../../../assets/ui/vista.png",
+            load_image
+        );
     }
 }
 
-fn setup(
-    mut commands: Commands,
-    settings: Res<Settings>,
-    asset_server: Res<AssetServer>,
-    mut interfaces: ResMut<Interfaces>,
-) {
+fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut<Interfaces>) {
     // TODO: The lists should be able to just grow to fill the available space with flex_grow,
     // instead there's no limit to how far they can grow, so it just ends up forcing all the other
     // elements to shrink when the lists grow in element count. It's instead forced to be this
@@ -173,7 +176,7 @@ fn setup(
                     Tabs::Singleplayer,
                 ))
                 .with_children(|parent| {
-                    WorldList::build(parent, &settings, &asset_server);
+                    WorldList::build(parent, &settings);
                 });
 
             // Server search bar / connect button
@@ -222,7 +225,7 @@ fn setup(
                     Tabs::Multiplayer,
                 ))
                 .with_children(|parent| {
-                    server_list.build(parent, &asset_server);
+                    server_list.build(parent);
                 })
                 .insert(server_list);
 
@@ -236,7 +239,6 @@ fn setup(
 fn update_lists(
     mut commands: Commands,
     settings: Res<Settings>,
-    asset_server: Res<AssetServer>,
     world_list: Query<Entity, With<WorldList>>,
     server_list: Query<(Entity, &ServerList)>,
 ) {
@@ -246,7 +248,7 @@ fn update_lists(
             .entity(entity)
             .despawn_related::<Children>()
             .with_children(|parent| {
-                WorldList::build(parent, &settings, &asset_server);
+                WorldList::build(parent, &settings);
             });
     }
 
@@ -255,25 +257,17 @@ fn update_lists(
             .entity(entity)
             .despawn_related::<Children>()
             .with_children(|parent| {
-                server_list.build(parent, &asset_server);
+                server_list.build(parent);
             });
     }
 }
 
 trait MainMenuWidgets {
-    fn spawn_list_item<'a>(
-        &'a mut self,
-        name: &str,
-        asset_server: &AssetServer,
-    ) -> EntityCommands<'a>;
+    fn spawn_list_item<'a>(&'a mut self, text: &str) -> EntityCommands<'a>;
 }
 
 impl MainMenuWidgets for ChildSpawnerCommands<'_> {
-    fn spawn_list_item<'a>(
-        &'a mut self,
-        text: &str,
-        asset_server: &AssetServer,
-    ) -> EntityCommands<'a> {
+    fn spawn_list_item<'a>(&'a mut self, text: &str) -> EntityCommands<'a> {
         let mut entity_commands = self.spawn((
             Node {
                 width: Val::Percent(100.0),
@@ -359,7 +353,7 @@ impl MainMenuWidgets for ChildSpawnerCommands<'_> {
                                     height: Val::Percent(100.0),
                                     ..default()
                                 },
-                                ImageNode::new(asset_server.load("assets/ui/vista.png")),
+                                ImageNode::new(LIST_ITEM_PLACEHOLDER_IMAGE),
                             ));
                             // Text container
                             parent
@@ -488,10 +482,10 @@ struct WorldTextBox;
 struct WorldList;
 
 impl WorldList {
-    fn build(parent: &mut ChildSpawnerCommands, settings: &Settings, asset_server: &AssetServer) {
+    fn build(parent: &mut ChildSpawnerCommands, settings: &Settings) {
         for path in Self::read_worlds(settings) {
             parent
-                .spawn_list_item(path.file_name().unwrap().to_str().unwrap(), &asset_server)
+                .spawn_list_item(path.file_name().unwrap().to_str().unwrap())
                 .insert(ListItem::World(path));
         }
     }
@@ -589,10 +583,10 @@ impl ServerList {
         };
     }
 
-    fn build(&self, parent: &mut ChildSpawnerCommands, asset_server: &AssetServer) {
+    fn build(&self, parent: &mut ChildSpawnerCommands) {
         for (index, server) in self.servers.iter().enumerate() {
             parent
-                .spawn_list_item(&server.address, &asset_server)
+                .spawn_list_item(&server.address)
                 .insert(ListItem::Server(index));
         }
     }
@@ -773,7 +767,6 @@ fn search(
 fn handle_list_item_interactions(
     mut commands: Commands,
     settings: Res<Settings>,
-    asset_server: Res<AssetServer>,
     mut gui_state: ResMut<NextState<GuiState>>,
     mut configured_world: ResMut<super::world_configuration::ConfiguredWorld>,
     list_items: Query<(Entity, Ref<Interaction>, &ListItem)>,
@@ -874,7 +867,7 @@ fn handle_list_item_interactions(
                         commands
                             .entity(entity)
                             .despawn_related::<Children>()
-                            .with_children(|parent| server_list.build(parent, &asset_server));
+                            .with_children(|parent| server_list.build(parent));
                     }
                 }
             }
