@@ -545,7 +545,10 @@ fn send_model_transform(
     }
 }
 
-fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>) {
+fn apply_animations(
+    time: Res<Time>,
+    mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>,
+) {
     for (mut animation_player, transform) in models.iter_mut() {
         if animation_player.move_animation.is_some()
             && transform.is_changed()
@@ -555,12 +558,13 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
         {
             let move_animation = animation_player.move_animation.unwrap();
 
-            let difference = transform
+            let speed = transform
                 .translation()
                 .xz()
-                .distance_squared(animation_player.last_position.xz());
+                .distance_squared(animation_player.last_position.xz())
+                / time.delta_secs_f64();
 
-            if !animation_player.playing_move_animation && difference > 0.0001 {
+            if !animation_player.playing_move_animation && speed > 0.002 {
                 animation_player.playing_move_animation = true;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;
@@ -571,7 +575,7 @@ fn apply_animations(mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform
                 } else {
                     animation_player.play(move_animation).repeat();
                 }
-            } else if animation_player.playing_move_animation && difference < 0.0001 {
+            } else if animation_player.playing_move_animation && speed < 0.002 {
                 animation_player.playing_move_animation = false;
                 if let Some(idle_animation) = animation_player.idle_animation {
                     let transition = animation_player.transition_time;
