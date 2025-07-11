@@ -43,7 +43,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(
                 Update,
                 (
-                    download_progress_text,
+                    report_game_download_progress,
                     switch_tab,
                     handle_list_item_interactions,
                     handle_main_button_clicks,
@@ -971,20 +971,22 @@ enum DownloadStatus {
 #[derive(Component)]
 struct DownloadReporter(Receiver<DownloadStatus>);
 
-fn download_progress_text(
+fn report_game_download_progress(
+    mut commands: Commands,
     time: Res<Time>,
     mut status_text: Query<&mut TextBox, With<WorldTextBox>>,
-    downloads: Query<&DownloadReporter>,
+    downloads: Query<(Entity, &DownloadReporter)>,
     mut timer: Local<Timer>,
 ) {
     let mut text_box = status_text.single_mut().unwrap();
 
-    for reporter in downloads.iter() {
+    for (download_entity, reporter) in downloads.iter() {
         while let Ok(status) = reporter.0.try_recv() {
             *timer = Timer::from_seconds(2.0, TimerMode::Once);
 
             match status {
                 DownloadStatus::Success => {
+                    commands.entity(download_entity).despawn();
                     //text_box.placeholder_text = "Singleplayer server downloaded!";
                 }
                 DownloadStatus::Progress { current, total } => {
@@ -1013,6 +1015,7 @@ fn download_progress_text(
                     );
                 }
                 DownloadStatus::Failure(_err) => {
+                    commands.entity(download_entity).despawn();
                     text_box.placeholder_text = "Failed to download singleplayer server".to_owned()
                 }
             }
@@ -1026,8 +1029,9 @@ fn download_progress_text(
 }
 
 fn download_default_game(mut commands: Commands) {
-    let server_path = String::from("fmc_server/server") + std::env::consts::EXE_SUFFIX;
-    if std::path::Path::new(&server_path).exists() {
+    let server_folder = PathBuf::from("fmc_server");
+    let server_path = server_folder.join("server".to_owned() + std::env::consts::EXE_SUFFIX);
+    if server_path.exists() {
         return;
     }
 
@@ -1043,11 +1047,20 @@ fn download_default_game(mut commands: Commands) {
     commands.spawn(DownloadReporter(receiver));
 
     AsyncComputeTaskPool::get()
-        .spawn(download_game(url, server_path, sender))
+        .spawn(download_game(url, server_folder, sender))
         .detach();
 }
 
-async fn download_game(url: String, result_path: String, reporter: Sender<DownloadStatus>) {
+async fn download_game(url: String, download_folder: PathBuf, reporter: Sender<DownloadStatus>) {
+    if !download_folder.exists() && std::fs::create_dir(&download_folder).is_err() {
+        reporter
+            .send(DownloadStatus::Failure(
+                "Could not create download directory".to_owned(),
+            ))
+            .unwrap();
+        return;
+    };
+
     let Ok(response) = ureq::get(&url).call() else {
         reporter
             .send(DownloadStatus::Failure(
@@ -1066,17 +1079,8 @@ async fn download_game(url: String, result_path: String, reporter: Sender<Downlo
         return;
     }
 
-    let path = std::path::Path::new(&result_path);
-    if std::fs::create_dir_all(path.parent().unwrap()).is_err() {
-        reporter
-            .send(DownloadStatus::Failure(
-                "Could not create download directory".to_owned(),
-            ))
-            .unwrap();
-        return;
-    };
-
-    let Ok(file) = std::fs::File::create(&result_path) else {
+    let temp_path = download_folder.join("server_temp");
+    let Ok(file) = std::fs::File::create(&temp_path) else {
         reporter
             .send(DownloadStatus::Failure(
                 "Could not create download file".to_owned(),
@@ -1084,7 +1088,6 @@ async fn download_game(url: String, result_path: String, reporter: Sender<Downlo
             .unwrap();
         return;
     };
-    // TODO: https://github.com/rust-lang/rust/issues/130804
     let mut file = std::io::BufWriter::new(file);
 
     let size = response.headers()["content-length"]
@@ -1120,28 +1123,23 @@ async fn download_game(url: String, result_path: String, reporter: Sender<Downlo
                     panic!();
                 };
 
+                let final_path =
+                    download_folder.join("server".to_owned() + std::env::consts::EXE_SUFFIX);
+
+                if let Err(e) = std::fs::rename(&temp_path, &final_path) {
+                    warn!("Couldn't rename server executable, {e}");
+                }
+
                 if std::env::consts::FAMILY == "unix" {
                     if std::process::Command::new("chmod")
                         .arg("+x")
-                        .arg(&result_path)
+                        .arg(&final_path)
                         .status()
                         .is_err()
                     {
                         error!("Couldn't set execution permissions for server");
                     }
                 }
-
-                if let Err(e) =
-                    std::process::Command::new(&std::fs::canonicalize(&result_path).unwrap())
-                        .current_dir("fmc_server")
-                        // The server listens for this in order to organize its files differently when running
-                        // as a cargo project. We don't want that when running it through the client.
-                        .env_remove("CARGO")
-                        .arg("configuration-ui")
-                        .status()
-                {
-                    warn!("Failed to extract configuration ui from server");
-                };
 
                 reporter.send(DownloadStatus::Success).unwrap();
                 return;
