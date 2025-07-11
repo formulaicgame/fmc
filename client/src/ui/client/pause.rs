@@ -25,29 +25,29 @@ use crate::{
 pub struct PausePlugin;
 impl Plugin for PausePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                setup.run_if(resource_exists_and_changed::<messages::ServerConfig>),
+        app.add_systems(OnEnter(GameState::Playing), setup)
+            .add_systems(
+                Update,
                 (
-                    navigation_buttons,
-                    switch_tab,
-                    video_settings,
-                    audio_settings,
-                    control_settings,
-                )
-                    // This is the only client interface that is shown during gameplay and that
-                    // will interact with the server directly. It would be nice to only listen for
-                    // the PauseMenu state, but the gui is not designed for this. On disconnect the
-                    // GuiState reacts to the change in GameState, which is necessarily always
-                    // 1-frame delayed, allowing access to the network client for the duration. The
-                    // network client is considered invalid to interact with when not in
-                    // GameState::Playing, and will panic if attempted (which we do here).
-                    .run_if(in_state(GuiState::PauseMenu).and(in_state(GameState::Playing))),
-                (pause_when_unfocused, escape_key, server_settings)
-                    .run_if(in_state(GameState::Playing)),
-            ),
-        );
+                    (
+                        navigation_buttons,
+                        switch_tab,
+                        video_settings,
+                        audio_settings,
+                        control_settings,
+                    )
+                        // This is the only client interface that is shown during gameplay and that
+                        // will interact with the server directly. It would be nice to only listen for
+                        // the PauseMenu state, but the gui is not designed for this. On disconnect the
+                        // GuiState reacts to the change in GameState, which is necessarily always
+                        // 1-frame delayed, allowing access to the network client for the duration. The
+                        // network client is considered invalid to interact with when not in
+                        // GameState::Playing, and will panic if attempted (which we do here).
+                        .run_if(in_state(GuiState::PauseMenu).and(in_state(GameState::Playing))),
+                    (pause_when_unfocused, escape_key, server_settings)
+                        .run_if(in_state(GameState::Playing)),
+                ),
+            );
     }
 }
 

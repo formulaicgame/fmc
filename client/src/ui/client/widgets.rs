@@ -393,8 +393,13 @@ impl Widgets for ChildSpawnerCommands<'_> {
                                 parent.spawn((
                                     Node {
                                         height: match style.flex_direction {
-                                            FlexDirection::Row => Val::Px(DEFAULT_FONT_SIZE),
-                                            FlexDirection::RowReverse => Val::Px(DEFAULT_FONT_SIZE),
+                                            // TODO: It's important for scaling that this is a
+                                            // multiple of 2 for good image scaling. Linking it
+                                            // like this to the font scale is no good.
+                                            FlexDirection::Row => Val::Px(DEFAULT_FONT_SIZE + 1.0),
+                                            FlexDirection::RowReverse => {
+                                                Val::Px(DEFAULT_FONT_SIZE + 1.0)
+                                            }
                                             FlexDirection::Column => Val::Auto,
                                             FlexDirection::ColumnReverse => Val::Auto,
                                         },

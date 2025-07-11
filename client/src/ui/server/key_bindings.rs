@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
-        server::{InterfaceToggleEvent, Interfaces},
+        server::{InterfaceVisibilityEvent, Interfaces},
         UiState,
     },
 };
@@ -114,20 +114,21 @@ fn handle_key_presses(
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
-    mut interface_events: EventWriter<InterfaceToggleEvent>,
+    mut interface_events: EventWriter<InterfaceVisibilityEvent>,
 ) {
     for pressed_key in input.get_just_pressed() {
         // Any open interface can be closed by pressing "e" or "escape". "e" will only close it if
         // the interface doesn't take keyboard focus.
         for (interface_entity, visibility, interface_config) in interface_query.iter() {
             if visibility != Visibility::Hidden && interface_config.is_exclusive {
-                if *pressed_key == KeyCode::KeyE
-                    && interface_config.keyboard_focus != KeyboardFocus::Full
+                if (*pressed_key == KeyCode::KeyE
+                    && interface_config.keyboard_focus != KeyboardFocus::Full)
+                    || *pressed_key == KeyCode::Escape
                 {
-                    interface_events.send(InterfaceToggleEvent { interface_entity });
-                    return;
-                } else if *pressed_key == KeyCode::Escape {
-                    interface_events.send(InterfaceToggleEvent { interface_entity });
+                    interface_events.send(InterfaceVisibilityEvent {
+                        interface_entity,
+                        visible: false,
+                    });
                     return;
                 } else if interface_config.keyboard_focus == KeyboardFocus::Full {
                     // If the keyboard is taken, input should be ignored unless it is to close it.
@@ -136,6 +137,8 @@ fn handle_key_presses(
             }
         }
 
+        // TODO: This isn't sufficient, the server can spam open interfaces, don't know how to handle it
+        //
         // Reserved escape hatch if the server decides to be evil, escape will always take you to
         // the safety of the pause interface.
         if *pressed_key == KeyCode::Escape {
@@ -156,8 +159,9 @@ fn handle_key_presses(
                     }
                 };
 
-                interface_events.send(InterfaceToggleEvent {
+                interface_events.send(InterfaceVisibilityEvent {
                     interface_entity: *entity,
+                    visible: true,
                 });
             } else {
                 // If it's not an interface, the server handles it.

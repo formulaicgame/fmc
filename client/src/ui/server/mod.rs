@@ -29,7 +29,7 @@ const INTERFACE_TEXTURE_PATH: &str = "server_assets/active/textures/interfaces/"
 pub struct ServerInterfacesPlugin;
 impl Plugin for ServerInterfacesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<InterfaceToggleEvent>()
+        app.add_event::<InterfaceVisibilityEvent>()
             .insert_resource(InterfaceStack::default())
             .add_plugins((
                 items::ItemPlugin,
@@ -40,9 +40,9 @@ impl Plugin for ServerInterfacesPlugin {
                 Update,
                 (
                     button_interaction.run_if(in_state(UiState::ServerInterfaces)),
-                    handle_node_visibility_updates,
-                    handle_interface_visibility_updates,
-                    handle_toggle_events,
+                    handle_server_node_visibility_updates,
+                    handle_server_interface_visibility_updates,
+                    handle_visibility_events,
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -373,8 +373,9 @@ fn cleanup(
 
 /// Event used by keybindings to toggle an interface open or closed.
 #[derive(Event)]
-struct InterfaceToggleEvent {
+struct InterfaceVisibilityEvent {
     pub interface_entity: Entity,
+    pub visible: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -610,8 +611,6 @@ impl From<Rect> for UiRect {
     }
 }
 
-// Interfaces that are open and allow other interfaces to take focus are stored here while the
-// focused one is visible.
 #[derive(Resource, Deref, DerefMut, Default)]
 struct InterfaceStack(Vec<Entity>);
 
@@ -634,7 +633,7 @@ fn button_interaction(
     }
 }
 
-fn handle_node_visibility_updates(
+fn handle_server_node_visibility_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     mut interface_query: Query<&mut Visibility, With<InterfaceNode>>,
@@ -666,14 +665,14 @@ fn handle_node_visibility_updates(
     }
 }
 
-fn handle_interface_visibility_updates(
+fn handle_server_interface_visibility_updates(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
     interface_query: Query<&Visibility, With<InterfaceConfig>>,
-    mut interface_open_events: EventReader<messages::InterfaceVisibilityUpdate>,
-    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
+    mut server_interface_visibility_events: EventReader<messages::InterfaceVisibilityUpdate>,
+    mut interface_visibility_events: EventWriter<InterfaceVisibilityEvent>,
 ) {
-    for event in interface_open_events.read() {
+    for event in server_interface_visibility_events.read() {
         let interface_entity = match interfaces.get(&event.interface_path) {
             Some(e) => e,
             None => {
@@ -685,47 +684,41 @@ fn handle_interface_visibility_updates(
             }
         };
 
-        let visibility = *interface_query.get(*interface_entity).unwrap();
-        if visibility == Visibility::Hidden && event.visible {
-            interface_toggle_events.write(InterfaceToggleEvent {
-                interface_entity: *interface_entity,
-            });
-        } else if visibility == Visibility::Inherited && !event.visible {
-            interface_toggle_events.write(InterfaceToggleEvent {
-                interface_entity: *interface_entity,
-            });
-        }
+        interface_visibility_events.write(InterfaceVisibilityEvent {
+            interface_entity: *interface_entity,
+            visible: event.visible,
+        });
     }
 }
 
-// This is a common hub for changing the visibility of interfaces. The client uses
-// InterfaceToggleEvent, but the server will set visibility explicitly. Handlers are used to
-// translate the server requests into toggle events by checking if the interface isn't already in
-// the wanted state.
-fn handle_toggle_events(
+fn handle_visibility_events(
     ui_state: Res<State<UiState>>,
     mut cursor_visibility: ResMut<CursorVisibility>,
     mut interface_stack: ResMut<InterfaceStack>,
     mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
-    mut interface_toggle_events: EventReader<InterfaceToggleEvent>,
+    mut interface_visibility_events: EventReader<InterfaceVisibilityEvent>,
 ) {
-    for event in interface_toggle_events.read() {
+    for event in interface_visibility_events.read() {
         if *ui_state.get() == UiState::Gui {
-            // Toggles will be applied in correct order as soon as the game is resumed.
-            interface_stack.push(event.interface_entity);
+            // Store any events received from the server while the gui is open
+            if event.visible {
+                interface_stack.push(event.interface_entity);
+            } else {
+                interface_stack.retain(|e| *e != event.interface_entity);
+            }
             continue;
         }
 
-        let (_, mut visibility, toggled_config) =
+        let (_, mut visibility, interface_config) =
             interface_query.get_mut(event.interface_entity).unwrap();
 
-        if *visibility == Visibility::Inherited {
-            *visibility = Visibility::Hidden;
-        } else {
+        if event.visible {
             *visibility = Visibility::Inherited;
+        } else {
+            *visibility = Visibility::Hidden;
         }
 
-        if toggled_config.is_exclusive {
+        if interface_config.is_exclusive {
             if *visibility == Visibility::Inherited {
                 cursor_visibility.server = true;
 
@@ -752,7 +745,7 @@ fn handle_toggle_events(
 fn interface_visibility(
     ui_state: Res<State<UiState>>,
     mut interface_stack: ResMut<InterfaceStack>,
-    mut interface_toggle_events: EventWriter<InterfaceToggleEvent>,
+    mut interface_toggle_events: EventWriter<InterfaceVisibilityEvent>,
     mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
 ) {
     if *ui_state.get() == UiState::Gui {
@@ -765,7 +758,10 @@ fn interface_visibility(
     } else if *ui_state.get() == UiState::ServerInterfaces {
         while let Some(interface_entity) = interface_stack.pop() {
             let (_, _, interface_config) = interface_query.get(interface_entity).unwrap();
-            interface_toggle_events.write(InterfaceToggleEvent { interface_entity });
+            interface_toggle_events.write(InterfaceVisibilityEvent {
+                interface_entity,
+                visible: true,
+            });
 
             if interface_config.is_exclusive {
                 return;

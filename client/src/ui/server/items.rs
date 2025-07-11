@@ -27,7 +27,7 @@ impl Plugin for ItemPlugin {
             (
                 handle_item_box_updates,
                 initial_select_item_box,
-                discard_items.after(super::handle_toggle_events),
+                discard_items.after(super::handle_visibility_events),
                 // TODO: Reacting to cursor visibility isn't proper.
                 (left_click_item_box, right_click_item_box)
                     .run_if(|visibiltiy: Res<CursorVisibility>| visibiltiy.server),
