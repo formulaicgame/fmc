@@ -265,8 +265,7 @@ pub trait Widgets {
     fn spawn_switch<'a>(&'a mut self, on: bool) -> EntityCommands<'a>;
     /// A horizontal slider used to choose numerical values
     fn spawn_slider<'a>(&'a mut self, style: SliderStyle) -> EntityCommands<'a>;
-    /// A dropdown to select between option. The choice Type will be used as the generic type in
-    /// the Dropdown<T> inserted on the entity.
+    /// A dropdown to select between different options.
     fn spawn_dropdown<'a>(
         &'a mut self,
         choices: Vec<String>,

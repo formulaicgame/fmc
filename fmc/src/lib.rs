@@ -14,6 +14,7 @@ pub mod networking;
 pub mod physics;
 /// Basic player functionality
 pub mod players;
+pub mod terminal;
 // TODO: This is just rng now, rename
 pub mod utils;
 /// The block world
@@ -105,8 +106,10 @@ impl PluginGroup for DefaultPlugins {
             .add(bevy::time::TimePlugin::default())
             .add(bevy::log::LogPlugin::default())
             .add(bevy::transform::TransformPlugin)
+            .add(bevy::app::TerminalCtrlCHandlerPlugin)
             .add(assets::AssetPlugin)
-            .add(database::DatabasePlugin::default())
+            .add(database::DatabasePlugin)
+            .add(terminal::TuiPlugin)
             .add(networking::ServerPlugin)
             .add(world::WorldPlugin)
             .add(blocks::BlockPlugin)

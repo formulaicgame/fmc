@@ -28,9 +28,8 @@ impl Plugin for PlayersPlugin {
     }
 }
 
-// TODO: It looks nice to listen for Added<Player>, but when consuming the library you suffer from
-// not having a good name for a state struct for players. Maybe the username should just be a
-// component.
+// TODO: Rename to Username. The struct name is useful, and it causes some patterns that are
+// unsightly.
 //
 /// Player marker struct
 #[derive(Component, Default)]

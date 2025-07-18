@@ -18,7 +18,7 @@ use crate::{
     game_state::GameState,
     networking::{ConnectionEvent, Identity},
     settings::Settings,
-    singleplayer::LaunchSinglePlayer,
+    singleplayer::SinglePlayerServer,
     ui::{text_input::*, DOUBLE_CLICK_DELAY},
 };
 
@@ -485,7 +485,7 @@ impl WorldList {
     fn build(parent: &mut ChildSpawnerCommands, settings: &Settings) {
         for path in Self::read_worlds(settings) {
             parent
-                .spawn_list_item(path.file_name().unwrap().to_str().unwrap())
+                .spawn_list_item(path.file_stem().unwrap().to_str().unwrap())
                 .insert(ListItem::World(path));
         }
     }
@@ -510,15 +510,16 @@ impl WorldList {
             let Ok(entry) = entry else {
                 continue;
             };
-            // Must be a directory and the directory name must be valid utf-8
-            if !entry.path().is_dir() || entry.path().file_name().map(|n| n.to_str()).is_none() {
+
+            let world_path = entry.path();
+            if !world_path.extension().is_some_and(|e| e == "sqlite") {
                 continue;
             }
 
             if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
-                result.push((entry.path(), modified))
+                result.push((world_path, modified))
             } else {
-                result.push((entry.path(), std::time::SystemTime::UNIX_EPOCH));
+                result.push((world_path, std::time::SystemTime::UNIX_EPOCH));
             }
         }
 
@@ -767,12 +768,12 @@ fn search(
 fn handle_list_item_interactions(
     mut commands: Commands,
     settings: Res<Settings>,
+    mut singleplayer_server: ResMut<SinglePlayerServer>,
     mut gui_state: ResMut<NextState<GuiState>>,
     mut configured_world: ResMut<super::world_configuration::ConfiguredWorld>,
     list_items: Query<(Entity, Ref<Interaction>, &ListItem)>,
     mut server_list: Query<(Entity, &mut ServerList)>,
     button_clicks: Query<(&Interaction, &ListItemButton), Changed<Interaction>>,
-    mut launch_single_player: EventWriter<LaunchSinglePlayer>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut last_click: Local<Option<(Entity, std::time::Instant)>>,
 ) {
@@ -795,7 +796,7 @@ fn handle_list_item_interactions(
                             file.set_modified(std::time::SystemTime::now());
                         }
 
-                        launch_single_player.write(LaunchSinglePlayer { path: path.clone() });
+                        singleplayer_server.start(&path);
                     }
                     ListItem::Server(index) => {
                         let (_, mut server_list) = server_list.single_mut().unwrap();
@@ -827,7 +828,7 @@ fn handle_list_item_interactions(
                             file.set_modified(std::time::SystemTime::now());
                         }
 
-                        launch_single_player.write(LaunchSinglePlayer { path: path.clone() });
+                        singleplayer_server.start(&path);
                     }
                     ListItem::Server(index) => {
                         let (_, mut server_list) = server_list.single_mut().unwrap();
@@ -856,7 +857,7 @@ fn handle_list_item_interactions(
                     ListItem::World(path) => {
                         commands.entity(*list_item_entity).despawn();
 
-                        if let Err(e) = std::fs::remove_dir_all(path) {
+                        if let Err(e) = std::fs::remove_file(path) {
                             warn!("Encountered error when deleting a world: {e}");
                         };
                     }
@@ -881,7 +882,6 @@ fn handle_main_button_clicks(
     mut configured_world: ResMut<super::world_configuration::ConfiguredWorld>,
     buttons: Query<(&Interaction, &MainButton, &InheritedVisibility)>,
     server_input: Query<&TextBox, With<ServerTextBox>>,
-    mut launch_single_player: EventWriter<LaunchSinglePlayer>,
     mut connection_events: EventWriter<ConnectionEvent>,
 ) {
     for (interaction, button, visibility) in buttons.iter() {

@@ -9,36 +9,20 @@ use indexmap::IndexSet;
 use crate::{
     blocks::{BlockData, BlockId, BlockState},
     items::ItemId,
+    terminal::Cli,
     world::chunk::Chunk,
 };
 
-/// Sets up the database at startup
-pub struct DatabasePlugin {
-    pub path: String,
-}
-
-impl Default for DatabasePlugin {
-    fn default() -> Self {
-        Self {
-            path: "./world.sqlite".to_owned(),
-        }
-    }
-}
+/// Sets up the database
+pub struct DatabasePlugin;
 
 impl Plugin for DatabasePlugin {
     fn build(&self, app: &mut App) {
-        let database = Database::new(self.path.clone());
-
-        database.build();
-        database.save_block_ids();
-        database.save_items();
-        database.save_models();
-        //    setup_new_world_database(&settings.world_database_path);
-        //} else if rusqlite::Connection::open(&settings.world_database_path).is_err() {
-        //    panic!("Could not open the world file at '{}', make sure it is the correct file, else it might be corrupt", settings.world_database_path);
-        //}
-
-        app.insert_resource(database);
+        // If a different database path is desired it may be inserted somewhere else.
+        // MUST be done before this plugin runs.
+        if !app.world().contains_resource::<Database>() {
+            app.insert_resource(Database::default());
+        }
     }
 }
 
@@ -46,16 +30,13 @@ impl Plugin for DatabasePlugin {
 #[derive(Resource, Clone)]
 pub struct Database(Arc<DatabaseInner>);
 
-impl Database {
-    fn path(&self) -> &str {
-        &self.0.path
-    }
-}
-
 // TODO: Two modes, one where it saves only changes to disk and one where it saves all chunk data.
 //       Changes are best for single instances that don't care about the cpu load of re-generating
 //       chunks. For large servers it is preferable to save cpu at the cost of storage.
 // TODO: Implement connection pool
+//
+// The connections are dropped automatically by bevy on Ctrl-C through the
+// TerminalCtrlCHandlerPlugin. If temporary files ever stop being deleted, this is the cause.
 struct DatabaseInner {
     write_connection: Mutex<rusqlite::Connection>,
     path: String,
@@ -79,10 +60,30 @@ pub struct WriteConnection<'a> {
 //    }
 //}
 
+impl Default for Database {
+    fn default() -> Self {
+        if let Some(world_path) = Cli::world_path() {
+            Self::new(world_path.to_owned())
+        } else {
+            Self::new(Self::DEFAULT_PATH.to_owned())
+        }
+    }
+}
+
 // TODO: Extract functions and have them take a connection instead?
 impl Database {
+    pub const DEFAULT_PATH: &str = "./world.sqlite";
+
+    fn path(&self) -> &str {
+        &self.0.path
+    }
+
     pub fn new(path: String) -> Self {
-        let write_connection = rusqlite::Connection::open(&path).unwrap();
+        let write_connection = match rusqlite::Connection::open(&path) {
+            Ok(c) => c,
+            Err(e) => panic!("Could not open the world save at '{path}', error: {e} "),
+        };
+
         write_connection
             .execute_batch(
                 "PRAGMA journal_mode = wal;
@@ -90,13 +91,17 @@ impl Database {
             )
             .unwrap();
 
-        return Self(Arc::new(DatabaseInner {
+        let db = Self(Arc::new(DatabaseInner {
             write_connection: Mutex::new(write_connection),
             path,
         }));
+
+        db.build();
+
+        return db;
     }
 
-    /// Get the write connection.
+    /// Get a lock on the write connection.
     pub fn get_write_connection(&self) -> WriteConnection {
         WriteConnection {
             conn: self.0.write_connection.lock().unwrap(),
@@ -109,7 +114,14 @@ impl Database {
         return rusqlite::Connection::open(self.path()).unwrap();
     }
 
-    pub fn build(&self) {
+    fn build(&self) {
+        self.create_tables();
+        self.save_block_ids();
+        self.save_items();
+        self.save_models();
+    }
+
+    fn create_tables(&self) {
         let conn = self.get_write_connection();
 
         //conn.execute("drop table if exists blocks", []).unwrap();
@@ -461,12 +473,13 @@ impl Database {
     //}
 
     /// Add new block ids to the database. The ids will be constant and cannot change.
-    pub fn save_block_ids(&self) {
+    fn save_block_ids(&self) {
         fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
             let mut files = Vec::new();
 
-            let directory = std::fs::read_dir(dir).expect(
-                "Could not read files from block configuration directory, make sure it is present.",
+            let path = dir.as_ref();
+            let directory = std::fs::read_dir(path).expect(
+                &format!("Could not read files from block configuration directory at {}, make sure it is present.", path.display()),
             );
 
             for entry in directory {
@@ -537,7 +550,7 @@ impl Database {
         return blocks;
     }
 
-    pub fn save_items(&self) {
+    fn save_items(&self) {
         let mut item_names = Vec::new();
 
         let directory = std::fs::read_dir(crate::items::ITEM_CONFIG_PATH).expect(
@@ -592,7 +605,7 @@ impl Database {
         return blocks;
     }
 
-    pub fn save_models(&self) {
+    fn save_models(&self) {
         let mut model_names = Vec::new();
 
         let directory = std::fs::read_dir(crate::models::MODEL_PATH)

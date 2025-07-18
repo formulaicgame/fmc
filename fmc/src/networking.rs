@@ -553,8 +553,6 @@ fn handle_new_connections(
     });
 }
 
-// This drops the connection, but does not despawn the entity. Despawning is delayed until
-// PreUpdate to give the application time to save the player data.
 fn disconnect_players(mut network_events: EventWriter<NetworkEvent>, server: ResMut<Server>) {
     // Can't split borrows when behind a ResMut
     let server = server.into_inner();

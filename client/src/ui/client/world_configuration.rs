@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{settings::Settings, singleplayer::LaunchSinglePlayer, ui::text_input::TextBox};
+use crate::{settings::Settings, singleplayer::SinglePlayerServer, ui::text_input::TextBox};
 
 use super::{
     widgets::{colors, ButtonSelection, ButtonStyle, SettingsWidget, Switch, Widgets},
@@ -57,7 +57,9 @@ pub struct ConfiguredWorld {
     // Set to the path of the world that should be edited. If no path , the interface will let
     // the player create a new world.
     path: Option<PathBuf>,
-    settings: HashMap<String, String>,
+    settings: serde_json::Map<String, serde_json::Value>,
+    // This task extracts the assets from the server executable that define the layout of
+    // the configuration interfaces.
     ui_task: Option<Task<std::io::Result<std::process::ExitStatus>>>,
 }
 
@@ -65,23 +67,29 @@ impl ConfiguredWorld {
     pub fn edit(&mut self, path: impl AsRef<Path>) {
         let path = path.as_ref();
 
-        self.settings.clear();
-        if let Ok(settings) = std::fs::read_to_string(path.join("settings.ini")) {
-            for line in settings.lines() {
-                if line.starts_with("#") {
-                    continue;
-                }
+        self.path = Some(path.to_path_buf());
 
-                let Some((left, right)) = line.split_once("=") else {
-                    continue;
-                };
+        let Ok(connection) = rusqlite::Connection::open(path) else {
+            warn!("Failed to open world database for editing");
+            return;
+        };
 
-                self.settings
-                    .insert(left.trim().to_owned(), right.trim().to_owned());
+        let Ok(settings_json) = connection.query_row(
+            "SELECT data FROM storage WHERE name='settings'",
+            [],
+            |row| row.get::<usize, String>(0),
+        ) else {
+            warn!("Failed to read settings from world database");
+            return;
+        };
+
+        self.settings = match serde_json::from_str(&settings_json) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Could not deserialize settings from world database: {e}");
+                return;
             }
         }
-
-        self.path = Some(path.to_path_buf());
     }
 
     fn is_editing(&self) -> bool {
@@ -195,7 +203,7 @@ impl ConfiguredWorld {
                                             self.path
                                                 .as_ref()
                                                 .unwrap()
-                                                .file_name()
+                                                .file_stem()
                                                 .unwrap_or_default()
                                                 .to_str()
                                                 .unwrap_or_default()
@@ -357,31 +365,43 @@ impl WorldConfigurationUiLayout {
                 SettingsWidget::ButtonSelection {
                     selected, entries, ..
                 } => {
+                    let Some(setting) = setting.as_str() else {
+                        continue;
+                    };
+
                     let Some(position) =
                         entries.iter().position(|e| e.eq_ignore_ascii_case(setting))
                     else {
                         continue;
                     };
+
                     *selected = position;
                 }
                 SettingsWidget::Switch { default_on, .. } => {
-                    let Ok(on) = setting.parse() else {
+                    let Some(on) = setting.as_bool() else {
                         continue;
                     };
                     *default_on = on;
                 }
                 SettingsWidget::TextBox { text, .. } => {
+                    let Some(setting) = setting.as_str() else {
+                        continue;
+                    };
                     *text = Some(setting.to_owned());
                 }
                 SettingsWidget::Slider { value, .. } => {
-                    let Ok(number) = setting.parse() else {
+                    let Some(number) = setting.as_f64() else {
                         continue;
                     };
-                    *value = number;
+                    *value = number as f32;
                 }
                 SettingsWidget::Dropdown {
                     selected, entries, ..
                 } => {
+                    let Some(setting) = setting.as_str() else {
+                        continue;
+                    };
+
                     let Some(position) = entries.iter().position(|e| e == setting) else {
                         continue;
                     };
@@ -423,26 +443,23 @@ fn store_configuration_changes(
     switch_query: Query<(&Switch, &Setting), Changed<Switch>>,
 ) {
     for (text_box, setting) in text_box_query.iter() {
-        if !text_box.text.is_empty() {
-            configured_world
-                .settings
-                .insert(setting.name.clone(), text_box.text.clone());
-        } else {
-            configured_world.settings.remove(&setting.name);
-        }
+        configured_world.settings.insert(
+            setting.name.clone(),
+            serde_json::Value::from(text_box.text.as_str()),
+        );
     }
 
     for (selection, setting) in button_selection_query.iter() {
         let value = selection.selected().to_lowercase().replace(" ", "_");
         configured_world
             .settings
-            .insert(setting.name.clone(), value);
+            .insert(setting.name.clone(), serde_json::Value::from(value));
     }
 
     for (switch, setting) in switch_query.iter() {
         configured_world
             .settings
-            .insert(setting.name.clone(), switch.on().to_string());
+            .insert(setting.name.clone(), serde_json::Value::from(switch.on()));
     }
 }
 
@@ -514,10 +531,10 @@ fn handle_asset_extraction_task(
 fn main_buttons(
     settings: Res<Settings>,
     configured_world: Res<ConfiguredWorld>,
+    mut singleplayer_server: ResMut<SinglePlayerServer>,
     mut gui_state: ResMut<NextState<GuiState>>,
     world_name_input: Query<&TextBox, With<WorldName>>,
     button_query: Query<(&MainButtons, &Interaction), Changed<Interaction>>,
-    mut launch_single_player: EventWriter<LaunchSinglePlayer>,
 ) {
     for (button, interaction) in button_query.iter() {
         if *interaction != Interaction::Pressed {
@@ -526,36 +543,57 @@ fn main_buttons(
 
         match button {
             MainButtons::CreateWorld => {
-                let mut world_input = world_name_input.single().unwrap().text.clone();
-                if world_input.is_empty() {
-                    world_input += "World";
+                let mut world_name = world_name_input.single().unwrap().text.clone();
+                if world_name.is_empty() {
+                    world_name += "World";
                 }
 
                 let mut path = settings.data_dir().join("worlds");
-                path.push(&world_input);
+                path.push(&world_name);
+                path.set_extension("sqlite");
 
                 let mut counter = 1;
                 while path.exists() {
                     path.pop();
-                    let new_name = world_input.clone() + " " + &counter.to_string();
+                    let new_name = world_name.clone() + " " + &counter.to_string();
                     path.push(new_name);
+                    path.set_extension("sqlite");
                     counter += 1;
                 }
-                std::fs::create_dir(&path).ok();
 
-                let mut settings = String::new();
-                for (key, value) in &configured_world.settings {
-                    settings.push_str(&format!("{} = {}\n", key, value));
-                }
+                let connection = match rusqlite::Connection::open(&path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!("Failed to create new world file: {e}");
+                        gui_state.set(GuiState::MainMenu);
+                        continue;
+                    }
+                };
 
-                let settings_path = path.join("settings.ini");
-                std::fs::write(settings_path, settings).unwrap();
+                connection
+                    .execute(
+                        "create table if not exists storage (
+                        name TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )",
+                        [],
+                    )
+                    .unwrap();
 
-                launch_single_player.write(LaunchSinglePlayer { path });
+                connection
+                    .execute(
+                        "INSERT OR REPLACE INTO storage (name, data) VALUES (?,?)",
+                        rusqlite::params![
+                            "settings",
+                            serde_json::to_string(&configured_world.settings).unwrap()
+                        ],
+                    )
+                    .unwrap();
+                singleplayer_server.start(path);
             }
             MainButtons::DeleteWorld => {
                 if let Some(path) = &configured_world.path {
-                    if let Err(e) = std::fs::remove_dir_all(path) {
+                    if let Err(e) = std::fs::remove_file(path) {
                         warn!("Encountered error when deleting a world: {e}");
                     };
                     gui_state.set(GuiState::MainMenu);
@@ -563,13 +601,50 @@ fn main_buttons(
             }
             MainButtons::Back => {
                 if configured_world.is_editing() {
-                    let mut settings = String::new();
-                    for (key, value) in &configured_world.settings {
-                        settings.push_str(&format!("{} = {}\n", key, value));
+                    match rusqlite::Connection::open(&configured_world.path.as_ref().unwrap()) {
+                        Ok(connection) => {
+                            connection
+                                .execute(
+                                    "create table if not exists storage (
+                                name TEXT PRIMARY KEY,
+                                data TEXT NOT NULL
+                            )",
+                                    [],
+                                )
+                                .unwrap();
+
+                            connection
+                                .execute(
+                                    "INSERT OR REPLACE INTO storage (name, data) VALUES (?,?)",
+                                    rusqlite::params![
+                                        "settings",
+                                        serde_json::to_string(&configured_world.settings).unwrap()
+                                    ],
+                                )
+                                .unwrap();
+                        }
+                        Err(e) => {
+                            error!("Failed to open world file: {e}");
+                        }
                     }
 
-                    let path = configured_world.path.as_ref().unwrap().join("settings.ini");
-                    std::fs::write(path, settings).unwrap();
+                    let world_name_input = &world_name_input.single().unwrap().text;
+                    if !world_name_input.is_empty() {
+                        let mut new_path = settings.data_dir().join("worlds");
+                        new_path.push(&world_name_input);
+                        new_path.set_extension("sqlite");
+
+                        // TODO: Make the textbox red or display a notification if the world name
+                        // is already taken.
+                        if !new_path.exists() {
+                            if let Err(e) =
+                                std::fs::rename(configured_world.path.as_ref().unwrap(), new_path)
+                            {
+                                // TODO: Notification
+                                error!("Couldn't rename world: {e}");
+                            };
+                        }
+                    }
                 }
                 gui_state.set(GuiState::MainMenu);
             }
