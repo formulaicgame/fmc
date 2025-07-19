@@ -144,8 +144,8 @@ fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut
                 ))
                 .with_children(|parent| {
                     parent
-                        .spawn_textbox(TextBox::new("Search/World name"))
-                        .insert(WorldTextBox);
+                        .spawn_textbox(TextBox::new("Search"))
+                        .insert(WorldSearchTextBox);
                     parent
                         .spawn_button(
                             "New World",
@@ -476,7 +476,7 @@ impl MainMenuWidgets for ChildSpawnerCommands<'_> {
 }
 
 #[derive(Component)]
-struct WorldTextBox;
+struct WorldSearchTextBox;
 
 #[derive(Component)]
 struct WorldList;
@@ -647,7 +647,7 @@ fn clear_search(
     mut commands: Commands,
     settings: Res<Settings>,
     asset_server: Res<AssetServer>,
-    mut world_search_bar: Query<&mut TextBox, (With<WorldTextBox>, Without<ServerTextBox>)>,
+    mut world_search_bar: Query<&mut TextBox, (With<WorldSearchTextBox>, Without<ServerTextBox>)>,
     mut server_search_bar: Query<(&mut TextBox, &ChildOf), With<ServerTextBox>>,
     tab_content: Query<&Node, With<Tabs>>,
     mut server_list: Query<(Entity, &mut ServerList)>,
@@ -685,7 +685,7 @@ fn search(
         &TextBox,
         (
             Or<(Changed<TextBox>, Changed<InheritedVisibility>)>,
-            With<WorldTextBox>,
+            With<WorldSearchTextBox>,
         ),
     >,
     server_search_bar: Query<
@@ -974,7 +974,7 @@ struct DownloadReporter(Receiver<DownloadStatus>);
 fn report_game_download_progress(
     mut commands: Commands,
     time: Res<Time>,
-    mut status_text: Query<&mut TextBox, With<WorldTextBox>>,
+    mut status_text: Query<&mut TextBox, With<WorldSearchTextBox>>,
     downloads: Query<(Entity, &DownloadReporter)>,
     mut timer: Local<Timer>,
 ) {
@@ -1024,7 +1024,7 @@ fn report_game_download_progress(
 
     timer.tick(time.delta());
     if timer.just_finished() {
-        text_box.placeholder_text = "Search/World name".to_owned();
+        text_box.placeholder_text = "Search".to_owned();
     }
 }
 
