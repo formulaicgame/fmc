@@ -3,8 +3,8 @@
 ## Fmc 
 Download the game at [fmc.gg](https://fmc.gg)  
 
-Singleplayer does not work (well) on Windows and MacOS yet, you might want to download a [standalone server binary](https://github.com/awowogei/FMC_173/releases/tag/nightly).
-Click "connect" after running it instead of "singleplayer".
+Singleplayer does not work (well) on Windows and MacOS yet, you might want to download a [standalone server binary](https://github.com/awowogei/FMC_173/releases/tag/nightly) 
+and connect through multiplayer.
 It will be caught by Defender on Windows, and MacOS makes it hard to run unsigned executables.  
 
 Join the [discord](https://discord.gg/VMgFmdsQ6m) if you have questions
