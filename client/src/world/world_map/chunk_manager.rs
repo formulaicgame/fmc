@@ -19,7 +19,6 @@ use crate::{
     },
 };
 
-/// Keeps track of which chunks should be loaded/unloaded.
 pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
@@ -41,10 +40,9 @@ impl Plugin for ChunkManagerPlugin {
                 // BUG: Other systems add components to the chunk entity. If we're unlucky this
                 // system's commands will despawn the entity before those commands are applied.
                 //
-                // Ambiguous system order
-                // A <-> B
-                // B -> A
-                // Command application order
+                //
+                // A <-> B Ambiguous system order
+                // B -> A Command application order
                 //
                 // Insert a component on an entity in A, despawn the entity in B
                 // result:
@@ -79,9 +77,9 @@ fn pause_system(mut pause: ResMut<Pause>, keyboard_input: Res<ButtonInput<KeyCod
 
 // Removes chunks that are outside the render distance of the player.
 fn unload_chunks(
+    settings: Res<Settings>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
-    settings: Res<Settings>,
     mut commands: Commands,
 ) {
     world_map.chunks.retain(|chunk_pos, chunk| {
@@ -90,7 +88,7 @@ fn unload_chunks(
             .cmpgt(IVec3::splat(settings.render_distance as i32) + 1)
             .any()
         {
-            if let Some(entity) = chunk.entity {
+            if let Some(entity) = chunk.entity() {
                 commands.entity(entity).despawn();
             }
             false
@@ -193,7 +191,7 @@ fn prepare_for_frustum_culling(
             }
         };
 
-        if let Some(entity) = chunk.entity {
+        if let Some(entity) = chunk.entity() {
             if let Ok(mut visibility) = chunk_query.get_mut(entity) {
                 *visibility = Visibility::Visible;
             }
@@ -310,12 +308,11 @@ fn handle_new_chunks(
 
         // TODO: Only handles uniform air chunks. These ifs can be collapsed, handle uniformity
         // in Chunk::new, skip entity like now if the chunk won't have a mesh.
-        if chunk.blocks.len() == 1
+        let old_chunk = if chunk.blocks.len() == 1
             && match blocks.get_config(chunk.blocks[0]) {
                 Block::Cube(b) if b.quads.len() == 0 => true,
                 _ => false,
-            }
-        {
+            } {
             world_map.insert(
                 chunk.position,
                 Chunk::new_air(
@@ -326,7 +323,7 @@ fn handle_new_chunks(
                         .map(|(&k, &v)| (k, BlockState(v)))
                         .collect(),
                 ),
-            );
+            )
         } else {
             let entity = commands
                 .spawn((
@@ -348,7 +345,13 @@ fn handle_new_chunks(
                         .map(|(&k, &v)| (k, BlockState(v)))
                         .collect(),
                 ),
-            );
+            )
+        };
+
+        // This is just for the off chance where the server sends a chunk we already have because
+        // of mismatch in render distance or execution order or whatever else.
+        if let Some(entity) = old_chunk.and_then(|c| c.entity()) {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -380,7 +383,6 @@ pub fn handle_block_updates(
         };
 
         if chunk.is_uniform() {
-            chunk.convert_uniform_to_full();
             let entity = commands
                 .spawn((
                     Transform::from_translation((event.chunk_position - origin.0).as_vec3()),
@@ -389,7 +391,7 @@ pub fn handle_block_updates(
                     ChunkMarker,
                 ))
                 .id();
-            chunk.entity = Some(entity);
+            chunk.convert_uniform_to_full(entity);
         }
 
         let blocks = Blocks::get();

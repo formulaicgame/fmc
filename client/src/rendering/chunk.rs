@@ -61,41 +61,35 @@ fn mesh_system(
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
-    mut count: Local<HashMap<IVec3, u32>>,
-    mut target: Local<u32>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
     for event in mesh_events.read() {
         match world_map.get_chunk(&event.chunk_position) {
             Some(chunk) => {
-                if chunk.entity.is_some() {
-                    *target += 1;
-                    let c = count.entry(event.chunk_position).or_insert(0);
-                    *c += 1;
-                    let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
-                    let expanded_light_chunk = light_map.get_expanded_chunk(event.chunk_position);
+                let Some(chunk_entity) = chunk.entity() else {
+                    continue;
+                };
 
-                    let task = if (event.chunk_position - origin.0)
-                        .abs()
-                        .cmple(IVec3::splat(Chunk::SIZE as i32))
-                        .all()
-                    {
-                        // Chunks that are close get meshed on main thread to minimize visual latency. A
-                        // task can take several frames to execute in scheduling alone.
-                        let result =
-                            future::block_on(build_mesh(expanded_chunk, expanded_light_chunk));
-                        thread_pool.spawn(async { result })
-                    } else {
-                        thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk))
-                    };
-                    commands
-                        .entity(chunk.entity.unwrap())
-                        .insert(ChunkMeshTask {
-                            position: event.chunk_position,
-                            task,
-                        });
-                }
+                let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
+                let expanded_light_chunk = light_map.get_expanded_chunk(event.chunk_position);
+
+                let task = if (event.chunk_position - origin.0)
+                    .abs()
+                    .cmple(IVec3::splat(Chunk::SIZE as i32))
+                    .all()
+                {
+                    // Chunks that are close get meshed on main thread to minimize visual latency. A
+                    // task can take several frames to execute in scheduling alone.
+                    let result = future::block_on(build_mesh(expanded_chunk, expanded_light_chunk));
+                    thread_pool.spawn(async { result })
+                } else {
+                    thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk))
+                };
+                commands.entity(chunk_entity).insert(ChunkMeshTask {
+                    position: event.chunk_position,
+                    task,
+                });
             }
             None => {
                 //panic!("Tried to mesh a nonexistent chunk.");
@@ -125,47 +119,21 @@ fn handle_mesh_tasks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut chunk_meshes: Query<(Entity, &mut ChunkMeshTask)>,
-    mut count: Local<HashMap<IVec3, u32>>,
-    mut target: Local<usize>,
 ) {
     for (entity, mut task) in chunk_meshes.iter_mut() {
         if let Some(chunk_meshes) = future::block_on(future::poll_once(&mut task.task)) {
-            // *target += 1;
-            //let c = count.entry(task.position).or_insert(0);
-            //*c += 1;
-
             commands
                 .entity(entity)
                 // Remove old meshes
                 .despawn_related::<Children>()
-                .remove::<ChunkMeshTask>();
-            // *target += block_meshes.len();
-            // dbg!(*target);
-            for (material_handle, mesh) in chunk_meshes.into_iter() {
-                commands.spawn((
-                    Mesh3d(meshes.add(mesh)),
-                    MeshMaterial3d(material_handle),
-                    ChildOf(entity),
-                ));
-            }
+                .remove::<ChunkMeshTask>()
+                .with_children(|parent| {
+                    for (material_handle, mesh) in chunk_meshes.into_iter() {
+                        parent.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material_handle)));
+                    }
+                });
         }
     }
-
-    //if *target > 10000 {
-    //    let mut bins = HashMap::new();
-    //    for (_, value) in count.iter() {
-    //        bins.entry(*value).or_insert(0).add_assign(1);
-    //    }
-    //    bins.retain(|_, value| {
-    //        if *value > 1 {
-    //            true
-    //        } else {
-    //            false
-    //        }
-    //    });
-    //    dbg!(bins);
-    //    panic!();
-    //}
 }
 
 /// Used to build a block mesh

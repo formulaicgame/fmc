@@ -20,7 +20,7 @@ a [library](https://github.com/formulaicgame/fmc/tree/master/fmc) that can be us
 games, you can find [the current default game here](https://github.com/awowogei/FMC_173).
 
 ## Contributing
-Contributions are welcome and encouraged, reach out on [discord](https://discord.gg/VMgFmdsQ6m). 
+Contributions are welcome, please reach out on [discord](https://discord.gg/VMgFmdsQ6m). 
 
 ## Modding
 

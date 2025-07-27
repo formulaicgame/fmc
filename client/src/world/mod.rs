@@ -26,7 +26,7 @@ fn cleanup(
     mut models: ResMut<models::ModelEntities>,
 ) {
     for (_, chunk) in world_map.chunks.drain() {
-        if let Some(entity) = chunk.entity {
+        if let Some(entity) = chunk.entity() {
             commands.entity(entity).despawn();
         }
     }

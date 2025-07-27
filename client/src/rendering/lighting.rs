@@ -591,13 +591,17 @@ fn handle_block_updates(
         for (index, block_id, _) in block_updates.blocks.iter() {
             let light = match &mut light_chunk.light {
                 LightStorage::Uniform(uniform_light) => {
-                    if uniform_light.sunlight() != 0 {
-                        light_chunk.light =
-                            LightStorage::Normal(vec![*uniform_light; Chunk::SIZE.pow(3)]);
-                        &mut light_chunk[*index]
-                    } else {
-                        continue;
-                    }
+                    // TODO: It needs this to light properly, but it means it won't light up
+                    // anything underground when you place an artificial light there. Artificial
+                    // lighting updates must be separated out I think, it's turned into a mess
+                    // anyway.
+                    // if uniform_light.sunlight() != 0 {
+                    light_chunk.light =
+                        LightStorage::Normal(vec![*uniform_light; Chunk::SIZE.pow(3)]);
+                    &mut light_chunk[*index]
+                    // } else {
+                    //     continue;
+                    // }
                 }
                 LightStorage::Normal(light_chunk) => &mut light_chunk[*index],
             };

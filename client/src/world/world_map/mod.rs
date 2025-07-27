@@ -82,8 +82,8 @@ impl WorldMap {
     //    dbg!(time.elapsed());
     //}
 
-    pub fn insert(&mut self, position: IVec3, chunk: Chunk) {
-        self.chunks.insert(position, chunk);
+    pub fn insert(&mut self, position: IVec3, chunk: Chunk) -> Option<Chunk> {
+        self.chunks.insert(position, chunk)
     }
 
     pub fn contains_chunk(&self, position: &IVec3) -> bool {

@@ -19,7 +19,7 @@ pub struct ChunkMarker;
 #[derive(Clone)]
 pub struct Chunk {
     // Entity in the ECS. Stores mesh, None if the chunk shouldn't have one.
-    pub entity: Option<Entity>,
+    entity: Option<Entity>,
     /// XXX: Notice that the coordinates align with the rendering world, the z axis extends
     /// out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
     /// A Chunk::SIZE^3 array containing all the blocks in the chunk.
@@ -56,12 +56,18 @@ impl Chunk {
         };
     }
 
-    pub fn convert_uniform_to_full(&mut self) {
+    pub fn convert_uniform_to_full(&mut self, entity: Entity) {
         if !self.is_uniform() {
+            // Guards against hanging the chunk entity too
             panic!("Tried to convert a non uniform chunk");
         }
         let block = self.blocks[0];
-        self.blocks = vec![block; Chunk::SIZE.pow(3)]
+        self.blocks = vec![block; Chunk::SIZE.pow(3)];
+        self.entity = Some(entity);
+    }
+
+    pub fn entity(&self) -> Option<Entity> {
+        self.entity
     }
 
     pub fn is_uniform(&self) -> bool {
