@@ -982,10 +982,9 @@ fn report_game_download_progress(
 
     for (download_entity, reporter) in downloads.iter() {
         while let Ok(status) = reporter.0.try_recv() {
-            *timer = Timer::from_seconds(2.0, TimerMode::Once);
-
             match status {
                 DownloadStatus::Success => {
+                    *timer = Timer::from_seconds(2.0, TimerMode::Once);
                     commands.entity(download_entity).despawn();
                     //text_box.placeholder_text = "Singleplayer server downloaded!";
                 }
@@ -1014,9 +1013,12 @@ fn report_game_download_progress(
                         bytes_to_string(total)
                     );
                 }
-                DownloadStatus::Failure(_err) => {
+                DownloadStatus::Failure(err) => {
+                    error!(err);
                     commands.entity(download_entity).despawn();
-                    text_box.placeholder_text = "Failed to download singleplayer server".to_owned()
+                    text_box.placeholder_text = "Failed to download singleplayer server".to_owned();
+                    // Let the failure text linger to make sure the player sees it
+                    *timer = Timer::from_seconds(10000.0, TimerMode::Once);
                 }
             }
         }
@@ -1052,13 +1054,16 @@ fn download_default_game(mut commands: Commands) {
 }
 
 async fn download_game(url: String, download_folder: PathBuf, reporter: Sender<DownloadStatus>) {
-    if !download_folder.exists() && std::fs::create_dir(&download_folder).is_err() {
-        reporter
-            .send(DownloadStatus::Failure(
-                "Could not create download directory".to_owned(),
-            ))
-            .unwrap();
-        return;
+    if !download_folder.exists() {
+        if let Err(e) = std::fs::create_dir(&download_folder) {
+            reporter
+                .send(DownloadStatus::Failure(format!(
+                    "Could not create download directory: {}",
+                    e
+                )))
+                .unwrap();
+            return;
+        }
     };
 
     let Ok(response) = ureq::get(&url).call() else {
@@ -1080,13 +1085,17 @@ async fn download_game(url: String, download_folder: PathBuf, reporter: Sender<D
     }
 
     let temp_path = download_folder.join("server_temp");
-    let Ok(file) = std::fs::File::create(&temp_path) else {
-        reporter
-            .send(DownloadStatus::Failure(
-                "Could not create download file".to_owned(),
-            ))
-            .unwrap();
-        return;
+    let file = match std::fs::File::create(&temp_path) {
+        Ok(f) => f,
+        Err(e) => {
+            reporter
+                .send(DownloadStatus::Failure(format!(
+                    "Could not create download file: {}",
+                    e
+                )))
+                .unwrap();
+            return;
+        }
     };
     let mut file = std::io::BufWriter::new(file);
 
