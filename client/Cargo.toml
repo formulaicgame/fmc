@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.16.1", features = ["serialize", "wayland"]}
 
-fmc_protocol = { version = "0.1.1", git = "https://github.com/formulaicgame/fmc_protocol" }
+fmc_protocol = { path = "../fmc_protocol", version = "0.1.1" }
 serde_json = "1.0.128"
 
 dirs = "5.0.1"
