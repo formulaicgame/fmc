@@ -484,8 +484,9 @@ fn build_interface(
         // TODO: This should be done where the game is downloaded and placed along all the other
         // server assets so that they do not need to be downloaded from the server on connection.
         let server_path =
-            Path::new("fmc_server/server").with_extension(std::env::consts::EXE_SUFFIX);
+            Path::new("fmc_server/server").with_extension(std::env::consts::EXE_EXTENSION);
         if !server_path.exists() {
+            error!("Server executable missing");
             // The main menu should block entering the interface when there is no server, but we check
             // anyway.
             return;

@@ -893,7 +893,10 @@ fn handle_main_button_clicks(
 
         match button {
             MainButton::NewWorld => {
-                if Path::new("fmc_server/server").exists() {
+                if Path::new("fmc_server/server")
+                    .with_extension(std::env::consts::EXE_EXTENSION)
+                    .exists()
+                {
                     configured_world.new_world();
                     gui_state.set(GuiState::WorldConfiguration);
                 }
@@ -1013,8 +1016,8 @@ fn report_game_download_progress(
                         bytes_to_string(total)
                     );
                 }
-                DownloadStatus::Failure(err) => {
-                    error!(err);
+                DownloadStatus::Failure(error) => {
+                    error!(error);
                     commands.entity(download_entity).despawn();
                     text_box.placeholder_text = "Failed to download singleplayer server".to_owned();
                     // Let the failure text linger to make sure the player sees it

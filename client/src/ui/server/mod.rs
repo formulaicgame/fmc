@@ -93,16 +93,23 @@ pub fn load_interfaces(
     };
 
     for dir_entry in directory {
-        let file_path = match dir_entry {
-            Ok(d) => d.path(),
+        let entry = match dir_entry {
+            Ok(d) => d,
             Err(e) => {
                 net.disconnect(format!(
-                    "Failed to read the file path of an interface config\nError: {}",
+                    "Failed to read entry in the interface configuration directory\nError: {}",
                     e
                 ));
                 return;
             }
         };
+
+        // Skip non-game interfaces, they have their own directory
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+
+        let file_path = entry.path();
 
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
@@ -118,8 +125,6 @@ pub fn load_interfaces(
 
         let node_config: NodeConfig = match serde_json::from_reader(&file) {
             Ok(c) => c,
-            // Skip non-game interfaces, they have their own directory
-            Err(e) if e.io_error_kind() == Some(std::io::ErrorKind::IsADirectory) => continue,
             Err(e) => {
                 net.disconnect(format!(
                     "Misconfigured assets: Failed to read interface configuration at: '{}'\n\
