@@ -557,11 +557,7 @@ fn escape_key(
     input: Res<ButtonInput<KeyCode>>,
 ) {
     if input.just_pressed(KeyCode::Escape) {
-        if *gui_state.get() == GuiState::PauseMenu {
-            next_gui_state.set(GuiState::None);
-        } else {
-            next_gui_state.set(GuiState::PauseMenu);
-        }
+        next_gui_state.set(GuiState::None);
     }
 }
 

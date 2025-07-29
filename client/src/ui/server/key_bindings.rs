@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
+        client::GuiState,
         server::{InterfaceVisibilityEvent, Interfaces},
         UiState,
     },
@@ -113,6 +114,7 @@ fn handle_key_presses(
     input: Res<ButtonInput<KeyCode>>,
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
+    mut gui_state: ResMut<NextState<GuiState>>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
     mut interface_events: EventWriter<InterfaceVisibilityEvent>,
 ) {
@@ -138,11 +140,8 @@ fn handle_key_presses(
         }
 
         // TODO: This isn't sufficient, the server can spam open interfaces, don't know how to handle it
-        //
-        // Reserved escape hatch if the server decides to be evil, escape will always take you to
-        // the safety of the pause interface.
         if *pressed_key == KeyCode::Escape {
-            return;
+            gui_state.set(GuiState::PauseMenu);
         }
 
         if let Some(command) = key_bindings.get(pressed_key) {
