@@ -22,7 +22,7 @@ jobs:
             # TODO: When this is run on macos-latest it says the toolchain is missing. It has worked before I think. 
             # macos-latest has m1 cpus but I think they should be able to do it.
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             name: fmc-macos-intel
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -38,9 +38,10 @@ jobs:
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@master
+        # XXX: When changing this remember to do it in client/rust-toolchain.toml too
         with:
-          toolchain: nightly
-          target: ${{ matrix.target }}
+          toolchain: nightly-2025-07-27
+          targets: ${{ matrix.target }}
 
       - name: Cache rust dependencies
         uses: actions/cache@v4
