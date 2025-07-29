@@ -207,7 +207,8 @@ impl Target {
     }
 }
 
-const HIT_DISTANCE: f64 = 5.0;
+const BLOCK_HIT_DISTANCE: f64 = 5.0;
+const ENTITY_HIT_DISTANCE: f64 = 3.0;
 
 fn find_target(
     world_map: Res<WorldMap>,
@@ -233,7 +234,7 @@ fn find_target(
 
         let mut distance_to_solid_block = f64::MAX;
 
-        let mut raycast = world_map.raycast(&camera_transform, HIT_DISTANCE);
+        let mut raycast = world_map.raycast(&camera_transform, BLOCK_HIT_DISTANCE);
         'outer: while let Some(block_id) = raycast.next_block() {
             let block_config = blocks.get_config(&block_id);
 
@@ -311,7 +312,7 @@ fn find_target(
                             continue;
                         };
 
-                        if distance < distance_to_solid_block && distance < HIT_DISTANCE {
+                        if distance < distance_to_solid_block && distance < BLOCK_HIT_DISTANCE {
                             targets.push(Target::Block {
                                 block_position: *block_position,
                                 block_id,
@@ -329,7 +330,7 @@ fn find_target(
                         continue;
                     };
 
-                    if distance < HIT_DISTANCE && distance < distance_to_solid_block {
+                    if distance < ENTITY_HIT_DISTANCE && distance < distance_to_solid_block {
                         targets.push(Target::Entity {
                             distance,
                             face,
