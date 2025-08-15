@@ -90,7 +90,7 @@ pub struct RenderDistance {
     pub chunks: u32,
 }
 
-// The player may send a render distance than is less than the max to restrict the amount of chunks
+// The player may send a render distance that is less than the max to restrict the amount of chunks
 // rendered.
 fn change_player_render_distance(
     net: Res<Server>,

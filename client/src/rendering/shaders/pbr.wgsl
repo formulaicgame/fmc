@@ -25,6 +25,10 @@
 #import bevy_pbr::gtao_utils::gtao_multibounce
 #endif
 
+#ifdef OIT_ENABLED
+    #import bevy_core_pipeline::oit::oit_draw
+#endif
+
 struct FragmentInput {
     @builtin(front_facing) is_front: bool,
     @builtin(position) position: vec4<f32>,
@@ -103,12 +107,23 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
             let uv = in.uv + offset / 16.0 * f32(i);
             let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv, view.mip_bias);
             if sample.a < 0.1 {
-                output_color = vec4(0.0, 0.0, 0.0, 0.85);
+                let color = vec4(0.0, 0.0, 0.0, 0.85);
+#ifdef OIT_ENABLED
+                oit_draw(in.position, color);
+                discard;
+#elseif
+                output_color = color;
                 return output_color;
+#endif
             }
         }
 
-        // 
+#ifdef OIT_ENABLED
+        oit_draw(in.position, vec4(0.0, 0.0, 0.0, 0.45));
+        if true {
+            discard;
+        }
+#endif
         return vec4(0.0, 0.0, 0.0, 0.45);
         //if i > 16 {
         //    let sample = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, uv + offset, view.mip_bias);

@@ -1,5 +1,5 @@
 use bevy::{
-    input::mouse::MouseMotion,
+    input::mouse::AccumulatedMouseMotion,
     prelude::*,
     render::view::RenderLayers,
     window::{CursorGrabMode, PrimaryWindow},
@@ -39,10 +39,16 @@ impl Plugin for CameraPlugin {
 pub fn camera_bundle(settings: &Settings) -> impl Bundle {
     (
         Camera3d::default(),
+        // TODO: This is useful, but runs into some validation error with the clouds prepass
+        // pipeline. Maybe something about using it in bind group while used as depth stencil?
+        // bevy::core_pipeline::prepass::DepthPrepass,
         Camera {
             order: 0,
             ..default()
         },
+        // Msaa is not allowed when order independent transparency is enabled.
+        Msaa::Off,
+        bevy::core_pipeline::oit::OrderIndependentTransparencySettings::default(),
         Projection::Perspective(PerspectiveProjection {
             fov: settings.fov.to_radians(),
             ..default()
@@ -51,19 +57,25 @@ pub fn camera_bundle(settings: &Settings) -> impl Bundle {
             color: Color::NONE,
             ..default()
         },
-        // Renders the equipped item
-        children![(
-            Camera3d::default(),
-            Camera {
-                order: 1,
-                ..default()
-            },
-            Projection::Perspective(PerspectiveProjection {
-                fov: std::f32::consts::PI / 3.0,
-                ..default()
-            }),
-            RenderLayers::layer(1),
-        )],
+        children![
+            // HUD camera
+            (
+                Camera3d::default(),
+                Msaa::Off,
+                Camera {
+                    order: 1,
+                    // NOTE: When msaa is turned off, the clear color is applied over the result
+                    // for some reason.
+                    clear_color: ClearColorConfig::None,
+                    ..default()
+                },
+                Projection::Perspective(PerspectiveProjection {
+                    fov: std::f32::consts::PI / 3.0,
+                    ..default()
+                }),
+                RenderLayers::layer(1),
+            ),
+        ],
     )
 }
 
@@ -88,15 +100,12 @@ fn rotate_camera(
     window: Query<&Window, With<PrimaryWindow>>,
     settings: Res<Settings>,
     net: Res<NetworkClient>,
-    mut mouse_events: EventReader<MouseMotion>,
+    mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera_query: Query<&mut Transform, With<Head>>,
 ) {
     let window = window.single().unwrap();
 
-    // It empties the iterator so it can't access it after loop.
-    let should_send = mouse_events.len() > 0;
-
-    for ev in mouse_events.read() {
+    if mouse_motion.delta != Vec2::ZERO {
         let mut transform = camera_query.single_mut().unwrap();
 
         if window.cursor_options.grab_mode == CursorGrabMode::None {
@@ -105,15 +114,14 @@ fn rotate_camera(
 
         let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
         let magic = 0.00005;
-        yaw -= (magic * settings.sensitivity * ev.delta.x * window.width()).to_radians();
-        pitch -= (magic * settings.sensitivity * ev.delta.y * window.height()).to_radians();
+        yaw -= (magic * settings.sensitivity * mouse_motion.delta.x * window.width()).to_radians();
+        pitch -=
+            (magic * settings.sensitivity * mouse_motion.delta.y * window.height()).to_radians();
         pitch = pitch.clamp(-1.57, 1.57);
 
         transform.rotation =
             Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
-    }
 
-    if should_send {
         net.send_message(messages::PlayerCameraRotation {
             rotation: camera_query.single().unwrap().rotation,
         })

@@ -35,6 +35,7 @@ impl Plugin for PausePlugin {
                         video_settings,
                         audio_settings,
                         control_settings,
+                        escape_key,
                     )
                         // This is the only client interface that is shown during gameplay and that
                         // will interact with the server directly. It would be nice to only listen for
@@ -44,8 +45,7 @@ impl Plugin for PausePlugin {
                         // network client is considered invalid to interact with when not in
                         // GameState::Playing, and will panic if attempted (which we do here).
                         .run_if(in_state(GuiState::PauseMenu).and(in_state(GameState::Playing))),
-                    (pause_when_unfocused, escape_key, server_settings)
-                        .run_if(in_state(GameState::Playing)),
+                    (pause_when_unfocused, server_settings).run_if(in_state(GameState::Playing)),
                 ),
             );
     }

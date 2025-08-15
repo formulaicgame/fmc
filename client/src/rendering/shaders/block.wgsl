@@ -7,13 +7,12 @@
     tone_mapping
 } 
 #import bevy_render::maths::powsafe
-#import bevy_pbr::mesh_view_bindings::{
-    globals,
-    lights,
-    view,
-    fog
-}
+#import bevy_pbr::mesh_view_bindings::{globals, lights, view, fog, oit_layers, oit_layer_ids, oit_settings}
 #import bevy_pbr::mesh_view_types::{FOG_MODE_OFF, Fog}
+
+#ifdef OIT_ENABLED
+    #import bevy_core_pipeline::oit::oit_draw
+#endif // OIT_ENABLED
 
 // This isn't the bevy's standard material, I just kept the name for some reason I don't remember.
 struct StandardMaterial {
@@ -274,10 +273,20 @@ fn fragment(
         // TODO: Make the fog go black to reduce visibility at night, maybe
         // reduce the fog distance too?
         // TODO: Tinting the rgb of the ambient light at sunrise/sunset could be nice?
-        fog_copy.base_color = vec4(fog_copy.base_color.rgb * lights.ambient_color.a, fog_copy.base_color.a);
+        let brightness = smoothstep(0.0, 0.10, lights.ambient_color.a);
+        fog_copy.base_color = vec4(fog_copy.base_color.rgb * brightness, fog_copy.base_color.a);
         output_color = linear_fog(fog_copy, output_color, world_position);
     }
 #endif // DISTANCE_FOG
+
+#ifdef OIT_ENABLED
+    // NOTE: naga error messages are currently broken, but discarding outside
+    // the if statement seems illegal in some way.
+    if true {
+        oit_draw(frag_coord, output_color);
+        discard;
+    }
+#endif // OIT_ENABLED
 
 #ifdef TONEMAP_IN_SHADER
     // TODO: Makes it look so bland...
@@ -312,6 +321,7 @@ fn linear_fog(
     let start = fog_params.be.x;
     let end = fog_params.be.y;
     fog_color.a *= 1.0 - clamp((end - distance) / (end - start), 0.0, 1.0);
+    fog_color.a *= fog_color.a;
     // The input_color alpha and fog alpha are added to transition water opacity to opaque so that
     // you can only see through it at very sharp angles.
     return vec4<f32>(mix(input_color.rgb, fog_color.rgb, fog_color.a), input_color.a + fog_color.a);

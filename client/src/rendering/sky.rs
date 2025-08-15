@@ -137,12 +137,10 @@ fn pass_time(
     // Max is lower so that the brightness peaks early and fades late
     let max = 0.2;
     let min = 0.3;
-    let range: f32 = 1.0 - (angle.sin().min(max).max(-min) + min) / (min + max);
+    let range: f32 = (angle.sin().min(max).max(-min) + min) / (min + max);
     // Exponential decay so that the brightness will decrease rapdidly come sunset to warn the
     // player, and to let the light linger until the halo of the sun is completely gone.
-    // The exponent is chosen so that the brightness will bottom out at ~0.02 where it is just
-    // bright enough to see.
-    ambient_light.brightness = (range * -4.0).exp();
+    ambient_light.brightness = range.powi(4);
 }
 
 fn cube_mesh() -> Mesh {
@@ -217,7 +215,7 @@ fn cube_mesh() -> Mesh {
 
     Mesh::new(
         PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
+        RenderAssetUsages::RENDER_WORLD,
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
@@ -232,8 +230,8 @@ fn stars(
     let min = Vec3::splat(-0.5);
     let max = Vec3::splat(0.5);
 
-    // Vertices inverted since the sky material renders clockwise, bevy 0.15 has a function that does it
-    // for the mesh.
+    // Vertices inverted since the sky material renders clockwise
+    // TODO: bevy 0.15 has a function that does it for meshes.
     let vertices = vec![
         // Front
         [max.x, max.y, max.z],
@@ -276,7 +274,7 @@ fn stars(
     let star_mesh = meshes.add(
         Mesh::new(
             PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
+            RenderAssetUsages::RENDER_WORLD,
         )
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
         .with_inserted_indices(Indices::U32(indices)),

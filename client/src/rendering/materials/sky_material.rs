@@ -2,7 +2,6 @@ use bevy::{
     asset::load_internal_asset,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::TypePath,
     render::{mesh::MeshVertexBufferLayoutRef, render_resource::*},
 };
 

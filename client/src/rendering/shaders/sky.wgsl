@@ -1,5 +1,6 @@
 #import bevy_pbr::mesh_view_bindings::{
     view,
+    lights,
     fog
 }
 
@@ -35,8 +36,6 @@ fn fragment(
     var output_color: vec4<f32>;
 
 #ifdef VERTEX_UVS_A
-    // The ifdef does nothing here, it's just an error to call it without it
-    // because VertexOutput.uv is defined with the same ifdef
     output_color = textureSample(texture, texture_sampler, in.uv);
 #endif
 
@@ -92,13 +91,14 @@ fn sky(position: vec3<f32>) -> vec4<f32> {
     // the moon color when blending, but the night color will not.
     let night_color = vec4(0.0);
 
-    var sky_color = mix(night_color, day_color, smoothstep(-0.35, 0.10, sin(material.sun_angle)));
+    let brightness = smoothstep(0.0, 0.10, lights.ambient_color.a);
+    var sky_color = mix(night_color, day_color, brightness);
 
     let fog_color = blend_colors(sky_color, vec4(
         fog.base_color.rgb,
-        smoothstep(-0.25, 0.10, sin(material.sun_angle))
+        brightness
     ));
-    sky_color = mix(fog_color, sky_color, smoothstep(0.01, 0.06, position.y));
+    sky_color = mix(fog_color, sky_color, smoothstep(0.01, 0.50, position.y));
 
     // Apply glow from sun/moon
     sky_color = mix(sky_color, blend_colors(sky_color, celestial_glow(position)), step(HORIZON, position.y));
@@ -125,8 +125,8 @@ fn celestial_glow(position: vec3<f32>) -> vec4<f32> {
 // and max(HORIZON, sun_height) at sunrise? This way it follows the sun
 fn twilight(position: vec3<f32>) -> vec4<f32> {
     let max_color = vec4(1.0, 0.25, 0.15, 1.0);
-    // This has to have alpha == 0.0 so the moon texture will be overlayed at night, but faded out
-    // when it's day.
+    // Important that the alpha is zero here so that the day color will overrule
+    // the moon color when blending, but the night color will not.
     let no_color = vec4(0.0);
 
     let max_height = 0.35;
@@ -145,7 +145,7 @@ fn twilight(position: vec3<f32>) -> vec4<f32> {
         normalize(position.xz)) + 1.0);
 
     // Color the fake surface a little as a reflection
-    color = mix(color * 0.7, color, step(HORIZON, position.y));
+    color = mix(color * 0.5, color, step(HORIZON, position.y));
 
     color.a = clamp(color.a, 0.0, 1.0);
     return color;

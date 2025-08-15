@@ -392,10 +392,10 @@ const QUEUE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
 struct LightUpdateQueue {
     // When sunlight gets propagated into a chunk from one of its adjacent chunks(i.e. not from above) a
-    // timer is added to the propagation queue. The queue will not be processed before it either
+    // timer is added to the queue. The queue will not be processed before it either
     // expires, or sunlight is received from above. This is to ensure that the direct sunlight gets
-    // processed first, as processing the sunlight from the adjacent chunks first will cause upwards of
-    // 10-20k lighting updates before it will settle.
+    // processed first, as processing the sunlight from the adjacent chunks first will be very
+    // expensive.
     sunlit: bool,
     timer: std::time::Instant,
     // This is a ring buffer to allow for prioritization of propagations. Direct sunlight for

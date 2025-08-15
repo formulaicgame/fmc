@@ -1,8 +1,9 @@
 use bevy::{
+    app::ScheduleRunnerPlugin,
     audio::{AudioPlugin, SpatialScale},
-    // diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    window::WindowFocused,
+    window::{PresentMode, WindowFocused},
 };
 
 mod assets;
@@ -32,6 +33,14 @@ fn main() {
         .insert_resource(Time::<Fixed>::from_seconds(1.0 / 144.0))
         .add_plugins(
             DefaultPlugins
+                // TODO: Current default is vsync, add a settings option that lets you opt out.
+                // .set(WindowPlugin {
+                //     primary_window: Some(Window {
+                //         present_mode: PresentMode::AutoNoVsync,
+                //         ..default()
+                //     }),
+                //     ..default()
+                // })
                 .set(AssetPlugin {
                     file_path: "".to_owned(),
                     ..default()

@@ -370,12 +370,10 @@ impl Material for BlockMaterial {
 
         descriptor.primitive.cull_mode = key.bind_group_data.cull_mode;
 
-        if let Some(label) = &mut descriptor.label {
-            *label = format!("pbr_{}", *label).into();
-        }
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
             depth_stencil.bias.constant = key.bind_group_data.depth_bias;
         }
+
         return Ok(());
     }
 
