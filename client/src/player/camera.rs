@@ -1,7 +1,10 @@
 use bevy::{
     input::mouse::AccumulatedMouseMotion,
     prelude::*,
-    render::view::RenderLayers,
+    render::{
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        view::RenderLayers,
+    },
     window::{CursorGrabMode, PrimaryWindow},
 };
 
@@ -19,7 +22,7 @@ use crate::{
     },
 };
 
-pub struct CameraPlugin;
+pub(super) struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
@@ -32,12 +35,20 @@ impl Plugin for CameraPlugin {
                 update_render_distance.run_if(resource_changed::<Settings>),
             )
                 .run_if(in_state(GameState::Playing)),
-        );
+        )
+        .add_plugins(ExtractComponentPlugin::<MainCamera>::default());
     }
 }
 
-pub fn camera_bundle(settings: &Settings) -> impl Bundle {
+#[derive(Component, ExtractComponent, Clone, Copy)]
+pub struct MainCamera;
+
+#[derive(Component)]
+pub struct HudCamera;
+
+pub(super) fn camera_bundle(settings: &Settings) -> impl Bundle {
     (
+        MainCamera,
         Camera3d::default(),
         // TODO: This is useful, but runs into some validation error with the clouds prepass
         // pipeline. Maybe something about using it in bind group while used as depth stencil?
@@ -57,25 +68,23 @@ pub fn camera_bundle(settings: &Settings) -> impl Bundle {
             color: Color::NONE,
             ..default()
         },
-        children![
-            // HUD camera
-            (
-                Camera3d::default(),
-                Msaa::Off,
-                Camera {
-                    order: 1,
-                    // NOTE: When msaa is turned off, the clear color is applied over the result
-                    // for some reason.
-                    clear_color: ClearColorConfig::None,
-                    ..default()
-                },
-                Projection::Perspective(PerspectiveProjection {
-                    fov: std::f32::consts::PI / 3.0,
-                    ..default()
-                }),
-                RenderLayers::layer(1),
-            ),
-        ],
+        children![(
+            HudCamera,
+            Camera3d::default(),
+            Msaa::Off,
+            Camera {
+                order: 1,
+                // NOTE: When msaa is turned off, the clear color is applied over the result
+                // for some reason.
+                clear_color: ClearColorConfig::None,
+                ..default()
+            },
+            Projection::Perspective(PerspectiveProjection {
+                fov: std::f32::consts::PI / 3.0,
+                ..default()
+            }),
+            RenderLayers::layer(1),
+        )],
     )
 }
 

@@ -8,7 +8,7 @@ use crate::{
     world::{MovesWithOrigin, Origin},
 };
 
-mod camera;
+pub mod camera;
 
 // Used at setup to set camera position and define the AABB, but should be changed by the server.
 const DEFAULT_PLAYER_WIDTH: f32 = 0.6;

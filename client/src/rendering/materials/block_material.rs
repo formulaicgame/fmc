@@ -20,7 +20,7 @@ impl Plugin for BlockMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<BlockMaterial> {
             shadows_enabled: false,
-            prepass_enabled: false,
+            prepass_enabled: true,
             ..default()
         });
 

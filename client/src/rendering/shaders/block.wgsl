@@ -1,6 +1,6 @@
 //#import bevy_pbr::mesh_bindings
 
-#import bevy_pbr::pbr_functions::{apply_fog, premultiply_alpha}
+#import bevy_pbr::pbr_functions::premultiply_alpha
 #import bevy_pbr::pbr_types
 #import bevy_core_pipeline::tonemapping::{
     screen_space_dither,
@@ -270,19 +270,19 @@ fn fragment(
 #ifdef DISTANCE_FOG
     if ((material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
         var fog_copy = fog;
-        // TODO: Make the fog go black to reduce visibility at night, maybe
-        // reduce the fog distance too?
-        // TODO: Tinting the rgb of the ambient light at sunrise/sunset could be nice?
+        // TODO: Tinting the rgb of the ambient light at sunrise/sunset could
+        // be nice? Or access to the sun position is needed, but we can't have that.
         let brightness = smoothstep(0.0, 0.10, lights.ambient_color.a);
         fog_copy.base_color = vec4(fog_copy.base_color.rgb * brightness, fog_copy.base_color.a);
-        output_color = linear_fog(fog_copy, output_color, world_position);
+        output_color = apply_fog(fog_copy, output_color, world_position);
     }
 #endif // DISTANCE_FOG
 
 #ifdef OIT_ENABLED
-    // NOTE: naga error messages are currently broken, but discarding outside
-    // the if statement seems illegal in some way.
-    if true {
+    // OIT_ENABLED is only set when the alpha mode is AlphaMode::Blend, but
+    // check anyway in case they change it.
+    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
+    if alpha_mode != pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE {
         oit_draw(frag_coord, output_color);
         discard;
     }
@@ -307,7 +307,7 @@ fn fragment(
     return output_color;
 }
 
-fn linear_fog(
+fn apply_fog(
     fog_params: Fog,
     input_color: vec4<f32>,
     world_position: vec4<f32>,
@@ -321,6 +321,8 @@ fn linear_fog(
     let start = fog_params.be.x;
     let end = fog_params.be.y;
     fog_color.a *= 1.0 - clamp((end - distance) / (end - start), 0.0, 1.0);
+    // TODO: fog_params has a 'mode' field that can be appropriated to apply
+    // fogs differently, for now just squared
     fog_color.a *= fog_color.a;
     // The input_color alpha and fog alpha are added to transition water opacity to opaque so that
     // you can only see through it at very sharp angles.

@@ -68,7 +68,7 @@ use std::ops::Range;
 use crate::{
     assets::AssetState,
     game_state::GameState,
-    player::Player,
+    player::{camera::MainCamera, Player},
     world::{world_map::chunk::Chunk, Origin},
 };
 
@@ -802,6 +802,7 @@ struct CustomDrawPassLabel;
 struct CustomDrawNode;
 impl ViewNode for CustomDrawNode {
     type ViewQuery = (
+        &'static MainCamera,
         &'static ExtractedCamera,
         &'static ExtractedView,
         &'static ViewDepthTexture,
@@ -812,7 +813,7 @@ impl ViewNode for CustomDrawNode {
         &self,
         graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (camera, view, depth, cloud_textures): QueryItem<'w, Self::ViewQuery>,
+        (_main_camera, camera, view, depth, cloud_textures): QueryItem<'w, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         // First, we need to get our phases resource
@@ -902,13 +903,9 @@ struct PostProcessLabel;
 #[derive(Default)]
 struct PostProcessNode;
 
-// The ViewNode trait is required by the ViewNodeRunner
 impl ViewNode for PostProcessNode {
-    // The node needs a query to gather data from the ECS in order to do its rendering,
-    // but it's not a normal system so we need to define it manually.
-    //
-    // This query will only run on the view entity
     type ViewQuery = (
+        &'static MainCamera,
         &'static ViewTarget,
         &'static CloudTextures,
         &'static ViewUniformOffset,
@@ -916,18 +913,12 @@ impl ViewNode for PostProcessNode {
         &'static ViewFogUniformOffset,
     );
 
-    // Runs the node logic
-    // This is where you encode draw commands.
-    //
-    // This will run on every view on which the graph is running.
-    // If you don't want your effect to run on every camera,
-    // you'll need to make sure you have a marker component as part of [`ViewQuery`]
-    // to identify which camera(s) should run the effect.
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
         (
+            _main_camera,
             view_target,
             cloud_textures,
             view_uniform_offset,
@@ -936,34 +927,22 @@ impl ViewNode for PostProcessNode {
         ): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        // Get the pipeline resource that contains the global data we need
-        // to create the render pipeline
         let post_process_pipeline = world.resource::<PostProcessPipeline>();
 
-        // The pipeline cache is a cache of all previously created pipelines.
-        // It is required to avoid creating a new pipeline each frame,
-        // which is expensive due to shader compilation.
         let pipeline_cache = world.resource::<PipelineCache>();
 
-        // Get the pipeline from the cache
         let Some(pipeline) = pipeline_cache.get_render_pipeline(post_process_pipeline.pipeline_id)
         else {
             return Ok(());
         };
 
-        // This will start a new "post process write", obtaining two texture
-        // views from the view target - a `source` and a `destination`.
-        // `source` is the "current" main texture and you _must_ write into
-        // `destination` because calling `post_process_write()` on the
-        // [`ViewTarget`] will internally flip the [`ViewTarget`]'s main
-        // texture to the `destination` texture. Failing to do so will cause
-        // the current main texture information to be lost.
         let post_process = view_target.post_process_write();
 
         let oit_buffers = world.resource::<OitBuffers>();
         let view_uniforms = world.resource::<ViewUniforms>();
         let light_meta = world.resource::<LightMeta>();
         let fog_meta = world.resource::<FogMeta>();
+
         // The bind_group gets created each frame.
         //
         // Normally, you would create a bind_group in the Queue set,
@@ -981,9 +960,7 @@ impl ViewNode for PostProcessNode {
                 fog_meta.gpu_fogs.binding().unwrap().clone(),
                 &cloud_textures.coverage.default_view,
                 &cloud_textures.depth.default_view,
-                // Make sure to use the source view
                 post_process.source,
-                // Use the sampler created for the pipeline
                 &post_process_pipeline.sampler,
                 oit_buffers.layers.binding().unwrap().clone(),
                 oit_buffers.layer_ids.binding().unwrap().clone(),
@@ -991,12 +968,9 @@ impl ViewNode for PostProcessNode {
             )),
         );
 
-        // Begin the render pass
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("post_process_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                // We need to specify the post process destination view here
-                // to make sure we write to the appropriate texture.
                 view: post_process.destination,
                 resolve_target: None,
                 ops: Operations::default(),
@@ -1006,13 +980,8 @@ impl ViewNode for PostProcessNode {
             occlusion_query_set: None,
         });
 
-        // This is mostly just wgpu boilerplate for drawing a fullscreen triangle,
-        // using the pipeline/bind_group created above
         render_pass.set_render_pipeline(pipeline);
 
-        // By passing in the index of the post process settings on this view, we ensure
-        // that in the event that multiple settings were sent to the GPU (as would be the
-        // case with multiple cameras), we use the correct one.
         render_pass.set_bind_group(
             0,
             &bind_group,
@@ -1029,7 +998,6 @@ impl ViewNode for PostProcessNode {
     }
 }
 
-// This contains global data used by the render pipeline. This will be created once on startup.
 #[derive(Resource)]
 struct PostProcessPipeline {
     layout: BindGroupLayout,
@@ -1041,11 +1009,9 @@ impl FromWorld for PostProcessPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
-        // We need to define the bind group layout used for our pipeline
         let layout = render_device.create_bind_group_layout(
             "post_process_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
-                // The layout entries will only be visible in the fragment stage
                 ShaderStages::FRAGMENT,
                 (
                     binding_types::uniform_buffer::<ViewUniform>(true),
@@ -1067,36 +1033,31 @@ impl FromWorld for PostProcessPipeline {
             ),
         );
 
-        // We can create the sampler here since it won't change at runtime and doesn't depend on the view
         let sampler = render_device.create_sampler(&SamplerDescriptor::default());
 
-        let pipeline_id = world
-            .resource_mut::<PipelineCache>()
-            // This will add the pipeline to the cache and queue its creation
-            .queue_render_pipeline(RenderPipelineDescriptor {
-                label: Some("post_process_pipeline".into()),
-                layout: vec![layout.clone()],
-                vertex: fullscreen_shader_vertex_state(),
-                fragment: Some(FragmentState {
-                    shader: CLOUD_POST_PROCESS_SHADER.clone(),
-                    shader_defs: vec!["OIT_ENABLED".into()],
-                    // Make sure this matches the entry point of your shader.
-                    // It can be anything as long as it matches here and in the shader.
-                    entry_point: "fragment".into(),
-                    targets: vec![Some(ColorTargetState {
-                        format: TextureFormat::bevy_default(),
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    })],
-                }),
-                // All of the following properties are not important for this effect so just use the default values.
-                // This struct doesn't have the Default trait implemented because not all fields can have a default value.
-                primitive: PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: MultisampleState::default(),
-                push_constant_ranges: vec![],
-                zero_initialize_workgroup_memory: false,
-            });
+        let pipeline_id =
+            world
+                .resource_mut::<PipelineCache>()
+                .queue_render_pipeline(RenderPipelineDescriptor {
+                    label: Some("post_process_pipeline".into()),
+                    layout: vec![layout.clone()],
+                    vertex: fullscreen_shader_vertex_state(),
+                    fragment: Some(FragmentState {
+                        shader: CLOUD_POST_PROCESS_SHADER.clone(),
+                        shader_defs: vec!["OIT_ENABLED".into()],
+                        entry_point: "fragment".into(),
+                        targets: vec![Some(ColorTargetState {
+                            format: TextureFormat::bevy_default(),
+                            blend: None,
+                            write_mask: ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: MultisampleState::default(),
+                    push_constant_ranges: vec![],
+                    zero_initialize_workgroup_memory: false,
+                });
 
         Self {
             layout,
@@ -1116,7 +1077,7 @@ fn prepare_cloud_texture(
     mut commands: Commands,
     mut texture_cache: ResMut<TextureCache>,
     render_device: Res<RenderDevice>,
-    views: Query<(Entity, &ExtractedCamera, &ExtractedView)>,
+    views: Query<(Entity, &ExtractedCamera, &ExtractedView), With<MainCamera>>,
 ) {
     for (entity, camera, view) in &views {
         let Some(physical_target_size) = camera.physical_target_size else {

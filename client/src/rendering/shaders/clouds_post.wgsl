@@ -1,34 +1,11 @@
-// This shader computes the chromatic aberration effect
-
-// Since post processing is a fullscreen effect, we use the fullscreen vertex shader provided by bevy.
-// This will import a vertex shader that renders a single fullscreen triangle.
-//
-// A fullscreen triangle is a single triangle that covers the entire screen.
-// The box in the top left in that diagram is the screen. The 4 x are the corner of the screen
-//
-// Y axis
-//  1 |  x-----x......
-//  0 |  |  s  |  . ´
-// -1 |  x_____x´
-// -2 |  :  .´
-// -3 |  :´
-//    +---------------  X axis
-//      -1  0  1  2  3
-//
-// As you can see, the triangle ends up bigger than the screen.
-//
-// You don't need to worry about this too much since bevy will compute the correct UVs for you.
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-
-//#ifdef OIT_ENABLED
-//    #import bevy_core_pipeline::oit::oit_draw
-//#endif // OIT_ENABLED
 
 #import bevy_pbr::mesh_view_bindings::{view, lights};
 #import bevy_pbr::mesh_view_types::{OrderIndependentTransparencySettings, Fog}
 
 #ifdef OIT_ENABLED
-// Add the fragment to the oit buffer
+// TODO: This is a copy of bevy_core_pipeline::oit::oit_draw because it doesn't like
+// that the oit bindings are redefined.
 fn oit_draw(position: vec4f, color: vec4f) {
     // Don't add fully transparent fragments to the list
     // because we don't want to have to sort them in the resolve pass
