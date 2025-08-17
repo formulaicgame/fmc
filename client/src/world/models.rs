@@ -292,7 +292,7 @@ fn handle_custom_models(
 
         let mut mesh = Mesh::new(
             bevy::render::mesh::PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD,
+            RenderAssetUsages::default(),
         );
 
         mesh.insert_indices(Indices::U32(custom_model.mesh_indices.clone()));
