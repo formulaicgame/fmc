@@ -1,5 +1,4 @@
 use bevy::{
-    app::ScheduleRunnerPlugin,
     audio::{AudioPlugin, SpatialScale},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,

@@ -74,8 +74,7 @@ use crate::{
 
 pub const CLOUD_PREPASS_SHADER: Handle<Shader> =
     weak_handle!("a206b28c-44ed-49eb-bddd-4ce631db920f");
-pub const CLOUD_POST_PROCESS_SHADER: Handle<Shader> =
-    weak_handle!("fb9a8e52-d5a6-458a-9c10-62e78154d5c3");
+pub const CLOUD_SHADER: Handle<Shader> = weak_handle!("fb9a8e52-d5a6-458a-9c10-62e78154d5c3");
 
 pub struct CloudPlugin;
 impl Plugin for CloudPlugin {
@@ -264,16 +263,11 @@ impl Plugin for CloudPhasePlugin {
         load_internal_asset!(
             app,
             CLOUD_PREPASS_SHADER,
-            "shaders/clouds.wgsl",
+            "shaders/clouds_prepass.wgsl",
             Shader::from_wgsl
         );
 
-        load_internal_asset!(
-            app,
-            CLOUD_POST_PROCESS_SHADER,
-            "shaders/clouds_post.wgsl",
-            Shader::from_wgsl
-        );
+        load_internal_asset!(app, CLOUD_SHADER, "shaders/clouds.wgsl", Shader::from_wgsl);
     }
 
     fn finish(&self, app: &mut App) {
@@ -1043,7 +1037,7 @@ impl FromWorld for PostProcessPipeline {
                     layout: vec![layout.clone()],
                     vertex: fullscreen_shader_vertex_state(),
                     fragment: Some(FragmentState {
-                        shader: CLOUD_POST_PROCESS_SHADER.clone(),
+                        shader: CLOUD_SHADER.clone(),
                         shader_defs: vec!["OIT_ENABLED".into()],
                         entry_point: "fragment".into(),
                         targets: vec![Some(ColorTargetState {

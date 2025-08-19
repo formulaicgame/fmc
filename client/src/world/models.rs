@@ -21,7 +21,7 @@ use crate::{
     assets::models::{Model, Models},
     game_state::GameState,
     networking::NetworkClient,
-    rendering::materials::PbrLightExtension,
+    rendering::materials::ModelMaterial,
     world::{MovesWithOrigin, Origin},
 };
 
@@ -536,21 +536,20 @@ fn play_animations(
     }
 }
 
-type Material = ExtendedMaterial<StandardMaterial, PbrLightExtension>;
 fn handle_model_color(
     net: Res<NetworkClient>,
     children_query: Query<&Children>,
-    material_query: Query<&MeshMaterial3d<Material>>,
+    material_query: Query<&MeshMaterial3d<ModelMaterial>>,
     model_entities: Res<ModelEntities>,
-    mut materials: ResMut<Assets<Material>>,
+    mut materials: ResMut<Assets<ModelMaterial>>,
     mut color_updates: EventReader<messages::ModelColor>,
 ) {
     fn change_color(
         color: Color,
         entity: Entity,
-        material_query: &Query<&MeshMaterial3d<Material>>,
+        material_query: &Query<&MeshMaterial3d<ModelMaterial>>,
         children_query: &Query<&Children>,
-        materials: &mut Assets<Material>,
+        materials: &mut Assets<ModelMaterial>,
     ) {
         if let Ok(material_handle) = material_query.get(entity) {
             let material = materials.get_mut(material_handle).unwrap();

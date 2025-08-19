@@ -1,36 +1,32 @@
-#import bevy_pbr::pbr_functions
-#import bevy_pbr::pbr_bindings
-#import bevy_pbr::pbr_types
-#import bevy_pbr::prepass_utils
-#import bevy_pbr::view_transformations
-
-#import bevy_pbr::mesh_bindings::mesh
-#import bevy_pbr::mesh_view_bindings::{
-    view,
-    fog,
-    screen_space_ambient_occlusion_texture
+#import bevy_pbr::{
+    forward_io::Vertex,
+    mesh_functions,
+    pbr_functions,
+    pbr_bindings,
+    pbr_types,
+    view_transformations,
+    mesh_view_bindings::{
+        view,
+        fog,
+        lights
+    },
 }
-#import bevy_pbr::mesh_view_types::FOG_MODE_OFF
-#import bevy_render::maths::powsafe
-#import bevy_core_pipeline::tonemapping:: {
-    screen_space_dither,
-    tone_mapping
-}
-#import bevy_pbr::parallax_mapping::parallaxed_uv
-#import bevy_pbr::mesh_view_bindings::lights
-
-#import bevy_pbr::prepass_utils
 
 #ifdef SCREEN_SPACE_AMBIENT_OCCLUSION
 #import bevy_pbr::gtao_utils::gtao_multibounce
 #endif
 
+#import bevy_render::maths::powsafe
+#import bevy_core_pipeline::tonemapping:: {
+    screen_space_dither,
+    tone_mapping,
+}
+
 #ifdef OIT_ENABLED
-    #import bevy_core_pipeline::oit::oit_draw
+#import bevy_core_pipeline::oit::oit_draw
 #endif
 
-struct FragmentInput {
-    @builtin(front_facing) is_front: bool,
+struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
@@ -43,11 +39,60 @@ struct FragmentInput {
 #ifdef VERTEX_COLORS
     @location(4) color: vec4<f32>,
 #endif
-    @location(5) packed_bits: u32,
+    @location(5) light: u32,
 };
 
+@vertex
+fn vertex(vertex: Vertex) -> VertexOutput {
+    var out: VertexOutput;
+
+#ifdef SKINNED
+    var world_from_local = bevy_pbr::skinning::skin_model(
+        vertex.joint_indices,
+        vertex.joint_weights,
+        vertex.instance_index
+    );
+#else
+    // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+    // See https://github.com/gfx-rs/naga/issues/2416 .
+    var world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
+#endif
+
+#ifdef VERTEX_NORMALS
+#ifdef SKINNED
+    out.world_normal = bevy_pbr::skinning::skin_normals(world_from_local, vertex.normal);
+#else
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
+#endif
+#endif
+
+#ifdef VERTEX_POSITIONS
+    out.world_position = mesh_functions::mesh_position_local_to_world(
+        world_from_local,
+        vec4<f32>(vertex.position, 1.0)
+    );
+    out.position = view_transformations::position_world_to_clip(out.world_position.xyz);
+#endif
+
+#ifdef VERTEX_UVS
+    out.uv = vertex.uv;
+#endif
+
+#ifdef VERTEX_TANGENTS
+    out.world_tangent = mesh_functions::mesh_tangent_local_to_world(world_from_local, vertex.tangent, vertex.instance_index);
+#endif
+
+#ifdef VERTEX_COLORS
+    out.color = vertex.color;
+#endif
+
+    out.light = mesh_functions::get_tag(vertex.instance_index);
+
+    return out;
+}
+
 @fragment
-fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = pbr_bindings::material.base_color;
 
     let is_orthographic = view.clip_from_view[3].w == 1.0;
@@ -136,8 +181,8 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     output_color = output_color * in.color;
 #endif
 
-    let artificial_level = f32(in.packed_bits & 0xFu);
-    var sunlight_level = f32((in.packed_bits >> 4u) & 0xFu);
+    let artificial_level = f32(in.light & 0xFu);
+    var sunlight_level = f32((in.light >> 4u) & 0xFu);
 
     // TODO: The 1.2 is a scaling factor to make it look bright enough, idk if it's the models
     // themselves or something else in the shader that makes them darker than they should be.
@@ -170,6 +215,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
 
     output_color = pbr_functions::alpha_discard(pbr_bindings::material, output_color);
 
+// TODO: Wrong, see block shader for how it should be applied
 #ifdef DISTANCE_FOG
     // fog
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {

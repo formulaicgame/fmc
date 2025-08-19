@@ -168,24 +168,11 @@ pub fn load_materials(
         let handle = if config.r#type == "block" {
             let material = BlockMaterial {
                 base_color: config.base_color.into(),
-                base_color_texture,
-                emissive: config.emissive.into(),
-                emissive_texture,
-                perceptual_roughness: config.perceptual_roughness,
-                metallic: config.metallic,
-                metallic_roughness_texture,
-                reflectance: config.reflectance,
-                normal_map_texture,
-                flip_normal_map_y: false,
-                occlusion_texture,
-                double_sided: config.double_sided,
                 cull_mode: if config.double_sided {
                     None
                 } else {
                     Some(Face::Back)
                 },
-                unlit: config.unlit,
-                fog_enabled: config.fog_enabled,
                 alpha_mode,
                 depth_bias: 0.0,
                 texture_array: Some(block_textures.handle.clone()),

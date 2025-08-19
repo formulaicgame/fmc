@@ -11,7 +11,7 @@ use bevy::{
 
 use crate::{
     game_state::GameState,
-    rendering::materials,
+    rendering::materials::BlockMaterial,
     world::{
         blocks::{Block, BlockFace, BlockId, BlockRotation, BlockState, Blocks, QuadPrimitive},
         world_map::{chunk::Chunk, WorldMap},
@@ -51,7 +51,7 @@ pub struct ChunkMeshEvent {
 #[derive(Component)]
 pub struct ChunkMeshTask {
     position: IVec3,
-    task: Task<Vec<(Handle<materials::BlockMaterial>, Mesh)>>,
+    task: Task<Vec<(Handle<BlockMaterial>, Mesh)>>,
 }
 
 /// Launches new mesh tasks when chunks change.
@@ -157,7 +157,7 @@ impl MeshBuilder {
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
-        mesh.insert_attribute(materials::ATTRIBUTE_PACKED_BITS_0, self.packed_bits);
+        mesh.insert_attribute(BlockMaterial::ATTRIBUTE_PACKED_BITS, self.packed_bits);
 
         mesh.insert_indices(Indices::U32(self.triangles));
         return mesh;
@@ -213,7 +213,7 @@ impl MeshBuilder {
 async fn build_mesh(
     chunk: ExpandedChunk,
     light_chunk: ExpandedLightChunk,
-) -> Vec<(Handle<materials::BlockMaterial>, Mesh)> {
+) -> Vec<(Handle<BlockMaterial>, Mesh)> {
     let mut mesh_builders = HashMap::new();
 
     let blocks = Blocks::get();
