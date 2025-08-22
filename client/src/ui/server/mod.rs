@@ -84,7 +84,7 @@ pub fn load_interfaces(
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(format!(
-                "Misconfigured assets: Failed to read interface configuration directory '{}'\n\
+                "Misconfigured assets: Failed to read from interface configuration directory at '{}'\n\
                 Error: {}",
                 INTERFACE_CONFIG_PATH, e
             ));

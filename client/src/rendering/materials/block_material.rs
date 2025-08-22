@@ -64,7 +64,7 @@ pub struct BlockMaterial {
     /// [z-fighting]: https://en.wikipedia.org/wiki/Z-fighting
     pub depth_bias: f32,
 
-    /// Texture array of faces for all blocks that use this material.
+    /// Texture array of all block textures
     /// Inedexed within the shader by an index bit-packed in the mesh.
     #[texture(1, dimension = "2d_array")]
     #[sampler(2)]

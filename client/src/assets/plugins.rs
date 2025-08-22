@@ -51,7 +51,7 @@ pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(
-                "Misconfigured assets: Failed to read plugin directory at '{}'\n Error: {}",
+                "Misconfigured assets: Failed to read from plugin directory at '{}'\n Error: {}",
                 PLUGIN_PATH, e
             ));
             return;

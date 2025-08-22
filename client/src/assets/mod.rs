@@ -33,12 +33,12 @@ impl Plugin for AssetPlugin {
             OnEnter(AssetState::Loading),
             (
                 block_textures::load_block_textures,
-                models::load_models,
                 crate::ui::server::key_bindings::load_key_bindings,
                 plugins::load_plugins,
                 ApplyDeferred,
                 materials::load_materials,
                 ApplyDeferred,
+                models::load_models,
                 crate::world::blocks::load_blocks,
                 ApplyDeferred,
                 crate::ui::server::items::load_items,

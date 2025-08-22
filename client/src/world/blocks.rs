@@ -97,7 +97,7 @@ pub fn load_blocks(
     net: Res<NetworkClient>,
     server_config: Res<messages::ServerConfig>,
     block_textures: Res<assets::BlockTextures>,
-    material_handles: Res<assets::Materials>,
+    material_handles: Res<assets::Materials<BlockMaterial>>,
     materials: Res<Assets<BlockMaterial>>,
 ) {
     if server_config.block_ids.len() > u16::MAX as usize {
@@ -151,7 +151,7 @@ pub fn load_blocks(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured assets: failed to read block config at {}\nError: {}",
+                    "Misconfigured assets: Failed to read block config at {}\nError: {}",
                     file_path.display(),
                     e
                 ));
@@ -164,7 +164,7 @@ pub fn load_blocks(
                 Ok(result) => result,
                 Err(e) => {
                     net.disconnect(&format!(
-                        "Misconfigured assets: failed to read block config at {}\nError: {}",
+                        "Misconfigured assets: Failed to read block config at {}\nError: {}",
                         file_path.display(),
                         e
                     ));
@@ -193,7 +193,7 @@ pub fn load_blocks(
                 placement,
             } => {
                 let material_handle = if let Some(m) = material_handles.get(&material) {
-                    m.clone().typed()
+                    m.clone()
                 } else {
                     net.disconnect(&format!(
                         "Misconfigured assets: tried to use material '{}' for block '{}', \
@@ -222,7 +222,7 @@ pub fn load_blocks(
                             Some(id) => *id,
                             None => {
                                 net.disconnect(format!(
-                                    "Misconfigured assets: failed to read block at: {}, no block texture with the name {}",
+                                    "Misconfigured assets: Failed to read block at: {}, no block texture with the name {}",
                                     file_path.display(),
                                     face_name
                                 ));
@@ -284,7 +284,7 @@ pub fn load_blocks(
                             Some(id) => *id,
                             None => {
                                 net.disconnect(format!(
-                                    "Misconfigured assets: failed to read block at: {}, no block texture with the name {}",
+                                    "Misconfigured assets: Failed to read block at: {}, no block texture with the name {}",
                                     file_path.display(),
                                     &quad.texture
                                 ));

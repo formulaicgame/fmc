@@ -9,7 +9,7 @@ mod particle_material;
 mod sky_material;
 
 pub use block_material::BlockMaterial;
-pub use model_material::ModelMaterial;
+pub use model_material::{ModelMaterial, ModelMaterialExtension};
 pub use particle_material::ParticleMaterial;
 pub use sky_material::SkyMaterial;
 

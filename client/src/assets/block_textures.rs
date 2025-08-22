@@ -9,6 +9,10 @@ use bevy::{
     },
 };
 
+use crate::networking::NetworkClient;
+
+const TEXTURE_PATH: &str = "server_assets/active/textures/blocks";
+
 /// A lookup table for the texture array. Inserted as ressource. Used while loading the block
 /// configs.
 #[derive(Resource, Debug)]
@@ -25,35 +29,56 @@ impl BlockTextures {
     }
 }
 
-// TODO: All error should lead to disconnect
-//
 /// Stiches all the textures used by blocks into a texture array.
-pub fn load_block_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+pub fn load_block_textures(
+    mut commands: Commands,
+    net: Res<NetworkClient>,
+    mut images: ResMut<Assets<Image>>,
+) {
     // size of 16*16 png 8 bit indexed png
     let mut image_buffer = Vec::with_capacity(256);
-    let textures_path = "server_assets/active/textures/blocks";
 
     let mut texture_array_indices: HashMap<String, u32> = HashMap::new();
 
     let mut final_image_data: Vec<u8> = Vec::new();
     let mut id = 0;
-    for dir_entry in std::fs::read_dir(textures_path).unwrap() {
+
+    let directory = match std::fs::read_dir(TEXTURE_PATH) {
+        Ok(dir) => dir,
+        Err(e) => {
+            net.disconnect(format!(
+                "Misconfigured assets: Failed to read from the block texture directory at '{}'\n\
+                Error: {}",
+                TEXTURE_PATH, e
+            ));
+            return;
+        }
+    };
+
+    for dir_entry in directory {
         let path = match dir_entry {
             Ok(d) => d.path(),
-            Err(e) => panic!(
-                "Error reading file path while loading textures.\nError: {}",
-                e
-            ),
+            Err(e) => {
+                net.disconnect(format!(
+                    "Failed to read directory entry in the block texture directory\nError: {}",
+                    e
+                ));
+                return;
+            }
         };
 
         let mut file = match std::fs::File::open(&path) {
             Ok(f) => f,
-            Err(e) => panic!(
-                "Failed to open texture at {}\nError: {}",
-                path.to_string_lossy(),
-                e
-            ),
+            Err(e) => {
+                net.disconnect(format!(
+                    "Failed to open block texture at {}\nError: {}",
+                    path.display(),
+                    e,
+                ));
+                return;
+            }
         };
+
         // TODO: handle error
         image_buffer.clear();
         file.read_to_end(&mut image_buffer).ok();

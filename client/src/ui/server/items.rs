@@ -103,7 +103,7 @@ pub fn load_items(
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
             Err(e) => panic!(
-                "Failed to open item config at path: {}\nError: {}",
+                "Failed to open item configuration at path: {}\nError: {}",
                 &file_path, e
             ),
         };
@@ -112,7 +112,7 @@ pub fn load_items(
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
-                    "Misconfigured assets: failed to read item config at: {}.\n\
+                    "Misconfigured assets: Failed to read item configuration at: {}.\n\
                         Error: {}",
                     &file_path, e
                 ));
@@ -139,7 +139,7 @@ pub fn load_items(
                 Some(block_id) => Some(*block_id),
                 None => {
                     net.disconnect(&format!(
-                        "Misconfigured assets: failed to read item config at: '{}'. \
+                        "Misconfigured assets: Failed to read item configuration at: '{}'. \
                             No block with the name '{}'.",
                         &file_path, &name
                     ));
@@ -160,7 +160,7 @@ pub fn load_items(
 
         if !std::path::Path::new(&config.image_path).exists() {
             net.disconnect(&format!(
-                "Misconfigured assets: failed to read item config at: '{}', \
+                "Misconfigured assets: Failed to read item configuration at: '{}', \
                     no item image by the name '{}' at '{}', make sure it is present.",
                 &file_path, json_config.image, ITEM_IMAGE_PATH,
             ));

@@ -1,10 +1,13 @@
 use bevy::{
     asset::load_internal_asset,
     math::{DVec3, Vec3A},
-    pbr::{ExtendedMaterial, MaterialExtension},
+    pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
     prelude::*,
     render::{
-        mesh::{MeshAabb, MeshTag, MeshVertexBufferLayoutRef, VertexAttributeValues},
+        mesh::{
+            MeshAabb, MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef,
+            VertexAttributeValues,
+        },
         render_resource::*,
     },
 };
@@ -12,6 +15,7 @@ use bevy::{
 use std::collections::HashMap;
 
 use crate::{
+    assets::BlockTextures,
     game_state::GameState,
     rendering::lighting::{Light, LightMap},
     world::Origin,
@@ -19,7 +23,7 @@ use crate::{
 
 const MODEL_SHADER: Handle<Shader> = Handle::weak_from_u128(34096891246294360);
 
-pub type ModelMaterial = ExtendedMaterial<StandardMaterial, Extension>;
+pub type ModelMaterial = ExtendedMaterial<StandardMaterial, ModelMaterialExtension>;
 
 pub struct ModelMaterialPlugin;
 impl Plugin for ModelMaterialPlugin {
@@ -32,7 +36,10 @@ impl Plugin for ModelMaterialPlugin {
             })
             // Some weird schedule ordering here to avoid flickering when replacing the meshes.
             // Chosen at random until it worked.
-            .add_systems(PostUpdate, replace_material)
+            .add_systems(
+                PostUpdate,
+                (add_lighting, replace_standard_material).run_if(in_state(GameState::Playing)),
+            )
             .add_systems(Last, update_light)
             .add_systems(OnEnter(GameState::Launcher), cleanup);
 
@@ -101,7 +108,16 @@ fn update_light(
     }
 }
 
-fn replace_material(
+fn add_lighting(
+    mut commands: Commands,
+    material_query: Query<Entity, (With<MeshMaterial3d<ModelMaterial>>, Without<MeshTag>)>,
+) {
+    for entity in material_query.iter() {
+        commands.entity(entity).insert(MeshTag(0));
+    }
+}
+
+fn replace_standard_material(
     mut commands: Commands,
     mut model_materials: ResMut<ModelMaterials>,
     material_query: Query<
@@ -110,6 +126,7 @@ fn replace_material(
     >,
     standard_material_assets: Res<Assets<StandardMaterial>>,
     mut model_material_assets: ResMut<Assets<ModelMaterial>>,
+    block_textures: Res<BlockTextures>,
 ) {
     for (entity, standard_handle) in material_query.iter() {
         let model_material = if let Some(model_material) = model_materials.get(standard_handle) {
@@ -118,7 +135,9 @@ fn replace_material(
             let standard_material = standard_material_assets.get(standard_handle).unwrap();
             model_material_assets.add(ExtendedMaterial {
                 base: standard_material.clone(),
-                extension: Extension::default(),
+                extension: ModelMaterialExtension {
+                    block_textures: block_textures.handle.clone(),
+                },
             })
         };
 
@@ -129,18 +148,61 @@ fn replace_material(
     }
 }
 
-#[derive(Default, Asset, AsBindGroup, Reflect, Debug, Clone)]
-pub struct Extension {
-    #[uniform(100)]
-    _dummy: u32,
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub struct ModelMaterialExtension {
+    #[texture(31, dimension = "2d_array")]
+    #[sampler(32)]
+    pub block_textures: Handle<Image>,
 }
 
-impl MaterialExtension for Extension {
+impl ModelMaterialExtension {
+    pub const ATTRIBUTE_BLOCK_TEXTURE_INDEX: MeshVertexAttribute = MeshVertexAttribute::new(
+        "block texture index",
+        //Mesh::FIRST_AVAILABLE_CUSTOM_ATTRIBUTE,
+        8000,
+        VertexFormat::Uint32,
+    );
+}
+
+impl MaterialExtension for ModelMaterialExtension {
     fn vertex_shader() -> ShaderRef {
         MODEL_SHADER.into()
     }
 
     fn fragment_shader() -> ShaderRef {
         MODEL_SHADER.into()
+    }
+
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        key: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        if let Some(index) = layout
+            .0
+            .attribute_ids()
+            .iter()
+            .position(|id| *id == Self::ATTRIBUTE_BLOCK_TEXTURE_INDEX.at_shader_location(8).id)
+        {
+            let layout_attribute = layout.0.layout().attributes[index];
+
+            descriptor.vertex.shader_defs.push("BLOCK_TEXTURE".into());
+            descriptor
+                .fragment
+                .as_mut()
+                .unwrap()
+                .shader_defs
+                .push("BLOCK_TEXTURE".into());
+            descriptor.vertex.buffers[0]
+                .attributes
+                .push(VertexAttribute {
+                    format: layout_attribute.format,
+                    offset: layout_attribute.offset,
+                    shader_location: 8,
+                });
+        }
+
+        return Ok(());
     }
 }

@@ -1,5 +1,4 @@
 #import bevy_pbr::{
-    forward_io::Vertex,
     mesh_functions,
     pbr_functions,
     pbr_bindings,
@@ -26,6 +25,43 @@
 #import bevy_core_pipeline::oit::oit_draw
 #endif
 
+@group(2) @binding(31)
+var block_textures: texture_2d_array<f32>;
+@group(2) @binding(32)
+var block_textures_sampler: sampler;
+
+struct Vertex {
+    @builtin(instance_index) instance_index: u32,
+#ifdef VERTEX_POSITIONS
+    @location(0) position: vec3<f32>,
+#endif
+#ifdef VERTEX_NORMALS
+    @location(1) normal: vec3<f32>,
+#endif
+#ifdef VERTEX_UVS_A
+    @location(2) uv: vec2<f32>,
+#endif
+#ifdef VERTEX_UVS_B
+    @location(3) uv_b: vec2<f32>,
+#endif
+#ifdef VERTEX_TANGENTS
+    @location(4) tangent: vec4<f32>,
+#endif
+#ifdef VERTEX_COLORS
+    @location(5) color: vec4<f32>,
+#endif
+#ifdef SKINNED
+    @location(6) joint_indices: vec4<u32>,
+    @location(7) joint_weights: vec4<f32>,
+#endif
+#ifdef BLOCK_TEXTURE
+    @location(8) block_texture_index: u32
+#endif
+#ifdef MORPH_TARGETS
+    @builtin(vertex_index) index: u32,
+#endif
+};
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
@@ -39,7 +75,10 @@ struct VertexOutput {
 #ifdef VERTEX_COLORS
     @location(4) color: vec4<f32>,
 #endif
-    @location(5) light: u32,
+#ifdef BLOCK_TEXTURE
+    @location(5) block_texture_index: i32,
+#endif
+    @location(6) light: u32,
 };
 
 @vertex
@@ -86,6 +125,10 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.color = vertex.color;
 #endif
 
+#ifdef BLOCK_TEXTURE
+    out.block_texture_index = i32(vertex.block_texture_index);
+#endif
+
     out.light = mesh_functions::get_tag(vertex.instance_index);
 
     return out;
@@ -94,6 +137,12 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = pbr_bindings::material.base_color;
+
+#ifdef VERTEX_UVS
+#ifdef BLOCK_TEXTURE
+    output_color = output_color * textureSample(block_textures, block_textures_sampler, in.uv, in.block_texture_index);
+#endif
+#endif
 
     let is_orthographic = view.clip_from_view[3].w == 1.0;
     let V = pbr_functions::calculate_view(in.world_position, is_orthographic);

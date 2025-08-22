@@ -33,7 +33,7 @@ pub type BlockId = u16;
 /// The relative path to the game's block configurations.
 pub const BLOCK_CONFIG_PATH: &str = "./assets/client/blocks/";
 /// The relative path to the game's rendering materials
-pub const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/";
+pub const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/block";
 
 // TODO: Regretting this, just make it a resource with an Arc inside so it can be cloned for
 // terrain generation.

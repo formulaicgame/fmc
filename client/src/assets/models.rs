@@ -13,7 +13,12 @@ use bevy::{
 use fmc_protocol::messages;
 use serde::Deserialize;
 
-use crate::{game_state::GameState, networking::NetworkClient};
+use crate::{
+    assets::{BlockTextures, Materials},
+    game_state::GameState,
+    networking::NetworkClient,
+    rendering::materials::{ModelMaterial, ModelMaterialExtension},
+};
 
 const MODEL_PATH: &str = "server_assets/active/textures/models/";
 const BLOCK_TEXTURE_PATH: &str = "server_assets/active/textures/blocks/";
@@ -89,12 +94,14 @@ pub(super) fn load_models(
     net: Res<NetworkClient>,
     server_config: Res<messages::ServerConfig>,
     asset_server: Res<AssetServer>,
+    block_textures: Res<BlockTextures>,
+    model_materials: Res<Materials<ModelMaterial>>,
 ) {
     let directory = match std::fs::read_dir(MODEL_PATH) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(
-                "Misconfigured assets: Failed to read model directory at '{}'\n Error: {}",
+                "Misconfigured assets: Failed to read from the model directory at '{}'\n Error: {}",
                 MODEL_PATH, e
             ));
             return;
@@ -173,7 +180,18 @@ pub(super) fn load_models(
                     return;
                 }
             };
-            let mut gltf = json_model.build_gltf(asset_server.as_ref());
+            let mut gltf =
+                match json_model.build_gltf(&asset_server, &block_textures, &model_materials) {
+                    Ok(gltf) => gltf,
+                    Err(e) => {
+                        net.disconnect(&format!(
+                            "Misconfigured assets: Failed to read json model at '{}'\nError: {}",
+                            path.display(),
+                            e
+                        ));
+                        return;
+                    }
+                };
             gltf.animations.push(click_animation.clone());
             gltf.named_animations
                 .insert("left_click".into(), click_animation.clone());
@@ -318,17 +336,29 @@ enum JsonModel {
         right: String,
         front: String,
         back: String,
+        // Material name
+        material: String,
     },
 }
 
 impl JsonModel {
-    fn build_gltf(&self, asset_server: &AssetServer) -> Gltf {
+    fn build_gltf(
+        &self,
+        asset_server: &AssetServer,
+        block_textures: &BlockTextures,
+        materials: &Materials<ModelMaterial>,
+    ) -> Result<Gltf, String> {
         match self {
-            Self::Block { .. } => self.build_block_gltf(asset_server),
+            Self::Block { .. } => self.build_block_gltf(asset_server, block_textures, materials),
         }
     }
 
-    fn build_block_gltf(&self, asset_server: &AssetServer) -> Gltf {
+    fn build_block_gltf(
+        &self,
+        asset_server: &AssetServer,
+        block_textures: &BlockTextures,
+        materials: &Materials<ModelMaterial>,
+    ) -> Result<Gltf, String> {
         let Self::Block {
             top,
             bottom,
@@ -336,79 +366,72 @@ impl JsonModel {
             right,
             front,
             back,
+            material,
         } = self;
-        let ordered_names = [top, bottom, left, right, front, back];
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
 
-        let mut gltf_meshes = Vec::new();
+        let texture_indices: Vec<u32> = [top, bottom, left, right, front, back]
+            .iter()
+            .map(|texture_name| {
+                block_textures
+                    .get(texture_name)
+                    .cloned()
+                    .ok_or(format!("Missing block texture: '{}'", texture_name))
+            })
+            .collect::<Result<Vec<u32>, String>>()?;
+
+        let mut texture_indices_attribute = Vec::new();
+        for i in 0..6 {
+            for _ in 0..6 {
+                texture_indices_attribute.push(texture_indices[i]);
+            }
+        }
+
+        let Some(material_handle) = materials.get(material) else {
+            return Err(format!("Missing material: '{}'", material));
+        };
+
+        mesh.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            BLOCK_MODEL_VERTICES
+                .into_iter()
+                .flatten()
+                .collect::<Vec<[f32; 3]>>(),
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, BLOCK_MODEL_UVS.repeat(6));
+        mesh.insert_attribute(
+            ModelMaterialExtension::ATTRIBUTE_BLOCK_TEXTURE_INDEX,
+            texture_indices_attribute,
+        );
+
+        mesh.compute_flat_normals();
 
         let mut world = World::new();
         let mut entity_commands = world.spawn_empty();
         let entity = entity_commands.id();
-        entity_commands
-            .insert((
-                Transform::default(),
-                Visibility::default(),
-                AnimationPlayer::default(),
-                AnimationTarget {
-                    id: AnimationTargetId::from_name(&Name::new("block_model")),
-                    player: entity,
-                },
-            ))
-            .with_children(|parent| {
-                let mut gltf_mesh = GltfMesh {
-                    index: 0,
-                    name: String::from("block"),
-                    primitives: Vec::new(),
-                    extras: None,
-                };
-
-                for i in 0..6 {
-                    let mut mesh = Mesh::new(
-                        PrimitiveTopology::TriangleList,
-                        RenderAssetUsages::default(),
-                    );
-                    mesh.insert_attribute(
-                        Mesh::ATTRIBUTE_POSITION,
-                        BLOCK_MODEL_VERTICES[i].to_vec(),
-                    );
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, BLOCK_MODEL_UVS.to_vec());
-                    mesh.compute_flat_normals();
-                    let mesh_handle = asset_server.add(mesh);
-                    let material_handle = asset_server.add(StandardMaterial {
-                        base_color_texture: Some(
-                            asset_server.load(BLOCK_TEXTURE_PATH.to_owned() + ordered_names[i]),
-                        ),
-                        alpha_mode: AlphaMode::Blend,
-                        ..default()
-                    });
-                    gltf_mesh.primitives.push(GltfPrimitive {
-                        index: i,
-                        name: i.to_string(),
-                        parent_mesh_index: i,
-                        mesh: mesh_handle.clone(),
-                        material: Some(material_handle.clone()),
-                        extras: None,
-                        material_extras: None,
-                    });
-                    parent.spawn((
-                        Transform::default(),
-                        Visibility::default(),
-                        Mesh3d(mesh_handle),
-                        MeshMaterial3d(material_handle),
-                    ));
-                }
-
-                gltf_meshes.push(asset_server.add(gltf_mesh));
-            });
+        entity_commands.insert((
+            Transform::default(),
+            Visibility::default(),
+            AnimationPlayer::default(),
+            AnimationTarget {
+                id: AnimationTargetId::from_name(&Name::new("block_model")),
+                player: entity,
+            },
+            Mesh3d(asset_server.add(mesh)),
+            MeshMaterial3d(material_handle.clone()),
+        ));
 
         let scene_handle = asset_server.add(Scene { world });
 
         // TODO: Fill out the gltf properly. I've just included the values I need since the gltf is
         // only used for reference, not spawning.
-        Gltf {
+        Ok(Gltf {
             scenes: vec![scene_handle.clone()],
             named_scenes: HashMap::new(),
-            meshes: gltf_meshes,
+            meshes: Vec::new(),
             named_meshes: HashMap::new(),
             materials: Vec::new(),
             named_materials: HashMap::new(),
@@ -420,11 +443,9 @@ impl JsonModel {
             animations: Vec::new(),
             named_animations: HashMap::new(),
             source: None,
-        }
+        })
     }
 
-    // NOTE: If you want to make this better there's a blender file called "block_template.blend"
-    // in the *server* implementation
     fn click_animation() -> AnimationClip {
         let mut animation = AnimationClip::default();
         let name = Name::new("block_model");

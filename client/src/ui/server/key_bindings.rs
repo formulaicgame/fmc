@@ -46,7 +46,7 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
         Ok(f) => f,
         Err(e) => {
             net.disconnect(format!(
-                "Misconfigured assets: Failed to read commands file at '{}'\nError: {}",
+                "Misconfigured assets: Failed to read from commands file at '{}'\nError: {}",
                 path, e
             ));
             return;
@@ -56,7 +56,7 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
         Ok(c) => c,
         Err(e) => {
             net.disconnect(format!(
-                "Misconfigured assets: Failed to read commands file at '{}'\nError: {}",
+                "Misconfigured assets: Failed to read from commands file at '{}'\nError: {}",
                 path, e
             ));
             return;

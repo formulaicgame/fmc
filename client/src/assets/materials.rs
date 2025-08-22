@@ -4,31 +4,41 @@ use bevy::{color::Color, prelude::*, render::render_resource::Face};
 use serde::Deserialize;
 
 use crate::{
-    assets::BlockTextures, networking::NetworkClient, rendering::materials::BlockMaterial,
+    assets::BlockTextures,
+    networking::NetworkClient,
+    rendering::materials::{BlockMaterial, ModelMaterial, ModelMaterialExtension},
 };
 
-/// Stores all the loaded material handles.
-/// They can be accessed by the filename the material was loaded from.
-#[derive(Resource, Default)]
-pub struct Materials {
-    inner: HashMap<String, UntypedHandle>,
+const MODEL_MATERIAL_PATH: &str = "server_assets/active/materials/model";
+const BLOCK_MATERIAL_PATH: &str = "server_assets/active/materials/block";
+
+#[derive(Resource)]
+pub struct Materials<T: Material + Asset> {
+    inner: HashMap<String, Handle<T>>,
 }
 
-impl Materials {
-    pub fn get(&self, name: &str) -> Option<&UntypedHandle> {
+impl<T: Material + Asset> Materials<T> {
+    pub fn get(&self, name: &str) -> Option<&Handle<T>> {
         return self.inner.get(name);
     }
 
-    pub fn insert(&mut self, name: String, handle: UntypedHandle) {
+    fn insert(&mut self, name: String, handle: Handle<T>) {
         self.inner.insert(name, handle);
+    }
+}
+
+impl<T: Material + Asset> Default for Materials<T> {
+    fn default() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
     }
 }
 
 #[derive(Deserialize)]
 #[serde(default)]
-struct MaterialConfig {
+struct ModelMaterialConfig {
     // One of "block" or "standard"
-    pub r#type: String,
     pub base_color: Srgba,
     pub base_color_texture: Option<String>,
     pub emissive: Srgba,
@@ -42,15 +52,12 @@ struct MaterialConfig {
     pub double_sided: bool,
     pub unlit: bool,
     pub fog_enabled: bool,
-    pub transparency: String,
-    pub animation_frames: u32,
+    pub transparency: Transparency,
 }
 
-impl Default for MaterialConfig {
+impl Default for ModelMaterialConfig {
     fn default() -> Self {
         Self {
-            // This field will panic if not in the file.
-            r#type: "".to_owned(),
             base_color: Srgba::WHITE,
             base_color_texture: None,
             emissive: Srgba::BLACK,
@@ -65,8 +72,53 @@ impl Default for MaterialConfig {
             double_sided: false,
             unlit: false,
             fog_enabled: true,
-            transparency: "opaque".to_owned(),
+            transparency: Transparency::Opaque,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct BlockMaterialConfig {
+    // One of "block" or "standard"
+    pub base_color: Srgba,
+    pub double_sided: bool,
+    pub transparency: Transparency,
+    pub animation_frames: u32,
+}
+
+impl Default for BlockMaterialConfig {
+    fn default() -> Self {
+        Self {
+            base_color: Srgba::WHITE,
+            double_sided: false,
+            transparency: Transparency::Opaque,
             animation_frames: 1,
+        }
+    }
+}
+
+// Subset of AlphaMode
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Transparency {
+    Opaque,
+    Blend,
+    Mask,
+    Multiply,
+    Premultiplied,
+    Add,
+}
+
+impl Transparency {
+    fn as_alpha_mode(&self) -> AlphaMode {
+        match self {
+            Self::Opaque => AlphaMode::Opaque,
+            Self::Blend => AlphaMode::Blend,
+            Self::Mask => AlphaMode::Mask(0.5),
+            Self::Multiply => AlphaMode::Multiply,
+            Self::Premultiplied => AlphaMode::Premultiplied,
+            Self::Add => AlphaMode::Add,
         }
     }
 }
@@ -78,46 +130,74 @@ pub fn load_materials(
     mut commands: Commands,
     block_textures: Res<BlockTextures>,
     asset_server: Res<AssetServer>,
-    mut block_materials: ResMut<Assets<BlockMaterial>>,
-    mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut block_material_assets: ResMut<Assets<BlockMaterial>>,
+    mut model_material_assets: ResMut<Assets<ModelMaterial>>,
 ) {
+    match load_model_materials(&mut model_material_assets, &asset_server, &block_textures) {
+        Ok(model_materials) => commands.insert_resource(model_materials),
+        Err(e) => {
+            net.disconnect(&e);
+            return;
+        }
+    }
+
+    match load_block_materials(&mut block_material_assets, &asset_server, &block_textures) {
+        Ok(block_materials) => commands.insert_resource(block_materials),
+        Err(e) => {
+            net.disconnect(&e);
+            return;
+        }
+    }
+}
+
+fn load_model_materials(
+    model_material_assets: &mut Assets<ModelMaterial>,
+    asset_server: &AssetServer,
+    block_textures: &BlockTextures,
+) -> Result<Materials<ModelMaterial>, String> {
     let mut materials = Materials::default();
 
-    let dir = std::path::PathBuf::from("server_assets/active/materials");
-    for dir_entry in std::fs::read_dir(&dir).unwrap() {
+    let directory = match std::fs::read_dir(MODEL_MATERIAL_PATH) {
+        Ok(dir) => dir,
+        Err(e) => {
+            return Err(format!(
+                "Misconfigured assets: Failed to read from the model materials directory at '{}'\n\
+                Error: {}",
+                MODEL_MATERIAL_PATH, e
+            ));
+        }
+    };
+
+    for dir_entry in directory {
         let file_path = match dir_entry {
             Ok(p) => p.path(),
             Err(e) => {
-                net.disconnect(format!(
+                return Err(format!(
                     "Encountered error reading file entries in directory: {}\n Error: {}",
-                    dir.to_string_lossy(),
-                    e
+                    MODEL_MATERIAL_PATH, e
                 ));
-                return;
             }
         };
 
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
             Err(e) => {
-                net.disconnect(format!(
-                    "Failed to open material config.\nPath: {}\nError: {}",
-                    file_path.to_string_lossy(),
+                return Err(format!(
+                    "Failed to open material configuration.\nPath: {}\nError: {}",
+                    file_path.display(),
                     e
                 ));
-                return;
             }
         };
 
-        let config: MaterialConfig = match serde_json::from_reader(file) {
+        let config: ModelMaterialConfig = match serde_json::from_reader(file) {
             Ok(c) => c,
             Err(e) => {
-                net.disconnect(format!(
+                return Err(format!(
                     "Failed to read material configuration, path: {} Error: {}",
-                    file_path.to_string_lossy(),
+                    file_path.display(),
                     e
                 ));
-                return;
             }
         };
 
@@ -147,67 +227,30 @@ pub fn load_materials(
             None => None,
         };
 
-        // TODO: Create separate enum that is serializable
-        let alpha_mode = match config.transparency.as_str() {
-            "opaque" => AlphaMode::Opaque,
-            "blend" => AlphaMode::Blend,
-            "mask" => AlphaMode::Mask(0.5),
-            "multiply" => AlphaMode::Multiply,
-            "premultiplied" => AlphaMode::Premultiplied,
-            "add" => AlphaMode::Add,
-            wrong_one => {
-                net.disconnect(format!(
-                    "Failed to read material configuration, path: {}\nError: 'transparency' needs to be one of 'opaque', 'mask', 'multiply', 'premultiplied' and 'add'. '{}' is not recognized.",
-                    file_path.to_string_lossy(),
-                    wrong_one
-                ));
-                return;
-            }
+        let standard_material = StandardMaterial {
+            base_color: config.base_color.into(),
+            base_color_texture,
+            emissive: config.emissive.into(),
+            emissive_texture,
+            perceptual_roughness: config.perceptual_roughness,
+            metallic: config.metallic,
+            metallic_roughness_texture,
+            reflectance: config.reflectance,
+            normal_map_texture,
+            occlusion_texture,
+            double_sided: config.double_sided,
+            unlit: config.unlit,
+            fog_enabled: config.fog_enabled,
+            alpha_mode: config.transparency.as_alpha_mode(),
+            ..default()
         };
 
-        let handle = if config.r#type == "block" {
-            let material = BlockMaterial {
-                base_color: config.base_color.into(),
-                cull_mode: if config.double_sided {
-                    None
-                } else {
-                    Some(Face::Back)
-                },
-                alpha_mode,
-                depth_bias: 0.0,
-                texture_array: Some(block_textures.handle.clone()),
-                animation_frames: config.animation_frames,
-            };
-            block_materials.add(material).untyped()
-        } else if config.r#type == "standard" {
-            // TODO: Maybe this can be removed, nothing uses it. I can't quite remember what the
-            // plan was. Think I thought mobs were to use it.
-            let material = StandardMaterial {
-                base_color: config.base_color.into(),
-                base_color_texture,
-                emissive: config.emissive.into(),
-                emissive_texture,
-                perceptual_roughness: config.perceptual_roughness,
-                metallic: config.metallic,
-                metallic_roughness_texture,
-                reflectance: config.reflectance,
-                normal_map_texture,
-                occlusion_texture,
-                double_sided: config.double_sided,
-                unlit: config.unlit,
-                fog_enabled: config.fog_enabled,
-                alpha_mode,
-                ..default()
-            };
-            standard_materials.add(material).untyped()
-        } else {
-            net.disconnect(format!(
-                "Misconfigured material, path: {}\n 'type' field is wrong, should be one
-                    of 'block' or 'standard'",
-                &file_path.to_string_lossy().into_owned()
-            ));
-            return;
-        };
+        let handle = model_material_assets.add(ModelMaterial {
+            base: standard_material,
+            extension: ModelMaterialExtension {
+                block_textures: block_textures.handle.clone(),
+            },
+        });
 
         let name = file_path
             .file_stem()
@@ -217,5 +260,81 @@ pub fn load_materials(
         materials.insert(name, handle);
     }
 
-    commands.insert_resource(materials);
+    return Ok(materials);
+}
+
+fn load_block_materials(
+    block_material_assets: &mut Assets<BlockMaterial>,
+    asset_server: &AssetServer,
+    block_textures: &BlockTextures,
+) -> Result<Materials<BlockMaterial>, String> {
+    let mut materials = Materials::default();
+
+    let directory = match std::fs::read_dir(BLOCK_MATERIAL_PATH) {
+        Ok(dir) => dir,
+        Err(e) => {
+            return Err(format!(
+                "Misconfigured assets: Failed to read from block materials directory at '{}'\n\
+                Error: {}",
+                BLOCK_MATERIAL_PATH, e
+            ));
+        }
+    };
+
+    for dir_entry in directory {
+        let file_path = match dir_entry {
+            Ok(p) => p.path(),
+            Err(e) => {
+                return Err(format!(
+                    "Encountered error reading file entries in directory: {}\n Error: {}",
+                    BLOCK_MATERIAL_PATH, e
+                ));
+            }
+        };
+
+        let file = match std::fs::File::open(&file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(format!(
+                    "Failed to open material configuration.\nPath: {}\nError: {}",
+                    file_path.display(),
+                    e
+                ));
+            }
+        };
+
+        let config: BlockMaterialConfig = match serde_json::from_reader(file) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(format!(
+                    "Failed to read material configuration, path: {} Error: {}",
+                    file_path.display(),
+                    e
+                ));
+            }
+        };
+
+        let block_material = BlockMaterial {
+            base_color: config.base_color.into(),
+            cull_mode: if config.double_sided {
+                None
+            } else {
+                Some(Face::Back)
+            },
+            alpha_mode: config.transparency.as_alpha_mode(),
+            depth_bias: 0.0,
+            texture_array: Some(block_textures.handle.clone()),
+            animation_frames: config.animation_frames,
+        };
+        let handle = block_material_assets.add(block_material);
+
+        let name = file_path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        materials.insert(name, handle);
+    }
+
+    return Ok(materials);
 }
