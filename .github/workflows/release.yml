@@ -36,9 +36,8 @@ jobs:
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@master
-        # XXX: When changing this remember to do it in client/rust-toolchain.toml too
         with:
-          toolchain: nightly-2025-08-02
+          toolchain: nightly
           targets: ${{ matrix.target }}
 
       - name: Cache rust dependencies
