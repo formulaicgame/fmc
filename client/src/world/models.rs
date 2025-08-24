@@ -473,7 +473,7 @@ fn play_animations(
             // net.disconnect(
             //     "The server tried to play an animation for an entity that doesn't exist.",
             // );
-            return;
+            continue;
         };
 
         let (model, mut animation_player, mut transition) =

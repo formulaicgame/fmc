@@ -38,7 +38,9 @@ impl Plugin for ModelPlugin {
                     send_color,
                     remove_models.after(send_model_transform),
                     send_model_transform.after(TransformSystem::TransformPropagate),
-                    update_visibility.after(TransformSystem::TransformPropagate),
+                    send_models
+                        .before(send_animations)
+                        .after(TransformSystem::TransformPropagate),
                 )
                     .in_set(ModelSystems),
             );
@@ -327,9 +329,9 @@ impl AnimationPlayer {
         self.animation_queue.last_mut().unwrap()
     }
 
+    /// Animations always run to completion, but this lets you 'stop' one if it is
+    /// a repeating animation.
     pub fn stop(&mut self, animation_index: u32) {
-        // Animation's always run to completion, but this let's you 'stop' it if it is
-        // a repeating animation.
         self.animation_queue.push(Animation {
             restart: false,
             animation_index,
@@ -626,7 +628,7 @@ fn update_model_assets(
 }
 
 // TODO: Animations must be sent
-fn update_visibility(
+fn send_models(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     player_query: Query<Entity, With<Player>>,
