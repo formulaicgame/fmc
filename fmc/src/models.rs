@@ -31,7 +31,7 @@ impl Plugin for ModelPlugin {
                 (
                     send_models_on_chunk_subscription.before(send_animations),
                     //update_model_assets,
-                    apply_animations
+                    apply_movement_animations
                         .before(send_animations)
                         .after(TransformSystem::TransformPropagate),
                     send_animations,
@@ -547,7 +547,7 @@ fn send_model_transform(
     }
 }
 
-fn apply_animations(
+fn apply_movement_animations(
     time: Res<Time>,
     mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>,
 ) {
@@ -568,23 +568,23 @@ fn apply_animations(
 
             if !animation_player.playing_move_animation && speed > 0.002 {
                 animation_player.playing_move_animation = true;
-                if let Some(idle_animation) = animation_player.idle_animation {
-                    let transition = animation_player.transition_time;
-                    animation_player
+                if let Some(idle_animation) = animation_player.idle_animation && animation_player.transition_time != 0.0 {
+                    let transition_time = animation_player.transition_time;
+                    let mut animation = animation_player
                         .play(move_animation)
                         .repeat()
-                        .transition(idle_animation, transition);
+                        .transition(idle_animation, transition_time);
                 } else {
                     animation_player.play(move_animation).repeat();
                 }
             } else if animation_player.playing_move_animation && speed < 0.002 {
                 animation_player.playing_move_animation = false;
-                if let Some(idle_animation) = animation_player.idle_animation {
-                    let transition = animation_player.transition_time;
+                if let Some(idle_animation) = animation_player.idle_animation && animation_player.transition_time != 0.0 {
+                    let transition_time = animation_player.transition_time;
                     animation_player
                         .play(idle_animation)
                         .repeat()
-                        .transition(move_animation, transition);
+                        .transition(move_animation, transition_time);
                 } else {
                     animation_player.stop(move_animation);
                 }
