@@ -20,7 +20,7 @@ use crate::{
     database::Database,
     items::{ItemConfig, ItemId, Items},
     models::{ModelAssetId, Models},
-    physics::{shapes::Aabb, Collider},
+    physics::{Collider, shapes::Aabb},
     players::Camera,
     prelude::*,
     utils::Rng,
@@ -87,7 +87,7 @@ fn load_blocks_to_resource(
         ids: database.load_block_ids(),
     };
 
-    let mut block_ids = blocks.asset_ids();
+    let mut block_ids = blocks.ids().clone();
     let mut maybe_blocks = Vec::new();
     maybe_blocks.resize_with(block_ids.len(), Option::default);
 
@@ -126,7 +126,16 @@ fn load_blocks_to_resource(
         };
 
         let model_id = if let Some(model_name) = &block_config_json.model {
-            Some(models.get_by_name(&model_name).id)
+            match models.get_config_by_name(&model_name) {
+                Some(m) => Some(m.id),
+                None => {
+                    panic!(
+                        "Failed to read block at: {}\nError: no model by the name: {}",
+                        file_path.display(),
+                        model_name
+                    );
+                }
+            }
         } else {
             None
         };
@@ -144,8 +153,8 @@ fn load_blocks_to_resource(
                     .map(|aabb| Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
                     .collect(),
             }
-        } else if let Some(model_name) = block_config_json.model {
-            let model_config = models.get_by_name(&model_name);
+        } else if let Some(model_id) = model_id {
+            let model_config = models.get_config(&model_id);
             vec![Collider::from_min_max(
                 model_config.aabb.min(),
                 model_config.aabb.max(),
@@ -351,8 +360,8 @@ impl Blocks {
         }
     }
 
-    pub fn asset_ids(&self) -> HashMap<String, BlockId> {
-        return self.ids.clone();
+    pub fn ids(&self) -> &HashMap<String, BlockId> {
+        return &self.ids;
     }
 
     pub fn contains_block(&self, block_name: &str) -> bool {
@@ -451,7 +460,7 @@ impl BlockDropKind {
     }
 }
 
-// Paths to textures used by a cube relative to /textures/
+// Paths to textures used by a cube, relative to /textures/
 #[derive(Debug, Deserialize, Clone)]
 struct BlockFaceTextures {
     top: String,
@@ -551,7 +560,7 @@ struct BlockConfigJson {
     // Collider used for physics/hit detection.
     hitbox: Option<ColliderJson>,
     // These are the three ways you can define a block. We use them to generate the hitbox when it
-    // is not explicitly defined. 'model' is a gltf model, 'quads' is a set vertices and 'faces' is
+    // is not explicitly defined. 'model' is a gltf model, 'quads' is a set of vertices and 'faces' is
     // the six faces of a cube.
     model: Option<String>,
     quads: Option<Vec<BlockQuad>>,
@@ -586,7 +595,7 @@ impl BlockConfigJson {
                             parent_path.display(),
                             e
                         )
-                        .into())
+                        .into());
                     }
                 };
                 parent

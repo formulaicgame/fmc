@@ -7,7 +7,7 @@ use crate::{
     assets::AssetSet,
     blocks::{BlockConfig, BlockId},
     database::Database,
-    models::ModelAssetId,
+    models::{ModelAssetId, Models},
 };
 
 pub type ItemId = u32;
@@ -20,7 +20,7 @@ impl Plugin for ItemPlugin {
     }
 }
 
-fn load_items(mut commands: Commands, database: Res<Database>) {
+fn load_items(mut commands: Commands, models: Res<Models>, database: Res<Database>) {
     let mut items = Items {
         configs: HashMap::new(),
         ids: database.load_item_ids(),
@@ -58,16 +58,14 @@ fn load_items(mut commands: Commands, database: Res<Database>) {
             None
         };
 
-        // TODO: I don't remember why this was necessary, but it would be nice if this function
-        // could just wait for models to be loaded. Then database.load_models could return a vec
-        // too.
-        let models = database.load_models();
-        let model_id = match models.get_index_of(&json.equip_model) {
-            Some(id) => id as ModelAssetId,
-            None => panic!(
-                "Failed to parse item config at: {}\nError: Missing model by the name: {}",
-                &file_path, &json.equip_model
-            ),
+        let model_id = match models.get_config_by_name(&json.equip_model) {
+            Some(m) => m.id,
+            None => {
+                panic!(
+                    "Failed to parse item config at: {}\nError: Missing model by the name: {}",
+                    &file_path, &json.equip_model
+                );
+            }
         };
 
         items.configs.insert(
@@ -127,6 +125,7 @@ struct ItemConfigJson {
     name: String,
     /// Block name of the block this item can place.
     block: Option<String>,
+    // TODO: Should just be "model"
     /// Item model filename
     equip_model: String,
     stack_size: u32,
@@ -160,8 +159,8 @@ impl Items {
         return self.ids.get(name).cloned();
     }
 
-    pub fn asset_ids(&self) -> HashMap<String, ItemId> {
-        return self.ids.clone();
+    pub fn ids(&self) -> &HashMap<String, ItemId> {
+        return &self.ids;
     }
 }
 

@@ -4,13 +4,13 @@ use std::{
     net::{SocketAddr, TcpStream},
     ops::{Range, RangeFrom, RangeTo},
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
 use bevy::{ecs::system::SystemParam, utils::syncunsafecell::SyncUnsafeCell};
-use fmc_protocol::{messages, ClientBound, MessageType};
+use fmc_protocol::{ClientBound, MessageType, messages};
 use serde::Serialize;
 
 use crate::{
@@ -444,9 +444,9 @@ impl ServerConfig<'_> {
     fn to_message(&self) -> Vec<u8> {
         let server_config = messages::ServerConfig {
             assets_hash: self.assets.hash,
-            block_ids: Blocks::get().asset_ids(),
-            model_ids: self.models.asset_ids(),
-            item_ids: self.items.asset_ids(),
+            block_ids: Blocks::get().ids().clone(),
+            model_ids: self.models.ids().clone(),
+            item_ids: self.items.ids().clone(),
             render_distance: self.render_distance.chunks,
         };
 
@@ -647,8 +647,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -660,8 +662,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -673,8 +677,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -686,8 +692,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -699,8 +707,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -712,8 +722,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -725,8 +737,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -738,8 +752,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -751,8 +767,10 @@ fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
                         });
                     } else {
                         server.to_disconnect.insert(*entity);
-                        error!("Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
                         break;
                     }
                 }
@@ -811,7 +829,9 @@ fn send_messages(server: ResMut<Server>) {
                 // client has to be disconnected as continuing would cause loss of data when the
                 // message buffer is rotated.
                 if server.to_disconnect.insert(*entity) {
-                    error!("Connection to player too slow, write buffer at capacity, disconnecting player.");
+                    error!(
+                        "Connection to player too slow, write buffer at capacity, disconnecting player."
+                    );
                 }
             }
             Err(e) => {

@@ -4,7 +4,6 @@ use std::{
 };
 
 use bevy::prelude::*;
-use indexmap::IndexSet;
 
 use crate::{
     blocks::{BlockData, BlockId, BlockState},
@@ -167,8 +166,8 @@ impl Database {
 
         conn.execute(
             "create table if not exists model_ids (
-                name TEXT NOT NULL UNIQUE,
-                id INTEGER
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
                 )",
             [],
         )
@@ -529,7 +528,9 @@ impl Database {
 
         for name in block_names.into_iter() {
             if let Err(e) = stmt.execute(rusqlite::params![name]) {
-                panic!("Couldn't write the {name} block to the database, this is most likely because of a duplicate block with the same name.\nError: {e}");
+                panic!(
+                    "Couldn't write the {name} block to the database, this is most likely because of a duplicate block with the same name.\nError: {e}"
+                );
             }
         }
 
@@ -644,14 +645,14 @@ impl Database {
     }
 
     // Load model names sorted by their model ids
-    pub fn load_models(&self) -> IndexSet<String> {
+    pub fn load_model_ids(&self) -> Vec<String> {
         let conn = self.get_read_connection();
         let mut stmt = conn.prepare("SELECT name FROM model_ids").unwrap();
         let mut rows = stmt.query([]).unwrap();
 
-        let mut models = IndexSet::new();
+        let mut models = Vec::new();
         while let Some(row) = rows.next().unwrap() {
-            models.insert(row.get(0).unwrap());
+            models.push(row.get(0).unwrap());
         }
 
         return models;

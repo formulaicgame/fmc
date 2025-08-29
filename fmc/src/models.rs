@@ -2,18 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::{math::DVec3, prelude::*};
 use fmc_protocol::messages;
-use indexmap::IndexMap;
 
 use crate::{
     assets::AssetSet,
     bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystem},
     database::Database,
     networking::Server,
-    physics::{shapes::Aabb, Collider},
+    physics::shapes::Aabb,
     players::Player,
-    world::{
-        chunk::ChunkPosition, ChunkOrigin, ChunkSubscriptionEvent, ChunkSubscriptions, WorldMap,
-    },
+    world::{ChunkOrigin, ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
 };
 
 pub const MODEL_PATH: &str = "./assets/client/textures/models/";
@@ -62,7 +59,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
     // since the extension can be any of gltf/glb/json.
     // As a side effect, this allows changing the file type after the model has been registered as
     // part of a world.
-    let mut configs = HashMap::with_capacity(directory.size_hint().0);
+    let mut model_configs = HashMap::with_capacity(directory.size_hint().0);
 
     for dir_entry in directory {
         let path = match dir_entry {
@@ -176,27 +173,32 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
         // TODO: These unwraps can probably fail
         let name = path.file_stem().unwrap().to_str().unwrap().to_lowercase();
 
-        configs.insert(name, config);
+        model_configs.insert(name, config);
     }
 
-    let model_names = database.load_models();
+    let model_ids = database.load_model_ids();
 
-    let mut model_configs = Models(IndexMap::with_capacity(model_names.len()));
+    let mut models = Models {
+        configs: Vec::with_capacity(model_ids.len()),
+        ids: HashMap::with_capacity(model_ids.len()),
+    };
 
-    for model_name in model_names {
-        let Some(mut config) = configs.remove(&model_name) else {
+    for (model_id, model_name) in model_ids.into_iter().enumerate() {
+        let Some(mut config) = model_configs.remove(&model_name) else {
             panic!(
                 "Missing model '{}', make sure it exists at '{}' as a gltf/glb/json file",
                 model_name, MODEL_PATH
             );
         };
 
-        config.id = model_configs.0.len() as u32;
+        let id = model_id as ModelAssetId;
+        config.id = id;
+        models.configs.push(config);
 
-        model_configs.0.insert(model_name, config);
+        models.ids.insert(model_name, id);
     }
 
-    commands.insert_resource(model_configs);
+    commands.insert_resource(models);
 }
 
 // TODO: Setting the default move animation is almost always something you want to do, but only on
@@ -226,8 +228,6 @@ pub enum Model {
         material_alpha_cutoff: f32,
         /// Render mesh from both sides
         material_double_sided: bool,
-        /// Collider
-        collider: Option<Collider>,
     },
 }
 
@@ -407,33 +407,28 @@ pub struct ModelConfig {
 
 // The models are stored as an IndexMap where the index corresponds to the model's asset id.
 #[derive(Resource)]
-pub struct Models(IndexMap<String, ModelConfig>);
+pub struct Models {
+    configs: Vec<ModelConfig>,
+    ids: HashMap<String, ModelAssetId>,
+}
 
 impl Models {
     #[track_caller]
-    pub fn get_by_name(&self, name: &str) -> &ModelConfig {
-        if let Some(model) = self.0.get(name) {
-            model
-        } else {
-            panic!(
-                "Missing model: '{}', make sure it is added to the assets.",
-                name
-            );
-        }
+    pub fn get_config_by_name(&self, name: &str) -> Option<&ModelConfig> {
+        let id = self.ids.get(name)?;
+        return self.configs.get(*id as usize);
     }
 
-    pub fn get_by_id(&self, id: ModelAssetId) -> &ModelConfig {
-        &self.0[id as usize]
+    pub fn get_config(&self, id: &ModelAssetId) -> &ModelConfig {
+        &self.configs[*id as usize]
     }
 
-    pub fn asset_ids(&self) -> HashMap<String, ModelAssetId> {
-        return self
-            .0
-            .keys()
-            .cloned()
-            .enumerate()
-            .map(|(id, name)| (name, id as ModelAssetId))
-            .collect();
+    pub fn get_id(&self, name: &str) -> Option<ModelAssetId> {
+        return self.ids.get(name).cloned();
+    }
+
+    pub fn ids(&self) -> &HashMap<String, ModelAssetId> {
+        return &self.ids;
     }
 }
 
@@ -568,7 +563,9 @@ fn apply_movement_animations(
 
             if !animation_player.playing_move_animation && speed > 0.002 {
                 animation_player.playing_move_animation = true;
-                if let Some(idle_animation) = animation_player.idle_animation && animation_player.transition_time != 0.0 {
+                if let Some(idle_animation) = animation_player.idle_animation
+                    && animation_player.transition_time != 0.0
+                {
                     let transition_time = animation_player.transition_time;
                     let mut animation = animation_player
                         .play(move_animation)
@@ -579,7 +576,9 @@ fn apply_movement_animations(
                 }
             } else if animation_player.playing_move_animation && speed < 0.002 {
                 animation_player.playing_move_animation = false;
-                if let Some(idle_animation) = animation_player.idle_animation && animation_player.transition_time != 0.0 {
+                if let Some(idle_animation) = animation_player.idle_animation
+                    && animation_player.transition_time != 0.0
+                {
                     let transition_time = animation_player.transition_time;
                     animation_player
                         .play(idle_animation)
@@ -689,8 +688,6 @@ fn send_models(
                     material_alpha_mode,
                     material_alpha_cutoff,
                     material_double_sided,
-                    // TODO: Collider must be sent to clients
-                    collider: _collider,
                 } => net.send_many(
                     subs.iter().filter(|sub| Some(**sub) != player_entity),
                     messages::SpawnCustomModel {
@@ -792,8 +789,6 @@ fn send_models_on_chunk_subscription(
                         material_alpha_mode,
                         material_alpha_cutoff,
                         material_double_sided,
-                        // TODO: Collider must be sent to clients
-                        collider: _collider,
                     } => net.send_one(
                         chunk_sub.player_entity,
                         messages::SpawnCustomModel {

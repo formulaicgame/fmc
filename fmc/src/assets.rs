@@ -1,7 +1,7 @@
 use std::hash::{DefaultHasher, Hasher};
 
 use bevy::prelude::*;
-use fmc_protocol::{messages, MessageType};
+use fmc_protocol::{MessageType, messages};
 
 /// Manages the server's assets
 pub struct AssetPlugin;
@@ -10,9 +10,7 @@ impl Plugin for AssetPlugin {
         app.add_systems(PreStartup, compress_assets);
         app.configure_sets(
             PreStartup,
-            AssetSet::Blocks
-                .after(AssetSet::Items)
-                .after(AssetSet::Models),
+            (AssetSet::Models, AssetSet::Items, AssetSet::Blocks).chain(),
         );
     }
 }
@@ -22,7 +20,6 @@ impl Plugin for AssetPlugin {
 pub enum AssetSet {
     Models,
     Items,
-    // Blocks rely on Models, and Items
     Blocks,
 }
 
