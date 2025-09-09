@@ -34,8 +34,8 @@ impl Plugin for ModelMaterialPlugin {
                 prepass_enabled: true,
                 ..default()
             })
-            // Some weird schedule ordering here to avoid flickering when replacing the meshes.
-            // Chosen at random until it worked.
+            // Some weird schedule ordering here to avoid flickering. Chosen at random until it
+            // worked.
             .add_systems(
                 PostUpdate,
                 (add_lighting, replace_standard_material).run_if(in_state(GameState::Playing)),

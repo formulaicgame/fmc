@@ -23,8 +23,8 @@ pub struct Chunk {
     // This stores the edge features of the chunk + the features that contain bounding boxes that
     // need to be checked against when applying edge features.
     pub terrain_features: Vec<TerrainFeature>,
-    // Blocks are stored as one contiguous array. To access a block at the coordinate x,y,z
-    // (zero indexed) the formula x * Chunk::SIZE^2 + z * Chunk::SIZE + y is used.
+    // Blocks are stored as an array. To access a block at the coordinate x,y,z
+    // the formula x * Chunk::SIZE^2 + z * Chunk::SIZE + y is used.
     pub blocks: Vec<BlockId>,
     // Block state containing optional information, see `BlockState` for bit layout. Saved as u16
     // because it is sent to the players.

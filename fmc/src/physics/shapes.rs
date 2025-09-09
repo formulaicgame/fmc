@@ -1,15 +1,18 @@
-// Yoinked this from bevy::render::Primitives so the render feature doesn't have to be
-// added.
-
-use bevy::math::{DMat3, DQuat, DVec3};
+use bevy::math::{DMat3, DVec3};
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
 
 use crate::blocks::BlockFace;
 use crate::prelude::Transform;
 
+#[derive(Debug, Deserialize)]
+pub struct AabbJson {
+    pub min: DVec3,
+    pub max: DVec3,
+}
+
 /// An Axis-Aligned Bounding Box
-#[derive(Copy, Clone, Debug, Default, Reflect, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Reflect, Serialize)]
 pub struct Aabb {
     pub center: DVec3,
     pub half_extents: DVec3,
@@ -18,8 +21,6 @@ pub struct Aabb {
 impl Aabb {
     #[inline]
     pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
-        let min = DVec3::from(min);
-        let max = DVec3::from(max);
         let center = 0.5 * (max + min);
         let half_extents = 0.5 * (max - min);
         Self {

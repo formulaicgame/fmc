@@ -147,7 +147,7 @@ pub fn load_blocks(
     };
 
     for file_path in files {
-        let block_config_json = match BlockConfig::read_as_json(&file_path) {
+        let block_config_json = match BlockJson::read_as_json(&file_path) {
             Ok(c) => c,
             Err(e) => {
                 net.disconnect(&format!(
@@ -177,12 +177,11 @@ pub fn load_blocks(
         };
 
         let block = match block_config {
-            BlockConfig::Cube {
+            BlockJson::Cube {
                 name,
                 faces,
                 quads,
                 friction,
-                drag,
                 material,
                 only_cull_self,
                 interactable,
@@ -284,7 +283,7 @@ pub fn load_blocks(
                             Some(id) => *id,
                             None => {
                                 net.disconnect(format!(
-                                    "Misconfigured assets: Failed to read block at: {}, no block texture with the name {}",
+                                    "Misconfigured assets: failed to read block at: {}, no block texture with the name {}",
                                     file_path.display(),
                                     &quad.texture
                                 ));
@@ -381,41 +380,37 @@ pub fn load_blocks(
                     None
                 };
 
-                let aabb = if !mesh_primitives.is_empty() {
-                    Aabb::enclosing(
-                        mesh_primitives
-                            .iter()
-                            .map(|p| p.vertices)
-                            .flatten()
-                            .map(|vertex| Vec3::from_slice(&vertex)),
-                    )
-                } else {
-                    None
-                };
+                let aabb = Aabb::enclosing(
+                    mesh_primitives
+                        .iter()
+                        .map(|p| p.vertices)
+                        .flatten()
+                        .map(|vertex| Vec3::from_slice(&vertex)),
+                )
+                .unwrap_or(Aabb::from_min_max(Vec3::ZERO, Vec3::ONE));
 
-                Block::Cube(Cube {
+                Block {
                     name,
+                    model: None,
                     material_handle,
                     quads: mesh_primitives,
                     friction,
-                    drag,
                     interactable,
                     cull_method,
                     cull_delimiters,
-                    light_attenuation: light_attenuation.unwrap_or(15).min(15),
                     light: light.min(15),
+                    light_attenuation: light_attenuation.unwrap_or(15).min(15),
                     fog_settings,
                     sound,
                     placement,
                     aabb,
-                })
+                }
             }
 
-            BlockConfig::Model {
+            BlockJson::Model {
                 name,
                 model,
                 friction,
-                drag,
                 interactable,
                 sound,
                 light,
@@ -424,19 +419,25 @@ pub fn load_blocks(
                 // TODO: model must cause a disconnect if not found
                 let model = {
                     let path = MODEL_PATH.to_owned() + &model + ".glb#Scene0";
-                    asset_server.load(&path)
+                    Some(asset_server.load(&path))
                 };
 
-                Block::Model(BlockModel {
+                Block {
                     name,
                     model,
+                    material_handle: Handle::default(),
+                    quads: Vec::new(),
                     friction,
-                    drag,
                     interactable,
-                    sound,
+                    cull_method: CullMethod::None,
+                    cull_delimiters: Default::default(),
                     light: light.min(15),
+                    light_attenuation: 1,
+                    fog_settings: None,
+                    sound,
                     placement,
-                })
+                    aabb: Aabb::from_min_max(Vec3::ZERO, Vec3::ONE),
+                }
             }
         };
 
@@ -498,17 +499,18 @@ impl Blocks {
 }
 
 #[derive(Debug)]
-pub struct Cube {
+pub struct Block {
     // Name of the block
     name: String,
+    // The model used to render the block. This is unused, block models are spawned as regular
+    // models on the server. If a block that uses a model is in a chunk, it will just be ignored.
+    model: Option<Handle<Scene>>,
     // Material used to render this block.
     pub material_handle: Handle<materials::BlockMaterial>,
     // List of squares meshes that make up the block.
     pub quads: Vec<QuadPrimitive>,
-    // The friction of the block's surfaces.
-    friction: Option<Friction>,
-    // The drag when inside the block
-    drag: Vec3,
+    // The surface friction or drag
+    friction: Friction,
     // If when the player uses their equipped item on this block it should count as an
     // interaction(true), or if it should count as trying to place its associated block(false).
     interactable: bool,
@@ -526,153 +528,106 @@ pub struct Cube {
     // blocks like water as you only want the parts exposed to air to render when two water blocks
     // of different levels are adjacent to each other.
     cull_delimiters: [Option<(f32, f32)>; 4],
+    // Light emitted by the block
+    light: u8,
     // How much the block attenuates light. '0' will make sunlight travel downwards unimpeded, but
     // otherwise as if '1'.
     light_attenuation: u8,
     // Fog rendered if the camera is inside the bounds of the cube.
-    pub fog_settings: Option<DistanceFog>,
+    fog_settings: Option<DistanceFog>,
     // Sounds played when walked on or in (random pick)
     sound: Sound,
-    // Light emitted by the block
-    light: u8,
     // How the block can be placed
     placement: BlockPlacement,
     // The bounding box of the block
-    aabb: Option<Aabb>,
-}
-
-// TODO: This was made before the Models collection was made. This could hold model ids instead of
-// the handles. I have hardcoded the glb extension here, which would no longer be a thing.
-//
-// Models are used to render all blocks of irregular shape. Even though they are assigned block
-// ids, they are not used in interaction with the server
-#[derive(Debug)]
-pub struct BlockModel {
-    // Name of the block
-    name: String,
-    /// Model used when centered in the block
-    pub model: Handle<Scene>,
-    // The friction of the block's surfaces, applied by closest normal of the textures.
-    friction: Option<Friction>,
-    // The drag when inside the block
-    drag: Vec3,
-    // If when the player uses their equipped item on this block, it should count as an
-    // interaction, or it should count as trying to place a block.
-    interactable: bool,
-    // Sounds played when walked on or in (random pick)
-    sound: Sound,
-    // Light emitted by the block
-    light: u8,
-    // How the block can be placed
-    placement: BlockPlacement,
-}
-
-#[derive(Debug)]
-pub enum Block {
-    Cube(Cube),
-    Model(BlockModel),
+    aabb: Aabb,
 }
 
 impl Block {
+    pub fn is_block_model(&self) -> bool {
+        self.model.is_some()
+    }
+
+    pub fn is_solid(&self) -> bool {
+        matches!(self.friction, Friction::Surface { .. })
+    }
+
     pub fn cull_delimiter(&self, block_face: BlockFace) -> Option<(f32, f32)> {
-        match self {
-            Block::Cube(cube) => match block_face {
-                BlockFace::Top | BlockFace::Bottom => None,
-                b => cube.cull_delimiters[b as usize],
-            },
-            Block::Model(_) => None,
+        match block_face {
+            BlockFace::Top | BlockFace::Bottom => None,
+            b => self.cull_delimiters[b as usize],
         }
     }
 
     pub fn culls(&self, other: &Block) -> bool {
-        match self {
-            Block::Cube(cube) => {
-                let Block::Cube(other_cube) = other else {
-                    unreachable!()
-                };
-                match cube.cull_method {
-                    CullMethod::All => true,
-                    CullMethod::None => false,
-                    CullMethod::TransparentOnly => {
-                        other_cube.cull_method == CullMethod::TransparentOnly
-                    }
-                    // TODO: This isn't correct on purpose, the blocks should be compared. Could be by id,
-                    // but I don't have that here. Comparing by name is expensive, don't want to.
-                    // Will fuck up if two different blocks are put together. Can use const* to
-                    // compare pointer?
-                    CullMethod::OnlySelf => other_cube.cull_method == CullMethod::OnlySelf,
-                }
-            }
-            Block::Model(_) => false,
+        match self.cull_method {
+            CullMethod::All => true,
+            CullMethod::None => false,
+            CullMethod::TransparentOnly => other.cull_method == CullMethod::TransparentOnly,
+            // TODO: This isn't correct on purpose, the blocks should be compared. Could be by id,
+            // but I don't have that here. Comparing by name is expensive, don't want to.
+            // Will fuck up if two different blocks are put together. Can use const* to
+            // compare pointer?
+            CullMethod::OnlySelf => other.cull_method == CullMethod::OnlySelf,
         }
     }
 
     pub fn can_have_block_state(&self) -> bool {
-        match self {
-            Block::Cube(cube) => {
-                cube.placement.rotatable || cube.placement.side_transform.is_some()
-            }
-            // Block models aren't handled by the client, but sent as separate models by the
-            // server.
-            Block::Model(_model) => false,
-        }
+        self.placement.rotatable || self.placement.side_transform.is_some()
     }
 
-    pub fn friction(&self) -> Option<&Friction> {
-        match self {
-            Block::Cube(cube) => cube.friction.as_ref(),
-            Block::Model(model) => model.friction.as_ref(),
-        }
+    pub fn surface_friction(&self, block_face: BlockFace) -> Vec3 {
+        let friction = match self.friction {
+            Friction::Surface {
+                front,
+                back,
+                right,
+                left,
+                top,
+                bottom,
+            } => match block_face {
+                BlockFace::Front => front,
+                BlockFace::Back => back,
+                BlockFace::Right => right,
+                BlockFace::Left => left,
+                BlockFace::Top => top,
+                BlockFace::Bottom => bottom,
+            },
+            Friction::Drag(_) => 0.0,
+        };
+
+        Vec3::splat(friction)
     }
 
     pub fn drag(&self) -> Vec3 {
-        match self {
-            Block::Cube(cube) => cube.drag,
-            Block::Model(model) => model.drag,
+        match self.friction {
+            Friction::Drag(drag) => drag,
+            Friction::Surface { .. } => Vec3::ZERO,
         }
     }
 
     pub fn light_attenuation(&self) -> u8 {
-        match self {
-            Block::Cube(c) => c.light_attenuation,
-            Block::Model(_) => 0,
-        }
+        self.light_attenuation
     }
 
     pub fn light_level(&self) -> u8 {
-        match self {
-            Block::Cube(c) => c.light,
-            Block::Model(m) => m.light,
-        }
+        self.light
     }
 
     pub fn name(&self) -> &str {
-        match self {
-            Block::Cube(c) => &c.name,
-            Block::Model(m) => &m.name,
-        }
+        &self.name
     }
 
-    pub fn fog_settings(&self) -> Option<DistanceFog> {
-        match self {
-            Block::Cube(c) => c.fog_settings.clone(),
-            Block::Model(_) => None,
-        }
+    pub fn fog_settings(&self) -> Option<&DistanceFog> {
+        self.fog_settings.as_ref()
     }
 
     pub fn step_sounds(&self) -> &Vec<String> {
-        // Random index, don't know if correct
-        match self {
-            Block::Cube(c) => &c.sound.step,
-            Block::Model(m) => &m.sound.step,
-        }
+        &self.sound.step
     }
 
-    pub fn aabb(&self) -> Option<Aabb> {
-        match self {
-            Block::Cube(c) => c.aabb,
-            Block::Model(_) => None,
-        }
+    pub fn aabb(&self) -> &Aabb {
+        &self.aabb
     }
 }
 
@@ -751,9 +706,7 @@ impl BlockRotation {
 /// Block config that is stored on file.
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-enum BlockConfig {
-    // There is easy way to define a cube, and hard. Give 'faces' and it will generate cube mesh on
-    // its own. Give quads and the cube can take on non-cube shapes.
+enum BlockJson {
     Cube {
         /// Name of the block, must be unique
         name: String,
@@ -763,11 +716,9 @@ enum BlockConfig {
         faces: Option<CubeMeshTextureNames>,
         /// List of quads that make up a mesh.
         quads: Option<Vec<QuadPrimitiveJson>>,
-        /// The friction of the block's surfaces.
-        friction: Option<Friction>,
-        // The drag when inside the block
+        /// The friction of the block's surfaces or the drag.
         #[serde(default)]
-        drag: Vec3,
+        friction: Friction,
         /// Material that should be used to render the block.
         material: String,
         /// This block will only cull the faces of other blocks when they are of the same type.
@@ -795,11 +746,9 @@ enum BlockConfig {
         name: String,
         /// Name of the model file
         model: String,
-        /// The friction of the block's surfaces.
-        friction: Option<Friction>,
-        // The drag when inside the block
+        /// The friction of the block's surfaces or the drag.
         #[serde(default)]
-        drag: Vec3,
+        friction: Friction,
         /// If the block is interactable
         #[serde(default)]
         interactable: bool,
@@ -815,7 +764,7 @@ enum BlockConfig {
     },
 }
 
-impl BlockConfig {
+impl BlockJson {
     fn read_as_json(
         path: &std::path::Path,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -1028,11 +977,21 @@ impl BlockFace {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Friction {
-    pub front: f32,
-    pub back: f32,
-    pub right: f32,
-    pub left: f32,
-    pub top: f32,
-    pub bottom: f32,
+#[serde(untagged)]
+pub enum Friction {
+    Surface {
+        front: f32,
+        back: f32,
+        right: f32,
+        left: f32,
+        top: f32,
+        bottom: f32,
+    },
+    Drag(Vec3),
+}
+
+impl Default for Friction {
+    fn default() -> Self {
+        Self::Drag(Vec3::ZERO)
+    }
 }

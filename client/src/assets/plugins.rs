@@ -418,41 +418,16 @@ impl wit::PluginImports for WasmState {
         world_map.get_block(&block_position)
     }
 
-    fn get_block_name(&mut self, block_id: wit::BlockId) -> String {
-        // TODO: The wasm code can use an invalid block id
-        Blocks::get().get_config(block_id).name().to_owned()
-    }
-
-    fn get_block_friction(&mut self, block_id: wit::BlockId) -> wit::Friction {
-        // TODO: The wasm code can use an invalid block id
-        let config = Blocks::get().get_config(block_id);
-        let surface = if let Some(surface_friction) = config.friction() {
-            Some(wit::SurfaceFriction {
-                front: surface_friction.front,
-                back: surface_friction.back,
-                right: surface_friction.right,
-                left: surface_friction.left,
-                top: surface_friction.top,
-                bottom: surface_friction.bottom,
-            })
-        } else {
-            None
-        };
-
-        let drag = config.drag();
-        let drag = wit::Vec3 {
-            x: drag.x,
-            y: drag.y,
-            z: drag.z,
-        };
-
-        wit::Friction { surface, drag }
-    }
-
-    fn get_block_aabb(&mut self, block_id: wit::BlockId) -> Option<(wit::Vec3, wit::Vec3)> {
-        let config = Blocks::get().get_config(block_id);
-        let aabb = config.aabb()?;
-        Some((aabb.center.into(), aabb.half_extents.into()))
+    fn get_block_state(&mut self, block_position: wit::IVec3) -> Option<wit::BlockState> {
+        let world = self.world();
+        let origin = world.get_resource::<Origin>().unwrap();
+        let world_map = world.get_resource::<WorldMap>().unwrap();
+        let block_position = IVec3 {
+            x: block_position.x,
+            y: block_position.y,
+            z: block_position.z,
+        } + origin.0;
+        world_map.get_block_state(&block_position).map(|b| b.0)
     }
 
     fn get_models(&mut self, min: wit::Vec3, max: wit::Vec3) -> Vec<u32> {
@@ -489,30 +464,20 @@ impl wit::PluginImports for WasmState {
         models
     }
 
-    fn get_model_aabb(&mut self, model_id: u32) -> (wit::Vec3, wit::Vec3) {
+    fn get_model_transform(&mut self, model_id: u32) -> wit::Transform {
         let world = self.world();
-        let mut model_query = world.query::<(&GlobalTransform, &Model)>();
+        let mut model_query = world.query_filtered::<&GlobalTransform, With<Model>>();
         let model_entities = world.get_resource::<ModelEntities>().unwrap();
-        let configs = world.get_resource::<Models>().unwrap();
 
         // TODO: Not safe to unwrap
         let entity = model_entities.get_entity(&model_id).unwrap();
-        let (transform, model) = model_query.get(world, entity).unwrap();
+        let transform = model_query.get(world, entity).unwrap();
 
-        let aabb = match model {
-            Model::Asset(asset_id) => {
-                let config = configs.get_config(asset_id).unwrap();
-                &config.aabb
-            }
-            Model::Custom { aabb } => aabb,
+        return wit::Transform {
+            translation: transform.translation().into(),
+            rotation: transform.rotation().into(),
+            scale: transform.scale().into(),
         };
-
-        let transformed_aabb = transform_aabb(transform, aabb);
-
-        return (
-            transformed_aabb.center.into(),
-            transformed_aabb.half_extents.into(),
-        );
     }
 }
 

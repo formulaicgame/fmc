@@ -14,7 +14,7 @@ use crate::{
     rendering::materials::ParticleMaterial,
     utils,
     world::{
-        blocks::{Blocks, Friction},
+        blocks::{BlockFace, Blocks, Friction},
         world_map::WorldMap,
         MovesWithOrigin, Origin,
     },
@@ -285,15 +285,15 @@ pub fn simulate_particle_physics(
 
                         let block_config = blocks.get_config(block_id);
 
-                        friction = friction.max(block_config.drag().into());
-
-                        let Some(mut block_aabb) = block_config.aabb() else {
-                            continue;
-                        };
+                        let mut block_aabb = block_config.aabb().clone();
                         block_aabb.center += Vec3A::new(x as f32, y as f32, z as f32);
 
                         if let Some(overlap) = particle_aabb.intersects(&block_aabb) {
-                            collisions.push((overlap, block_config));
+                            if block_config.is_solid() {
+                                collisions.push((overlap, block_config));
+                            } else {
+                                friction = friction.max(block_config.drag().into());
+                            }
                         }
                     }
                 }
@@ -314,37 +314,39 @@ pub fn simulate_particle_physics(
                     Vec3A::select(valid_axes, backwards_time, Vec3A::MIN).max_element(),
                 ));
 
-                let Some(block_friction) = block_config.friction() else {
-                    continue;
-                };
-
                 let resolves_x = resolution_axis.test(0);
                 let resolves_y = resolution_axis.test(1);
                 let resolves_z = resolution_axis.test(2);
 
                 if resolves_y {
                     if velocity.y.is_sign_positive() {
-                        friction = friction.max(Vec3A::splat(block_friction.bottom));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Bottom).into());
                     } else {
-                        friction = friction.max(Vec3A::splat(block_friction.top));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Top).into());
                     }
 
                     move_back.y = collision.y + collision.y / 100.0;
                     velocity.y = 0.0;
                 } else if resolves_x {
                     if velocity.x.is_sign_positive() {
-                        friction = friction.max(Vec3A::splat(block_friction.left));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Left).into());
                     } else {
-                        friction = friction.max(Vec3A::splat(block_friction.right));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Right).into());
                     }
 
                     move_back.x = collision.x + collision.x / 100.0;
                     velocity.x = 0.0;
                 } else if resolves_z {
                     if velocity.z.is_sign_positive() {
-                        friction = friction.max(Vec3A::splat(block_friction.back));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Back).into());
                     } else {
-                        friction = friction.max(Vec3A::splat(block_friction.front));
+                        friction =
+                            friction.max(block_config.surface_friction(BlockFace::Front).into());
                     }
 
                     move_back.z = collision.z + collision.z / 100.0;

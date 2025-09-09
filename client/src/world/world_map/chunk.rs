@@ -9,23 +9,17 @@ use crate::world::blocks::{BlockId, BlockState};
 #[derive(Component)]
 pub struct ChunkMarker;
 
-/// There are two kinds of chunks.
-/// Uniform(air, solid stone, etc) chunks:
-///     entity = None
-///     blocks = Vec::with_capacity(1), contains type of block
-/// Chunks with blocks:
-///     entity = Some
-///     blocks = Vec::with_capacity(Chunk::SIZE^3)
 #[derive(Clone)]
 pub struct Chunk {
-    // Entity in the ECS. Stores mesh, None if the chunk shouldn't have one.
+    // The chunk only has an entity if it is rendered. Most chunks are "air" so do not need to take
+    // up resources.
     entity: Option<Entity>,
-    /// XXX: Notice that the coordinates align with the rendering world, the z axis extends
-    /// out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
-    /// A Chunk::SIZE^3 array containing all the blocks in the chunk.
-    /// Indexed by x*Chunk::SIZE^2 + z*CHUNK_SIZE + y
+    // NOTE: Notice that the coordinates align with the rendering world, the z axis extends
+    // out of the screen. 0,0,0 is the bottom left FAR corner. Not bottom left NEAR.
+    // A Chunk::SIZE^3 array containing all the blocks in the chunk.
+    // Indexed by x * Chunk::SIZE^2 + z * CHUNK_SIZE + y
     blocks: Vec<BlockId>,
-    /// Optional block state
+    // Optional block state
     block_state: HashMap<usize, BlockState>,
 }
 
@@ -34,25 +28,14 @@ impl Chunk {
 
     /// Build a normal chunk
     pub fn new(
-        entity: Entity,
+        entity: Option<Entity>,
         blocks: Vec<BlockId>,
         block_state: HashMap<usize, BlockState>,
     ) -> Self {
         return Self {
-            entity: Some(entity),
+            entity,
             blocks,
             block_state,
-        };
-    }
-
-    /// Create a new chunk of only air blocks; to be filled after creation.
-    pub fn new_air(blocks: Vec<BlockId>, block_state: HashMap<usize, BlockState>) -> Self {
-        assert!(blocks.len() == 1);
-
-        return Self {
-            entity: None,
-            block_state,
-            blocks,
         };
     }
 

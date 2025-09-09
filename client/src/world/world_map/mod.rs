@@ -6,7 +6,7 @@ use crate::{
     rendering::chunk::ExpandedChunk,
     utils,
     world::{
-        blocks::{BlockFace, BlockId, Blocks, Friction},
+        blocks::{BlockFace, BlockId, BlockState, Blocks, Friction},
         world_map::chunk::Chunk,
     },
 };
@@ -103,6 +103,21 @@ impl WorldMap {
         if let Some(chunk) = self.get_chunk(&chunk_position) {
             let block_position = utils::world_position_to_block_index(*position);
             return Some(chunk[block_position]);
+        } else {
+            return None;
+        }
+    }
+
+    pub fn get_block_state(&self, position: &IVec3) -> Option<BlockState> {
+        let chunk_position = utils::world_position_to_chunk_pos(*position);
+        if let Some(chunk) = self.get_chunk(&chunk_position) {
+            let block_index = utils::world_position_to_block_index(*position);
+            let block_position = utils::block_index_to_position(block_index);
+            return chunk.get_block_state(
+                block_position.x as usize,
+                block_position.y as usize,
+                block_position.z as usize,
+            );
         } else {
             return None;
         }

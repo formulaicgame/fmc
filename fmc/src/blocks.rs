@@ -13,14 +13,14 @@ use bevy::{
     math::{DQuat, DVec3},
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     assets::AssetSet,
     database::Database,
     items::{ItemConfig, ItemId, Items},
     models::{ModelAssetId, Models},
-    physics::{Collider, shapes::Aabb},
+    physics::{Collider, ColliderJson, shapes::Aabb},
     players::Camera,
     prelude::*,
     utils::Rng,
@@ -143,27 +143,21 @@ fn load_blocks_to_resource(
         // non-model blocks are defined in the 0..1 interval. This makes their collider hard to
         // rotate as they have their center of rotation at Vec3::splat(0.5). We move it to the origin to
         // avoid this. Model blocks don't have this problem as they are defined at the origin.
-        let colliders = if let Some(hitbox) = block_config_json.hitbox {
+        let collider = if let Some(hitbox) = block_config_json.hitbox {
             match hitbox {
                 ColliderJson::Single(aabb) => {
-                    vec![Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5)]
+                    Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5)
                 }
-                ColliderJson::Vec(aabbs) => aabbs
-                    .into_iter()
-                    .map(|aabb| Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
-                    .collect(),
+                ColliderJson::Vec(aabbs) => Collider::Multi(
+                    aabbs
+                        .into_iter()
+                        .map(|aabb| Aabb::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
+                        .collect(),
+                ),
             }
         } else if let Some(model_id) = model_id {
             let model_config = models.get_config(&model_id);
-            vec![Collider::from_min_max(
-                model_config.aabb.min(),
-                model_config.aabb.max(),
-            )]
-        } else if block_config_json.faces.is_some() {
-            vec![Collider::from_min_max(
-                DVec3::splat(-0.5),
-                DVec3::splat(0.5),
-            )]
+            model_config.collider.clone()
         } else if let Some(quads) = &block_config_json.quads {
             let mut min = Vec3::MAX;
             let mut max = Vec3::MIN;
@@ -173,12 +167,9 @@ fn load_blocks_to_resource(
                     max = max.max(vertex);
                 }
             }
-            vec![Collider::from_min_max(
-                min.as_dvec3() - 0.5,
-                max.as_dvec3() - 0.5,
-            )]
+            Collider::from_min_max(min.as_dvec3() - 0.5, max.as_dvec3() - 0.5)
         } else {
-            Vec::new()
+            Collider::from_min_max(DVec3::splat(-0.5), DVec3::splat(0.5))
         };
 
         let particle_textures = if let Some(particle_texture) = block_config_json.particle_texture {
@@ -210,15 +201,16 @@ fn load_blocks_to_resource(
             let block_config = BlockConfig {
                 name: block_config_json.name,
                 model: model_id,
-                friction: block_config_json.friction,
-                drag: block_config_json.drag,
+                friction: block_config_json
+                    .friction
+                    .unwrap_or(Friction::Drag(DVec3::ZERO)),
                 hardness: block_config_json.hardness,
                 replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
                 drop,
                 material,
                 placement: block_config_json.placement,
-                colliders,
+                collider,
                 particle_textures,
                 sound: block_config_json.sound,
                 quads: block_config_json.quads,
@@ -360,12 +352,16 @@ impl Blocks {
         }
     }
 
+    pub fn contains_block(&self, block_name: &str) -> bool {
+        return self.ids.contains_key(block_name);
+    }
+
     pub fn ids(&self) -> &HashMap<String, BlockId> {
         return &self.ids;
     }
 
-    pub fn contains_block(&self, block_name: &str) -> bool {
-        return self.ids.contains_key(block_name);
+    pub fn configs(&self) -> &Vec<Block> {
+        return &self.blocks;
     }
 }
 
@@ -472,19 +468,6 @@ struct BlockFaceTextures {
 }
 
 #[derive(Debug, Deserialize)]
-struct AabbJson {
-    min: DVec3,
-    max: DVec3,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum ColliderJson {
-    Single(AabbJson),
-    Vec(Vec<AabbJson>),
-}
-
-#[derive(Debug, Deserialize)]
 pub struct BlockQuad {
     pub vertices: [[f32; 3]; 4],
 }
@@ -540,11 +523,8 @@ impl Sounds {
 struct BlockConfigJson {
     // Name of the block
     name: String,
-    // The surface friction.
+    // The surface friction or drag.
     friction: Option<Friction>,
-    // The drag when inside the block
-    #[serde(default)]
-    drag: DVec3,
     // How long it takes to break the block without a tool
     hardness: Option<f32>,
     #[serde(default)]
@@ -638,10 +618,8 @@ pub struct BlockConfig {
     pub name: String,
     /// If a model is used to represent this block, this contains its model id
     pub model: Option<ModelAssetId>,
-    /// The friction of the block's surfaces.
-    pub friction: Option<Friction>,
-    /// The frictional drag when inside the block.
-    pub drag: DVec3,
+    /// The friction of the block's surfaces or its drag.
+    pub friction: Friction,
     // TODO: Not needed
     /// How long it takes to break the block without a tool in seconds, None if the block should
     /// not be breakable. e.g. water, air
@@ -657,7 +635,7 @@ pub struct BlockConfig {
     // The rendering material for the block, if it uses one.
     material: Option<BlockMaterial>,
     /// Collider used for physics and hit detection.
-    pub colliders: Vec<Collider>,
+    pub collider: Collider,
     /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
     // TODO: Not needed
@@ -694,8 +672,36 @@ impl BlockConfig {
         }
     }
 
+    pub fn surface_friction(&self, face: BlockFace) -> DVec3 {
+        match &self.friction {
+            Friction::Surface {
+                front,
+                back,
+                right,
+                left,
+                top,
+                bottom,
+            } => match face {
+                BlockFace::Front => DVec3::splat(*front),
+                BlockFace::Back => DVec3::splat(*back),
+                BlockFace::Right => DVec3::splat(*right),
+                BlockFace::Left => DVec3::splat(*left),
+                BlockFace::Top => DVec3::splat(*top),
+                BlockFace::Bottom => DVec3::splat(*bottom),
+            },
+            Friction::Drag(_) => DVec3::ZERO,
+        }
+    }
+
+    pub fn drag(&self) -> DVec3 {
+        match &self.friction {
+            Friction::Surface { .. } => DVec3::ZERO,
+            Friction::Drag(drag) => *drag,
+        }
+    }
+
     pub fn is_solid(&self) -> bool {
-        self.friction.is_some() && self.model.is_none()
+        matches!(self.friction, Friction::Surface { .. }) && self.model.is_none()
     }
 
     pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {
@@ -854,15 +860,18 @@ impl BlockFace {
     }
 }
 
-/// Friction values for solid blocks.
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct Friction {
-    pub front: f64,
-    pub back: f64,
-    pub right: f64,
-    pub left: f64,
-    pub top: f64,
-    pub bottom: f64,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum Friction {
+    Surface {
+        front: f64,
+        back: f64,
+        right: f64,
+        left: f64,
+        top: f64,
+        bottom: f64,
+    },
+    Drag(DVec3),
 }
 
 /// Block data is extra data that is optionally used by blocks that have their own entity. It can

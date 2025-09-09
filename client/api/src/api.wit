@@ -15,7 +15,8 @@ interface math {
         z: s32
     }
 
-    // TODO: Unfortunate ergonomics, include glam in the repo and gut the Quat
+    // TODO: Unfortunate ergonomics, include glam in the repo and gut the Quat?
+    //       Try with v128 "vector type"
     //
     // We use the f64 version instead because the f32 version is implemented with simd and so
     // doesn't have any fields.
@@ -42,21 +43,9 @@ world plugin {
     use transform.{transform};
 
     type block-id = u16;
+    type block-state = u16;
+    type model-id = u32;
     type entity = u64;
-
-    record friction {
-        surface: option<surface-friction>,
-        drag: vec3
-    }
-
-    record surface-friction {
-        front: f32,
-        back: f32,
-        right: f32,
-        left: f32,
-        top: f32,
-        bottom: f32,
-    }
 
     // TODO: The client can map keys, is it best to handle this only host side? Eventually the wasm
     // should handle the interfaces which means it needs complete access to the keyboard anyways.
@@ -98,15 +87,11 @@ world plugin {
 
     /// Get the id of a block in the world map
     import get-block: func(block-position: i-vec3) -> option<block-id>;
-    /// Get the friction of a block
-    import get-block-friction: func(block-id: block-id) -> friction;
-    /// Get the name of a block
-    import get-block-name: func(block-id: block-id) -> string;
-    /// Get the aabb of the block
-    import get-block-aabb: func(block-id: block-id) -> option<tuple<vec3, vec3>>;
+    /// Get the block state of a block in the world map
+    import get-block-state: func(block-position: i-vec3) -> option<block-state>;
 
     /// Get the models inside the aabb defined by min and max
-    import get-models: func(min: vec3, max: vec3) -> list<u32>;
-    /// Get the aabb a model
-    import get-model-aabb: func(model-id: u32) -> tuple<vec3, vec3>;
+    import get-models: func(min: vec3, max: vec3) -> list<model-id>;
+    /// Get the transform of a model
+    import get-model-transform: func(model-id: model-id) -> transform;
 }

@@ -306,47 +306,35 @@ fn handle_new_chunks(
             position: chunk.position,
         });
 
-        // TODO: Only handles uniform air chunks. These ifs can be collapsed, handle uniformity
-        // in Chunk::new, skip entity like now if the chunk won't have a mesh.
-        let old_chunk = if chunk.blocks.len() == 1
-            && match blocks.get_config(chunk.blocks[0]) {
-                Block::Cube(b) if b.quads.len() == 0 => true,
-                _ => false,
-            } {
-            world_map.insert(
-                chunk.position,
-                Chunk::new_air(
-                    chunk.blocks.clone(),
-                    chunk
-                        .block_state
-                        .iter()
-                        .map(|(&k, &v)| (k, BlockState(v)))
-                        .collect(),
-                ),
-            )
-        } else {
-            let entity = commands
-                .spawn((
-                    Transform::from_translation((chunk.position - origin.0).as_vec3()),
-                    Visibility::Visible,
-                    MovesWithOrigin,
-                    ChunkMarker,
-                ))
-                .id();
+        let entity =
+            if chunk.blocks.len() == 1 && blocks.get_config(chunk.blocks[0]).quads.len() == 0 {
+                // Uniform chunks that don't have a renderable block are ignored
+                None
+            } else {
+                Some(
+                    commands
+                        .spawn((
+                            Transform::from_translation((chunk.position - origin.0).as_vec3()),
+                            Visibility::Visible,
+                            MovesWithOrigin,
+                            ChunkMarker,
+                        ))
+                        .id(),
+                )
+            };
 
-            world_map.insert(
-                chunk.position,
-                Chunk::new(
-                    entity,
-                    chunk.blocks.clone(),
-                    chunk
-                        .block_state
-                        .iter()
-                        .map(|(&k, &v)| (k, BlockState(v)))
-                        .collect(),
-                ),
-            )
-        };
+        let old_chunk = world_map.insert(
+            chunk.position,
+            Chunk::new(
+                entity,
+                chunk.blocks.clone(),
+                chunk
+                    .block_state
+                    .iter()
+                    .map(|(&k, &v)| (k, BlockState(v)))
+                    .collect(),
+            ),
+        );
 
         // This is just for the off chance where the server sends a chunk we already have because
         // of mismatch in render distance or execution order or whatever else.

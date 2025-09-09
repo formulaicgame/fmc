@@ -58,9 +58,9 @@ mod wit {
 }
 
 pub use wit::{
-    delta_time, get_block, get_block_aabb, get_block_friction, get_block_name,
-    get_camera_transform, get_model_aabb, get_models, get_player_transform, keyboard_input, log,
-    set_camera_transform, set_player_transform, Friction, Key, KeyboardKey, SurfaceFriction,
+    delta_time, get_block, get_block_state, get_camera_transform, get_model_transform, get_models,
+    get_player_transform, keyboard_input, log, set_camera_transform, set_player_transform, Key,
+    KeyboardKey,
 };
 
 pub mod math {

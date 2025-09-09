@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::math::{DQuat, DVec3};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     blocks::{BlockFace, BlockPosition, BlockRotation, BlockState, Blocks},
     prelude::*,
-    world::{chunk::ChunkPosition, ChangedBlockEvent, WorldMap},
+    world::{ChangedBlockEvent, WorldMap, chunk::ChunkPosition},
 };
 
 pub mod shapes;
 
-use self::shapes::Aabb;
+use self::shapes::{Aabb, AabbJson};
 
 const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
 
@@ -31,55 +31,129 @@ impl Plugin for PhysicsPlugin {
     }
 }
 
-// TODO: Make Aabb available only through this? Either way need to replace all current occurences
-#[derive(Component, Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
+pub enum ColliderJson {
+    Single(AabbJson),
+    Vec(Vec<AabbJson>),
+}
+
+// TODO: Make Aabb available only through this? Either way need to replace all current occurences
+#[derive(Component, Debug, Clone, Serialize)]
 pub enum Collider {
-    Aabb(Aabb),
+    Single(Aabb),
+    Multi(Vec<Aabb>),
+}
+
+impl Default for Collider {
+    fn default() -> Self {
+        Collider::Single(Aabb::default())
+    }
 }
 
 impl Collider {
-    pub fn transform(&self, transform: &Transform) -> Self {
-        match self {
-            Self::Aabb(aabb) => Collider::Aabb(aabb.transform(transform)),
-        }
-    }
-
     /// Construct a collider from a set of aabb bounds.
     pub fn from_min_max(min: DVec3, max: DVec3) -> Self {
-        Self::Aabb(Aabb::from_min_max(min, max))
+        Self::Single(Aabb::from_min_max(min, max))
     }
 
-    /// Iterator over the block positions inside the collider
-    fn iter_block_positions(&self) -> impl IntoIterator<Item = BlockPosition> {
+    pub fn as_aabb(&self) -> Aabb {
         match self {
-            Self::Aabb(aabb) => {
-                let min = BlockPosition::from(aabb.min());
-                let max = BlockPosition::from(aabb.max());
-                (min.x..=max.x).flat_map(move |x| {
-                    (min.z..=max.z).flat_map(move |z| {
-                        (min.y..=max.y).map(move |y| BlockPosition::new(x, y, z))
-                    })
-                })
+            Self::Single(aabb) => *aabb,
+            Self::Multi(aabbs) => {
+                let mut min = DVec3::MAX;
+                let mut max = DVec3::MIN;
+                for aabb in aabbs {
+                    min = min.min(aabb.min());
+                    max = max.max(aabb.max());
+                }
+
+                Aabb::from_min_max(min, max)
             }
         }
     }
 
-    /// Intersection test with another collider, returns the overlap if any.
-    pub fn intersection(&self, other: &Collider) -> Option<DVec3> {
-        let intersection = match self {
-            Collider::Aabb(aabb) => match other {
-                Collider::Aabb(other) => aabb.intersection(other),
-            },
-        };
+    /// Iterator over the block positions inside the collider
+    fn iter_block_positions(
+        &self,
+        transform: &Transform,
+    ) -> impl IntoIterator<Item = BlockPosition> {
+        let aabb = self.as_aabb().transform(transform);
 
-        return intersection;
+        let min = BlockPosition::from(aabb.min());
+        let max = BlockPosition::from(aabb.max());
+        (min.x..=max.x).flat_map(move |x| {
+            (min.z..=max.z)
+                .flat_map(move |z| (min.y..=max.y).map(move |y| BlockPosition::new(x, y, z)))
+        })
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, Aabb> {
+        match self {
+            Collider::Single(aabb) => std::slice::from_ref(aabb).iter(),
+            Collider::Multi(aabbs) => aabbs.iter(),
+        }
+    }
+
+    /// Intersection test with another collider, returns the overlap if any.
+    pub fn intersection(
+        &self,
+        self_transform: &Transform,
+        other_transform: &Transform,
+        other: &Collider,
+    ) -> Option<DVec3> {
+        let mut intersection = DVec3::ZERO;
+
+        for left_aabb in self.iter() {
+            let left_aabb = left_aabb.transform(self_transform);
+            for right_aabb in other.iter().map(|aabb| aabb.transform(other_transform)) {
+                if let Some(new_intersection) = left_aabb.intersection(&right_aabb) {
+                    intersection = intersection
+                        .abs()
+                        .max(new_intersection.abs())
+                        .copysign(new_intersection);
+                }
+            }
+        }
+
+        if intersection != DVec3::ZERO {
+            return Some(intersection);
+        } else {
+            return None;
+        }
     }
 
     /// Ray intersection test with the collider.
-    pub fn ray_intersection(&self, ray_transform: &Transform) -> Option<(f64, BlockFace)> {
+    pub fn ray_intersection(
+        &self,
+        self_transform: &Transform,
+        ray_transform: &Transform,
+    ) -> Option<(f64, BlockFace)> {
         match self {
-            Self::Aabb(aabb) => aabb.ray_intersection(ray_transform),
+            Self::Single(aabb) => aabb
+                .transform(self_transform)
+                .ray_intersection(ray_transform),
+            Self::Multi(aabbs) => {
+                let mut distance = f64::MAX;
+                let mut face = BlockFace::Top;
+                for aabb in aabbs {
+                    if let Some((new_distance, new_face)) = aabb
+                        .transform(self_transform)
+                        .ray_intersection(ray_transform)
+                    {
+                        if new_distance < distance {
+                            distance = new_distance;
+                            face = new_face;
+                        }
+                    }
+                }
+
+                if distance != f64::MAX {
+                    return Some((distance, face));
+                } else {
+                    return None;
+                }
+            }
         }
     }
 }
@@ -211,12 +285,12 @@ fn simulate_physics(
             let pos_after_move = transform.with_translation(
                 transform.translation + directional_velocity * time.delta_secs_f64(),
             );
-            let entity_collider = entity_collider.transform(&pos_after_move);
+            // let entity_collider = entity_collider.transform(&pos_after_move);
 
             // TODO: Allocation is unnecessary
             // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();
-            for block_position in entity_collider.iter_block_positions() {
+            for block_position in entity_collider.iter_block_positions(&pos_after_move) {
                 let block_id = match world_map.get_block(block_position) {
                     Some(id) => id,
                     // If entity is player, disconnect? They should always have their
@@ -225,7 +299,6 @@ fn simulate_physics(
                 };
 
                 let block_config = blocks.get_config(&block_id);
-                friction = friction.max(block_config.drag);
 
                 let rotation = world_map
                     .get_block_state(block_position)
@@ -240,10 +313,15 @@ fn simulate_physics(
                     ..default()
                 };
 
-                for block_collider in block_config.colliders.iter() {
-                    let block_collider = block_collider.transform(&block_transform);
-                    if let Some(intersection) = entity_collider.intersection(&block_collider) {
+                if let Some(intersection) = entity_collider.intersection(
+                    &pos_after_move,
+                    &block_transform,
+                    &block_config.collider,
+                ) {
+                    if block_config.is_solid() {
                         collisions.push((intersection, block_config));
+                    } else {
+                        friction = friction.max(block_config.drag());
                     }
                 }
             }
@@ -262,15 +340,11 @@ fn simulate_physics(
                 let resolution_axis =
                     DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
 
-                let Some(block_friction) = &block_config.friction else {
-                    continue;
-                };
-
                 if resolution_axis == backwards_time.y {
                     if physics.velocity.y.is_sign_positive() {
-                        friction = friction.max(DVec3::splat(block_friction.bottom));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Bottom));
                     } else {
-                        friction = friction.max(DVec3::splat(block_friction.top));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Top));
                     }
 
                     move_back.y = collision.y + collision.y / 100.0;
@@ -278,9 +352,9 @@ fn simulate_physics(
                     physics.grounded.y = true;
                 } else if resolution_axis == backwards_time.x {
                     if physics.velocity.x.is_sign_positive() {
-                        friction = friction.max(DVec3::splat(block_friction.left));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Left));
                     } else {
-                        friction = friction.max(DVec3::splat(block_friction.right));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Right));
                     }
 
                     move_back.x = collision.x + collision.x / 100.0;
@@ -288,9 +362,9 @@ fn simulate_physics(
                     physics.grounded.x = true;
                 } else if resolution_axis == backwards_time.z {
                     if physics.velocity.z.is_sign_positive() {
-                        friction = friction.max(DVec3::splat(block_friction.back));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Back));
                     } else {
-                        friction = friction.max(DVec3::splat(block_friction.front));
+                        friction = friction.max(block_config.surface_friction(BlockFace::Front));
                     }
 
                     move_back.z = collision.z + collision.z / 100.0;
@@ -420,7 +494,7 @@ fn buoyancy(
         // We want to let the object bob a little when it enters the water, but when it has
         // stabilized
         //let offset_from_top_of_block = 1.0 - (waterline_position.y - block_position.y as f64);
-        if buoyancy.density < block_config.drag.y
+        if buoyancy.density < block_config.drag().y
             && waterline_position.y < block_position.y as f64 + 1.0
         {
             //if offset_from_top_of_block < 0.05 {

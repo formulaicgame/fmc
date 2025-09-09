@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Index, time::Duration};
 use bevy::{
     app::AppExit,
     math::DVec3,
-    tasks::{futures_lite::future, IoTaskPool},
+    tasks::{IoTaskPool, futures_lite::future},
     time::common_conditions::on_timer,
 };
 use chunk::ChunkPosition;
@@ -439,7 +439,7 @@ fn send_changed_block_event(
         to: (block_id, block_state),
         top: world_map
             .get_block(position + IVec3::Y)
-            .map(|block_id| ((block_id, world_map.get_block_state(position + IVec3::Y)))),
+            .map(|block_id| (block_id, world_map.get_block_state(position + IVec3::Y))),
         bottom: world_map
             .get_block(position - IVec3::Y)
             .map(|block_id| (block_id, world_map.get_block_state(position - IVec3::Y))),

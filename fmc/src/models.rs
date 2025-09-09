@@ -8,7 +8,7 @@ use crate::{
     bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystem},
     database::Database,
     networking::Server,
-    physics::shapes::Aabb,
+    physics::Collider,
     players::Player,
     world::{ChunkOrigin, ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
 };
@@ -78,14 +78,14 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             // XXX: We change the id to the correct one when moving the configs into Models.
             id: 0,
             animations: HashMap::new(),
-            aabb: Aabb::default(),
+            collider: Collider::default(),
             meshes: Vec::new(),
         };
 
         if extension == "json" {
             // Block models can be defined through json files.
-            config.aabb =
-                Aabb::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
+            config.collider =
+                Collider::from_min_max(DVec3::new(-0.5, 0.0, -0.5), DVec3::new(0.5, 1.0, 0.5));
 
             // TODO: Remove and define in the json file. Let them have parents so you don't have to
             // copy the animations all over. There is probably even some reason to have a custom
@@ -157,7 +157,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
                 config.meshes.push(model_mesh);
             }
 
-            config.aabb = Aabb::from_min_max(min.as_dvec3(), max.as_dvec3());
+            config.collider = Collider::from_min_max(min.as_dvec3(), max.as_dvec3());
 
             for animation in gltf.animations() {
                 if let Some(name) = animation.name() {
@@ -401,7 +401,7 @@ pub struct ModelConfig {
     pub id: ModelAssetId,
     // Map from animation name (as stored in the gltf file) to its index
     pub animations: HashMap<String, u32>,
-    pub aabb: Aabb,
+    pub collider: Collider,
     pub meshes: Vec<ModelMesh>,
 }
 
@@ -429,6 +429,10 @@ impl Models {
 
     pub fn ids(&self) -> &HashMap<String, ModelAssetId> {
         return &self.ids;
+    }
+
+    pub fn configs(&self) -> &Vec<ModelConfig> {
+        return &self.configs;
     }
 }
 

@@ -145,9 +145,9 @@ fn cursor_visibiltiy(
 
     if should_be_visible && !window.cursor_options.visible {
         window.cursor_options.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
         let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
         window.set_cursor_position(Some(position));
-        window.cursor_options.grab_mode = CursorGrabMode::None;
     } else if !should_be_visible && window.cursor_options.visible {
         window.cursor_options.visible = false;
         window.cursor_options.grab_mode = if cfg!(unix) {

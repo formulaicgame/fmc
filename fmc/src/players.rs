@@ -9,7 +9,7 @@ use crate::{
     models::ModelMap,
     networking::{NetworkMessage, Server},
     physics::Collider,
-    world::{chunk::ChunkPosition, ChunkOrigin, RenderDistance, WorldMap},
+    world::{ChunkOrigin, RenderDistance, WorldMap, chunk::ChunkPosition},
 };
 
 pub struct PlayersPlugin;
@@ -101,7 +101,7 @@ fn send_aabb(
     aabb_query: Query<(Entity, &Collider), (Changed<Collider>, With<Player>)>,
 ) {
     for (entity, collider) in aabb_query.iter() {
-        let Collider::Aabb(aabb) = collider else {
+        let Collider::Single(aabb) = collider else {
             panic!();
         };
 
@@ -257,33 +257,30 @@ fn find_target(
                 ..default()
             };
 
-            // Blocks that don't have a hitbox cannot be targeted. This will normally be
-            // blocks that are considered void, like air, not water.
-            for collider in block_config.colliders.iter() {
-                let collider = collider.transform(&block_transform);
+            if let Some((distance, block_face)) = block_config
+                .collider
+                .ray_intersection(&block_transform, &camera_transform)
+            {
+                // TODO: it will add blocks with entities twice if the model is hit
+                let chunk_position = ChunkPosition::from(block_position);
+                let block_index = block_position.as_chunk_index();
+                let entity = world_map
+                    .get_chunk(&chunk_position)
+                    .map(|chunk| chunk.block_entities.get(&block_index).cloned())
+                    .flatten();
 
-                if let Some((distance, block_face)) = collider.ray_intersection(&camera_transform) {
-                    // TODO: it will add blocks with entities twice if the model is hit
-                    let chunk_position = ChunkPosition::from(block_position);
-                    let block_index = block_position.as_chunk_index();
-                    let entity = world_map
-                        .get_chunk(&chunk_position)
-                        .map(|chunk| chunk.block_entities.get(&block_index).cloned())
-                        .flatten();
+                distance_to_solid_block = distance;
 
-                    distance_to_solid_block = distance;
+                targets.push(Target::Block {
+                    block_position,
+                    block_id,
+                    distance,
+                    block_face,
+                    entity,
+                });
 
-                    targets.push(Target::Block {
-                        block_position,
-                        block_id,
-                        distance,
-                        block_face,
-                        entity,
-                    });
-
-                    if block_config.is_solid() {
-                        break 'outer;
-                    }
+                if block_config.is_solid() {
+                    break 'outer;
                 }
             }
         }
@@ -303,40 +300,33 @@ fn find_target(
 
                     let block_config = blocks.get_config(&block_id);
 
-                    for collider in block_config.colliders.iter() {
-                        let collider = collider.transform(&model_transform.compute_transform());
-
-                        let Some((distance, block_face)) =
-                            collider.ray_intersection(&camera_transform)
-                        else {
-                            continue;
-                        };
-
-                        if distance < distance_to_solid_block && distance < BLOCK_HIT_DISTANCE {
-                            targets.push(Target::Block {
-                                block_position: *block_position,
-                                block_id,
-                                block_face,
-                                distance,
-                                entity: Some(entity),
-                            });
-                            distance_to_solid_block = distance;
-                        }
+                    if let Some((distance, block_face)) = block_config
+                        .collider
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                        && distance < distance_to_solid_block
+                        && distance < BLOCK_HIT_DISTANCE
+                    {
+                        targets.push(Target::Block {
+                            block_position: *block_position,
+                            block_id,
+                            block_face,
+                            distance,
+                            entity: Some(entity),
+                        });
+                        distance_to_solid_block = distance;
                     }
                 } else if let Some(collider) = maybe_collider {
-                    let collider = collider.transform(&model_transform.compute_transform());
-                    let Some((distance, face)) = collider.ray_intersection(&camera_transform)
-                    else {
-                        continue;
-                    };
-
-                    if distance < ENTITY_HIT_DISTANCE && distance < distance_to_solid_block {
+                    if let Some((distance, face)) = collider
+                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                        && distance < ENTITY_HIT_DISTANCE
+                        && distance < distance_to_solid_block
+                    {
                         targets.push(Target::Entity {
                             distance,
                             face,
                             entity,
                         })
-                    }
+                    };
                 } else {
                     continue;
                 };

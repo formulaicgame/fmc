@@ -225,94 +225,92 @@ async fn build_mesh(
 
                 let block_config = blocks.get_config(block_id);
 
+                // Block models are spawned separately by the server
+                if block_config.is_block_model() {
+                    continue;
+                }
+
                 let block_state = if block_config.can_have_block_state() {
-                    chunk
-                        .get_block_state(x, y, z)
-                        .unwrap_or(BlockState::default())
+                    chunk.get_block_state(x, y, z).unwrap_or_default()
                 } else {
                     BlockState::default()
                 };
 
-                match block_config {
-                    Block::Cube(cube) => {
-                        let builder =
-                            if let Some(builder) = mesh_builders.get_mut(&cube.material_handle) {
-                                builder
-                            } else {
-                                mesh_builders
-                                    .insert(cube.material_handle.clone(), MeshBuilder::default());
-                                mesh_builders.get_mut(&cube.material_handle).unwrap()
-                            };
+                let builder =
+                    if let Some(builder) = mesh_builders.get_mut(&block_config.material_handle) {
+                        builder
+                    } else {
+                        mesh_builders
+                            .insert(block_config.material_handle.clone(), MeshBuilder::default());
+                        mesh_builders
+                            .get_mut(&block_config.material_handle)
+                            .unwrap()
+                    };
 
-                        for quad in &cube.quads {
-                            let cull_delimiter = if let Some(mut cull_face) = quad.cull_face {
-                                cull_face = cull_face.rotate(block_state.rotation());
+                for quad in &block_config.quads {
+                    let cull_delimiter = if let Some(mut cull_face) = quad.cull_face {
+                        cull_face = cull_face.rotate(block_state.rotation());
 
-                                let (x, y, z) = match cull_face {
-                                    BlockFace::Back => (x, y, z - 1),
-                                    BlockFace::Front => (x, y, z + 1),
-                                    BlockFace::Bottom => (x, y - 1, z),
-                                    BlockFace::Top => (x, y + 1, z),
-                                    BlockFace::Left => (x - 1, y, z),
-                                    BlockFace::Right => (x + 1, y, z),
-                                };
-                                let adjacent_block_id = match chunk.get_block(x, y, z) {
-                                    Some(b) => b,
-                                    None => continue,
-                                };
+                        let (x, y, z) = match cull_face {
+                            BlockFace::Back => (x, y, z - 1),
+                            BlockFace::Front => (x, y, z + 1),
+                            BlockFace::Bottom => (x, y - 1, z),
+                            BlockFace::Top => (x, y + 1, z),
+                            BlockFace::Left => (x - 1, y, z),
+                            BlockFace::Right => (x + 1, y, z),
+                        };
+                        let adjacent_block_id = match chunk.get_block(x, y, z) {
+                            Some(b) => b,
+                            None => continue,
+                        };
 
-                                let adjacent_block_config = blocks.get_config(adjacent_block_id);
+                        let adjacent_block_config = blocks.get_config(adjacent_block_id);
 
-                                if adjacent_block_config.culls(block_config) {
-                                    let adjacent_block_state =
-                                        if adjacent_block_config.can_have_block_state() {
-                                            chunk
-                                                .get_block_state(x, y, z)
-                                                .unwrap_or(BlockState::default())
-                                        } else {
-                                            BlockState::default()
-                                        };
-
-                                    match adjacent_block_config.cull_delimiter(
-                                        cull_face
-                                            .opposite()
-                                            .reverse_rotate(adjacent_block_state.rotation()),
-                                    ) {
-                                        Some(deli) => Some(deli),
-                                        None => continue,
-                                    }
+                        if adjacent_block_config.culls(block_config) {
+                            let adjacent_block_state =
+                                if adjacent_block_config.can_have_block_state() {
+                                    chunk
+                                        .get_block_state(x, y, z)
+                                        .unwrap_or(BlockState::default())
                                 } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
+                                    BlockState::default()
+                                };
 
-                            let light = if let Some(light_face) = quad.light_face {
-                                match light_face.rotate(block_state.rotation()) {
-                                    BlockFace::Right => light_chunk.get_light(x + 1, y, z),
-                                    BlockFace::Left => light_chunk.get_light(x - 1, y, z),
-                                    BlockFace::Front => light_chunk.get_light(x, y, z + 1),
-                                    BlockFace::Back => light_chunk.get_light(x, y, z - 1),
-                                    BlockFace::Top => light_chunk.get_light(x, y + 1, z),
-                                    BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
-                                }
-                            } else {
-                                light_chunk.get_light(x, y, z)
-                            };
-
-                            builder.add_face(
-                                [x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0],
-                                quad,
-                                light,
-                                block_state,
-                                cull_delimiter,
-                            );
+                            match adjacent_block_config.cull_delimiter(
+                                cull_face
+                                    .opposite()
+                                    .reverse_rotate(adjacent_block_state.rotation()),
+                            ) {
+                                Some(deli) => Some(deli),
+                                None => continue,
+                            }
+                        } else {
+                            None
                         }
-                    }
-                    Block::Model(_model) => {
-                        continue;
-                    }
+                    } else {
+                        None
+                    };
+
+                    let light = if let Some(light_face) = quad.light_face {
+                        match light_face.rotate(block_state.rotation()) {
+                            BlockFace::Right => light_chunk.get_light(x + 1, y, z),
+                            BlockFace::Left => light_chunk.get_light(x - 1, y, z),
+                            BlockFace::Front => light_chunk.get_light(x, y, z + 1),
+                            BlockFace::Back => light_chunk.get_light(x, y, z - 1),
+                            BlockFace::Top => light_chunk.get_light(x, y + 1, z),
+                            BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
+                        }
+                    } else {
+                        light_chunk.get_light(x, y, z)
+                    };
+
+                    builder.add_face(
+                        [x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0],
+                        quad,
+                        light,
+                        block_state,
+                        cull_delimiter,
+                    );
                 }
             }
         }
