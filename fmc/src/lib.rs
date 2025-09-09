@@ -16,7 +16,7 @@ pub mod physics;
 pub mod players;
 pub mod terminal;
 // TODO: This is just rng now, rename
-pub mod utils;
+pub mod random;
 /// The block world
 pub mod world;
 

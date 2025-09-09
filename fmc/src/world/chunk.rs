@@ -8,7 +8,7 @@ use crate::blocks::{BlockData, BlockPosition};
 use crate::{
     blocks::{BlockId, BlockState, Blocks},
     database::Database,
-    utils,
+    random,
 };
 
 use super::terrain_generation::{TerrainFeature, TerrainGenerator};

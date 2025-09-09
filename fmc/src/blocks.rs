@@ -23,7 +23,7 @@ use crate::{
     physics::{Collider, ColliderJson, shapes::Aabb},
     players::Camera,
     prelude::*,
-    utils::Rng,
+    random::Rng,
     world::chunk::{Chunk, ChunkPosition},
 };
 

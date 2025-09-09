@@ -81,3 +81,39 @@ impl RngRange<u32> for RangeInclusive<u32> {
         *self.end()
     }
 }
+
+pub struct TriangleDistribution {
+    min: f32,
+    mid: f32,
+    max: f32,
+    peak: f32,
+}
+
+impl TriangleDistribution {
+    pub fn new(min: f32, mid: f32, max: f32, peak_probability: f32) -> Self {
+        assert!(min < mid);
+        assert!(mid < max);
+        assert!(0.0 <= peak_probability && peak_probability <= 1.0);
+
+        Self {
+            min,
+            mid,
+            max,
+            peak: peak_probability,
+        }
+    }
+
+    pub fn sample(&self, point: f32, rng: &mut Rng) -> bool {
+        let chance = rng.next_f32();
+
+        if point < self.min {
+            false
+        } else if point < self.mid {
+            chance < self.peak * (point - self.min) / (self.mid - self.min)
+        } else if point <= self.max {
+            chance < self.peak * (self.max - point) / (self.max - self.mid)
+        } else {
+            false
+        }
+    }
+}
