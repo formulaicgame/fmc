@@ -88,15 +88,10 @@ impl<'a> WorldMapRayCast<'a> {
         let direction = forward.signum();
 
         // How far along the forward vector you need to go to hit the next block in each direction.
-        // This makes more sense if you mentally align it with the block grid.
         //
-        // TODO: This fract stuff can probably be simplified now, they made fract() correct.
-        // Using fract_gl instead, as that is now the old functionality.
-        //
-        // This relies on some peculiar behaviour where normally f32.fract() would retain the
-        // sign of the number, Vec3.fract() instead does self - self.floor(). This results in
-        // having the correct value for the negative direction, but it has to be flipped for the
-        // positive direction, which is the vec3::select.
+        // fract_gl() uses x - x.floor(), which yields the correct value for all values with a
+        // negative direction, e.g. fract_gl(-1.32) = 0.68. When the direction is positive it is
+        // just inverted.
         let mut distance_next = ray_transform.translation.fract_gl();
         distance_next = DVec3::select(
             direction.cmpeq(DVec3::ONE),

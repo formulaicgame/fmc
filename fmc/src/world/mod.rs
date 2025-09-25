@@ -24,8 +24,7 @@ mod map;
 mod terrain_generation;
 
 pub use chunk_manager::{
-    ChunkLoadEvent, ChunkSimulationEvent, ChunkSubscriptionEvent, ChunkSubscriptions,
-    ChunkUnloadEvent,
+    ChunkLoadEvent, ChunkSubscriptionEvent, ChunkSubscriptions, ChunkUnloadEvent,
 };
 pub use map::WorldMap;
 pub use terrain_generation::{Surface, TerrainFeature, TerrainGenerator};
@@ -41,7 +40,7 @@ impl Plugin for WorldPlugin {
             .add_systems(
                 Update,
                 (
-                    update_chunk_origins,
+                    update_chunk_positions,
                     change_player_render_distance,
                     save_blocks_to_database
                         .run_if(on_timer(Duration::from_secs(5)).or(on_event::<AppExit>)),
@@ -57,28 +56,13 @@ impl Plugin for WorldPlugin {
     }
 }
 
-/// Keeps track of which chunk an entity is in. Useful for tracking when the entity moves between
-/// chunks.
-#[derive(Component)]
-pub struct ChunkOrigin {
-    pub chunk_position: ChunkPosition,
-}
-
-impl Default for ChunkOrigin {
-    fn default() -> Self {
-        Self {
-            chunk_position: ChunkPosition::new(0, 0, 0),
-        }
-    }
-}
-
-fn update_chunk_origins(
-    mut chunk_origins: Query<(&mut ChunkOrigin, &GlobalTransform), Changed<GlobalTransform>>,
+fn update_chunk_positions(
+    mut chunk_origins: Query<(&mut ChunkPosition, &GlobalTransform), Changed<GlobalTransform>>,
 ) {
-    for (mut origin, transform) in chunk_origins.iter_mut() {
+    for (mut chunk_position, transform) in chunk_origins.iter_mut() {
         let current_chunk_position = ChunkPosition::from(transform.translation());
-        if current_chunk_position != origin.chunk_position {
-            origin.chunk_position = current_chunk_position;
+        if current_chunk_position != *chunk_position {
+            *chunk_position = current_chunk_position;
         }
     }
 }

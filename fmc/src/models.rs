@@ -10,7 +10,7 @@ use crate::{
     networking::Server,
     physics::Collider,
     players::Player,
-    world::{ChunkOrigin, ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
+    world::{ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
 };
 
 pub const MODEL_PATH: &str = "./assets/client/textures/models/";
@@ -206,7 +206,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(ModelVisibility, AnimationPlayer, Transform, ChunkOrigin)]
+#[require(ModelVisibility, AnimationPlayer, Transform, ChunkPosition)]
 pub enum Model {
     Asset(ModelAssetId),
     Custom {
@@ -551,14 +551,19 @@ fn apply_movement_animations(
     mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>,
 ) {
     for (mut animation_player, transform) in models.iter_mut() {
-        if animation_player.move_animation.is_some()
+        if animation_player.last_position == DVec3::ZERO {
+            // When the model is first spawned play the idle animation
+            if let Some(idle_animation) = animation_player.idle_animation {
+                animation_player.play(idle_animation).repeat();
+            }
+
+            animation_player.last_position = transform.translation();
+        } else if let Some(move_animation) = animation_player.move_animation
             && transform.is_changed()
             // TODO: Even though it doesn't move the translation still changes when the model is
             // rotated! Probably some inaccuracy from converting fram a matrix representation.
             && transform.translation() != animation_player.last_position
         {
-            let move_animation = animation_player.move_animation.unwrap();
-
             let speed = transform
                 .translation()
                 .xz()

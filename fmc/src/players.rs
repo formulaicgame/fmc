@@ -9,7 +9,7 @@ use crate::{
     models::ModelMap,
     networking::{NetworkMessage, Server},
     physics::Collider,
-    world::{ChunkOrigin, RenderDistance, WorldMap, chunk::ChunkPosition},
+    world::{RenderDistance, WorldMap, chunk::ChunkPosition},
 };
 
 pub struct PlayersPlugin;
@@ -33,7 +33,7 @@ impl Plugin for PlayersPlugin {
 //
 /// Player marker struct
 #[derive(Component, Default)]
-#[require(ChunkOrigin)]
+#[require(ChunkPosition)]
 pub struct Player {
     pub username: String,
 }
@@ -67,6 +67,7 @@ impl Default for Camera {
     }
 }
 
+// TODO: Move to required components?
 #[derive(Bundle)]
 pub(crate) struct DefaultPlayerBundle {
     player: Player,

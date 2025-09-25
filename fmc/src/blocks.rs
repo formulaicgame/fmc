@@ -701,7 +701,7 @@ impl BlockConfig {
     }
 
     pub fn is_solid(&self) -> bool {
-        matches!(self.friction, Friction::Surface { .. }) && self.model.is_none()
+        matches!(self.friction, Friction::Surface { .. })
     }
 
     pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {

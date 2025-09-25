@@ -6,8 +6,8 @@ use std::{
 use crate::blocks::{BlockId, BlockPosition, BlockState, Blocks};
 
 use super::{
-    chunk::{Chunk, ChunkPosition},
     WorldMap,
+    chunk::{Chunk, ChunkPosition},
 };
 
 /// Trait to make a terrain generator that can be passed to the [WorldMap]
@@ -234,5 +234,12 @@ impl Index<usize> for Surface {
     type Output = Option<(usize, BlockId)>;
     fn index(&self, index: usize) -> &Self::Output {
         &self.surface_blocks[index]
+    }
+}
+
+impl Index<[usize; 2]> for Surface {
+    type Output = Option<(usize, BlockId)>;
+    fn index(&self, index: [usize; 2]) -> &Self::Output {
+        &self.surface_blocks[index[0] << 4 | index[1]]
     }
 }
