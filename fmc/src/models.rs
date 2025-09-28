@@ -572,11 +572,10 @@ fn apply_movement_animations(
 
             if !animation_player.playing_move_animation && speed > 0.002 {
                 animation_player.playing_move_animation = true;
-                if let Some(idle_animation) = animation_player.idle_animation
-                    && animation_player.transition_time != 0.0
-                {
+
+                if let Some(idle_animation) = animation_player.idle_animation {
                     let transition_time = animation_player.transition_time;
-                    let mut animation = animation_player
+                    animation_player
                         .play(move_animation)
                         .repeat()
                         .transition(idle_animation, transition_time);
@@ -585,9 +584,8 @@ fn apply_movement_animations(
                 }
             } else if animation_player.playing_move_animation && speed < 0.002 {
                 animation_player.playing_move_animation = false;
-                if let Some(idle_animation) = animation_player.idle_animation
-                    && animation_player.transition_time != 0.0
-                {
+
+                if let Some(idle_animation) = animation_player.idle_animation {
                     let transition_time = animation_player.transition_time;
                     animation_player
                         .play(idle_animation)
