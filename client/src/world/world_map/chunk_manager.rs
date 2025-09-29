@@ -10,12 +10,12 @@ use crate::{
     rendering::RenderSet,
     settings::Settings,
     world::{
+        MovesWithOrigin, Origin,
         blocks::{Block, BlockState, Blocks},
         world_map::{
-            chunk::{Chunk, ChunkFace, ChunkMarker},
             WorldMap,
+            chunk::{Chunk, ChunkFace, ChunkMarker},
         },
-        MovesWithOrigin, Origin,
     },
 };
 
@@ -283,14 +283,13 @@ fn prepare_for_frustum_culling(
 fn handle_new_chunks(
     mut commands: Commands,
     net: Res<NetworkClient>,
+    blocks: Res<Blocks>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     mut new_chunk_events: EventWriter<NewChunkEvent>,
     mut received_chunks: EventReader<messages::Chunk>,
 ) {
     for chunk in received_chunks.read() {
-        let blocks = Blocks::get();
-
         // TODO: Need to validate block state too. Server can crash client.
         for block_id in chunk.blocks.iter() {
             if !blocks.contains(*block_id) {
@@ -348,6 +347,7 @@ fn handle_new_chunks(
 pub fn handle_block_updates(
     mut commands: Commands,
     net: Res<NetworkClient>,
+    blocks: Res<Blocks>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     mut block_updates_events: EventReader<messages::BlockUpdates>,
@@ -382,7 +382,6 @@ pub fn handle_block_updates(
             chunk.convert_uniform_to_full(entity);
         }
 
-        let blocks = Blocks::get();
         for (index, block, block_state) in event.blocks.iter() {
             if !blocks.contains(*block) {
                 net.disconnect(

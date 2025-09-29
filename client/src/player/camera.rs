@@ -16,9 +16,9 @@ use crate::{
     player::Head,
     settings::Settings,
     world::{
-        blocks::Blocks,
-        world_map::{chunk::Chunk, WorldMap},
         Origin,
+        blocks::Blocks,
+        world_map::{WorldMap, chunk::Chunk},
     },
 };
 
@@ -161,6 +161,7 @@ fn handle_camera_position_from_server(
 
 fn fog(
     origin: Res<Origin>,
+    blocks: Res<Blocks>,
     mut camera_transform_query: Query<
         (&GlobalTransform, &Projection, &mut DistanceFog),
         (With<Head>, Changed<GlobalTransform>),
@@ -190,7 +191,6 @@ fn fog(
             continue;
         };
 
-        let blocks = Blocks::get();
         let block_config = blocks.get_config(block_id);
         if let Some(fog) = block_config.fog_settings() {
             *fog_settings = fog.clone();

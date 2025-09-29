@@ -92,8 +92,8 @@ pub fn load_items(
     server_config: Res<messages::ServerConfig>,
     net: Res<NetworkClient>,
     models: Res<Models>,
+    blocks: Res<Blocks>,
 ) {
-    let blocks = Blocks::get();
     let mut configs = HashMap::new();
 
     for (filename, id) in server_config.item_ids.iter() {
@@ -232,7 +232,9 @@ impl ItemStack {
     #[track_caller]
     pub fn transfer_to(&mut self, other: &mut ItemStack, mut amount: u32) -> u32 {
         if self.is_empty() {
-            panic!("Tried to transfer from a stack that is empty, this should be asserted by the caller");
+            panic!(
+                "Tried to transfer from a stack that is empty, this should be asserted by the caller"
+            );
         } else if &self.item == &other.item {
             amount = std::cmp::min(amount, other.max_size.unwrap() - other.size);
             other.add(amount);

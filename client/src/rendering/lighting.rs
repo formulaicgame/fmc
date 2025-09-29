@@ -10,18 +10,18 @@ use crate::{
     game_state::GameState,
     utils,
     world::{
+        Origin,
         blocks::Blocks,
         world_map::{
-            chunk::{Chunk, ChunkFace},
             NewChunkEvent, WorldMap,
+            chunk::{Chunk, ChunkFace},
         },
-        Origin,
     },
 };
 
 use super::{
-    chunk::{ChunkMeshEvent, ExpandedLightChunk},
     RenderSet,
+    chunk::{ChunkMeshEvent, ExpandedLightChunk},
 };
 
 pub struct LightingPlugin;
@@ -422,11 +422,10 @@ impl LightUpdateQueue {
 fn handle_new_chunks(
     mut light_map: ResMut<LightMap>,
     world_map: Res<WorldMap>,
+    blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
     mut new_chunks: EventReader<NewChunkEvent>,
 ) {
-    let blocks = Blocks::get();
-
     for new_chunk in new_chunks.read() {
         if light_map.chunks.contains_key(&new_chunk.position) {
             // There may be duplicate events, ignore them.
@@ -550,7 +549,7 @@ fn handle_new_chunks(
                 new_chunk.position,
                 &mut light_update_queues,
                 chunk,
-                blocks,
+                &blocks,
             );
             let mut chunk_position = new_chunk.position;
             chunk_position.y -= Chunk::SIZE as i32;
@@ -565,7 +564,7 @@ fn handle_new_chunks(
                         chunk_position,
                         &mut light_update_queues,
                         chunk,
-                        blocks,
+                        &blocks,
                     );
                 } else {
                     break;
@@ -578,12 +577,11 @@ fn handle_new_chunks(
 }
 
 fn handle_block_updates(
+    blocks: Res<Blocks>,
     mut light_map: ResMut<LightMap>,
     mut light_update_queues: ResMut<Queues>,
     mut block_updates_events: EventReader<messages::BlockUpdates>,
 ) {
-    let blocks = Blocks::get();
-
     for block_updates in block_updates_events.read() {
         let Some(mut light_chunk) = light_map.chunks.remove(&block_updates.chunk_position) else {
             continue;
@@ -680,12 +678,11 @@ fn handle_block_updates(
 
 fn propagate_light(
     world_map: Res<WorldMap>,
+    blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
     mut light_map: ResMut<LightMap>,
     mut chunk_mesh_events: EventWriter<TestFinishedLightingEvent>,
 ) {
-    let blocks = Blocks::get();
-
     for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
         let mut update_queue = light_update_queues.remove(&chunk_position).unwrap();
 
@@ -995,7 +992,7 @@ fn propagate_light(
                 chunk_position,
                 &mut light_update_queues,
                 chunk,
-                blocks,
+                &blocks,
             );
         } else {
             light_map.chunks.insert(chunk_position, light_chunk);

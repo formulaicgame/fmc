@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use bevy::{prelude::*, render::primitives::Aabb};
 use fmc_protocol::messages;
@@ -93,6 +93,7 @@ const CROSS_NORMALS: [[f32; 3]; 2] = [[1.0, 0.0, -1.0], [-1.0, 0.0, -1.0]];
 // function over to the assets, but keep the Blocks struct here, as it is where you would expect to
 // find it.
 pub fn load_blocks(
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     net: Res<NetworkClient>,
     server_config: Res<messages::ServerConfig>,
@@ -453,48 +454,37 @@ pub fn load_blocks(
         ));
     }
 
-    unsafe {
-        BLOCKS.take();
-        BLOCKS
-            .set(Blocks {
-                blocks: maybe_blocks.into_iter().flatten().collect(),
-                block_ids: server_config.block_ids.clone(),
-            })
-            .unwrap();
-    }
+    commands.insert_resource(Blocks {
+        inner: Arc::new(BlocksInner {
+            blocks: maybe_blocks.into_iter().flatten().collect(),
+            block_ids: server_config.block_ids.clone(),
+        }),
+    });
 }
 
-// TODO: Wrap into Blocks(_Blocks)? This way it can have 2 get functions. One for the OnceCell and
-// one for getting blocks. Just implement deref for blocks. [index] for blocks looks really
-// awkward.
 /// The configurations for all the blocks.
-#[derive(Debug, Default)]
+#[derive(Resource, Clone)]
 pub struct Blocks {
+    inner: Arc<BlocksInner>,
+}
+
+struct BlocksInner {
     blocks: Vec<Block>,
     // Map from block name to block id
     block_ids: HashMap<String, BlockId>,
 }
 
 impl Blocks {
-    #[track_caller]
-    pub fn get() -> &'static Self {
-        unsafe {
-            return BLOCKS
-                .get()
-                .expect("The blocks have not been loaded yet, make sure this is only used after they have been.");
-        }
-    }
-
     pub fn get_config(&self, id: BlockId) -> &Block {
-        return &self.blocks[id as usize];
+        return &self.inner.blocks[id as usize];
     }
 
     pub fn get_id(&self, name: &str) -> Option<&BlockId> {
-        return self.block_ids.get(name);
+        return self.inner.block_ids.get(name);
     }
 
     pub fn contains(&self, block_id: BlockId) -> bool {
-        return (block_id as usize) < self.blocks.len();
+        return (block_id as usize) < self.inner.blocks.len();
     }
 }
 
@@ -783,7 +773,7 @@ impl BlockJson {
                         parent_path.display(),
                         e
                     )
-                    .into())
+                    .into());
                 }
             };
 

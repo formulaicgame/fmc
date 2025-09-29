@@ -5,7 +5,7 @@ use crate::{
     game_state::GameState,
     player::Player,
     settings::Settings,
-    world::{blocks::Blocks, world_map::WorldMap, Origin},
+    world::{Origin, blocks::Blocks, world_map::WorldMap},
 };
 
 const AUDIO_PATH: &str = "server_assets/active/audio/";
@@ -66,6 +66,7 @@ fn play_walking_sound(
     asset_server: Res<AssetServer>,
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
+    blocks: Res<Blocks>,
     client_side_audio: Res<ClientSideAudio>,
     player_position: Query<(&GlobalTransform, &Aabb), (With<Player>, Changed<GlobalTransform>)>,
     mut last_position: Local<DVec3>,
@@ -97,7 +98,6 @@ fn play_walking_sound(
         return;
     };
 
-    let blocks = Blocks::get();
     let step_sounds = blocks.get_config(block_id).step_sounds();
 
     if step_sounds.len() == 0 {

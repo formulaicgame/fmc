@@ -14,9 +14,9 @@ use crate::{
     rendering::materials::ParticleMaterial,
     utils,
     world::{
+        MovesWithOrigin, Origin,
         blocks::{BlockFace, Blocks, Friction},
         world_map::WorldMap,
-        MovesWithOrigin, Origin,
     },
 };
 
@@ -250,6 +250,7 @@ pub fn simulate_particle_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     time: Res<Time>,
+    blocks: Res<Blocks>,
     mut entities: Query<(&mut Transform, &mut Velocity)>,
 ) {
     for (mut transform, mut velocity) in entities.iter_mut() {
@@ -264,8 +265,6 @@ pub fn simulate_particle_physics(
         ] {
             let mut particle_aabb = Aabb::new_particle(&transform);
             particle_aabb.center += directional_velocity * time.delta_secs();
-
-            let blocks = Blocks::get();
 
             // Check for collisions with all blocks within the aabb.
             let mut collisions = Vec::new();

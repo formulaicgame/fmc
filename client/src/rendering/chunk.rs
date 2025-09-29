@@ -6,22 +6,22 @@ use bevy::{
         mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology,
         view::NoFrustumCulling,
     },
-    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
 
 use crate::{
     game_state::GameState,
     rendering::materials::BlockMaterial,
     world::{
-        blocks::{Block, BlockFace, BlockId, BlockRotation, BlockState, Blocks, QuadPrimitive},
-        world_map::{chunk::Chunk, WorldMap},
         Origin,
+        blocks::{Block, BlockFace, BlockId, BlockRotation, BlockState, Blocks, QuadPrimitive},
+        world_map::{WorldMap, chunk::Chunk},
     },
 };
 
 use super::{
-    lighting::{Light, LightChunk, LightMap},
     RenderSet,
+    lighting::{Light, LightChunk, LightMap},
 };
 
 const TRIANGLES: [u32; 6] = [0, 1, 2, 2, 1, 3];
@@ -60,6 +60,7 @@ fn mesh_system(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
+    blocks: Res<Blocks>,
     mut mesh_events: EventReader<ChunkMeshEvent>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
@@ -81,10 +82,18 @@ fn mesh_system(
                 {
                     // Chunks that are close get meshed on main thread to minimize visual latency. A
                     // task can take several frames to execute in scheduling alone.
-                    let result = future::block_on(build_mesh(expanded_chunk, expanded_light_chunk));
+                    let result = future::block_on(build_mesh(
+                        blocks.clone(),
+                        expanded_chunk,
+                        expanded_light_chunk,
+                    ));
                     thread_pool.spawn(async { result })
                 } else {
-                    thread_pool.spawn(build_mesh(expanded_chunk, expanded_light_chunk))
+                    thread_pool.spawn(build_mesh(
+                        blocks.clone(),
+                        expanded_chunk,
+                        expanded_light_chunk,
+                    ))
                 };
                 commands.entity(chunk_entity).insert(ChunkMeshTask {
                     position: event.chunk_position,
@@ -211,12 +220,11 @@ impl MeshBuilder {
 }
 
 async fn build_mesh(
+    blocks: Blocks,
     chunk: ExpandedChunk,
     light_chunk: ExpandedLightChunk,
 ) -> Vec<(Handle<BlockMaterial>, Mesh)> {
     let mut mesh_builders = HashMap::new();
-
-    let blocks = Blocks::get();
 
     for x in 1..Chunk::SIZE + 1 {
         for y in 1..Chunk::SIZE + 1 {
