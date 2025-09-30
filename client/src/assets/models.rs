@@ -1,5 +1,5 @@
 use bevy::{
-    animation::{animated_field, AnimationTarget, AnimationTargetId},
+    animation::{AnimationTarget, AnimationTargetId, animated_field},
     gltf::{Gltf, GltfMesh, GltfNode, GltfPrimitive},
     math::Vec3A,
     platform::collections::HashMap,
@@ -29,14 +29,8 @@ pub type ModelAssetId = u32;
 pub(super) struct ModelPlugin;
 impl Plugin for ModelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                on_gltf_load.run_if(resource_exists::<Models>),
-                transfer_animation_targets.run_if(in_state(GameState::Playing)),
-            ),
-        )
-        .add_systems(OnEnter(GameState::Launcher), cleanup);
+        app.add_systems(Update, on_gltf_load.run_if(resource_exists::<Models>))
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
 }
 
@@ -78,6 +72,7 @@ pub struct ModelConfig {
     pub aabb: Aabb,
 }
 
+// TODO: move to model module
 #[derive(Component)]
 pub enum Model {
     Asset(ModelAssetId),
@@ -698,34 +693,6 @@ impl JsonModel {
         );
 
         return animation;
-    }
-}
-
-// Points all animation targets to one central AnimationPlayer at the root entity.
-fn transfer_animation_targets(
-    children: Query<&Children>,
-    mut animation_targets: Query<&mut AnimationTarget>,
-    mut added_scenes: Query<Entity, (With<AnimationPlayer>, With<SceneRoot>, Added<Children>)>,
-) {
-    fn change_animation_target(
-        root: Entity,
-        child: Entity,
-        children: &Query<&Children>,
-        animation_targets: &mut Query<&mut AnimationTarget>,
-    ) {
-        if let Ok(mut animation_target) = animation_targets.get_mut(child) {
-            animation_target.player = root;
-        }
-
-        if let Ok(node_children) = children.get(child) {
-            for node_child in node_children {
-                change_animation_target(root, *node_child, children, animation_targets)
-            }
-        }
-    }
-
-    for root_entity in added_scenes.iter_mut() {
-        change_animation_target(root_entity, root_entity, &children, &mut animation_targets);
     }
 }
 

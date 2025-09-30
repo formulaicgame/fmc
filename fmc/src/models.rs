@@ -80,6 +80,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             animations: HashMap::new(),
             collider: Collider::default(),
             meshes: Vec::new(),
+            bones: HashMap::new(),
         };
 
         if extension == "json" {
@@ -107,6 +108,10 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             let mut max = Vec3::MIN;
 
             for node in gltf.nodes() {
+                if let Some(name) = node.name() {
+                    config.bones.insert(name.to_owned(), node.index());
+                }
+
                 let Some(mesh) = node.mesh() else { continue };
 
                 let translation = Vec3::from_array(node.transform().decomposed().0);
@@ -403,6 +408,7 @@ pub struct ModelConfig {
     pub animations: HashMap<String, u32>,
     pub collider: Collider,
     pub meshes: Vec<ModelMesh>,
+    pub bones: HashMap<String, usize>,
 }
 
 // The models are stored as an IndexMap where the index corresponds to the model's asset id.
@@ -538,6 +544,7 @@ fn send_model_transform(
             subs,
             messages::ModelUpdateTransform {
                 model_id: entity.index(),
+                bone: None,
                 position: transform.translation,
                 rotation: transform.rotation.as_quat(),
                 scale: transform.scale.as_vec3(),

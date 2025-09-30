@@ -9,15 +9,15 @@ use bevy::{
 use fmc_protocol::messages;
 
 use crate::{
-    assets::models::{ModelAssetId, Models},
+    assets::models::{Model, ModelAssetId, Models},
     game_state::GameState,
     networking::NetworkClient,
     player::Head,
 };
 
 use super::server::{
-    items::{ItemBox, ItemBoxSection, Items, SelectedItemBox},
     InterfaceNode,
+    items::{ItemBox, ItemBoxSection, Items, SelectedItemBox},
 };
 
 pub struct HandPlugin;
@@ -73,6 +73,7 @@ fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
         parent
             .spawn((
                 Hand::default(),
+                Model::Asset(0),
                 SceneRoot::default(),
                 // This is linked to animation targets by the same system that does it for server models. The
                 // animation graph must be added manually.
@@ -204,6 +205,7 @@ fn play_equip_animation(
     models: Res<Models>,
     gltfs: Res<Assets<Gltf>>,
     mut hand_query: Query<(
+        &mut Model,
         &mut AnimationPlayer,
         &mut SceneRoot,
         &mut Hand,
@@ -211,8 +213,14 @@ fn play_equip_animation(
         &mut Visibility,
     )>,
 ) {
-    let (mut animation_player, mut scene_handle, mut hand, mut animation_graph, mut visibility) =
-        hand_query.single_mut().unwrap();
+    let (
+        mut hand_model,
+        mut animation_player,
+        mut scene_handle,
+        mut hand,
+        mut animation_graph,
+        mut visibility,
+    ) = hand_query.single_mut().unwrap();
 
     if !hand.in_equip_animation {
         return;
@@ -245,6 +253,8 @@ fn play_equip_animation(
             animation_player.stop_all();
 
             *visibility = Visibility::Hidden;
+
+            *hand_model = Model::Asset(*model_id);
 
             let gltf = gltfs.get(&model.gltf_handle).unwrap();
             *scene_handle = SceneRoot(gltf.scenes[0].clone());

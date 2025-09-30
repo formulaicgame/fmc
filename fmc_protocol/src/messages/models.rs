@@ -99,6 +99,8 @@ pub struct ModelUpdateAsset {
 pub struct ModelUpdateTransform {
     /// Id of the model
     pub model_id: u32,
+    /// The bone the transform should be applied to. If None it will transform the entire model.
+    pub bone: Option<usize>,
     /// Position update
     pub position: DVec3,
     /// Rotation update

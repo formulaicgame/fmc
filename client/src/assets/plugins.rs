@@ -2,21 +2,21 @@ use std::collections::HashMap;
 
 use bevy::{
     ecs::system::SystemState,
-    input::{keyboard::KeyboardInput, ButtonState},
+    input::{ButtonState, keyboard::KeyboardInput},
     math::{Mat3A, Vec3A},
     prelude::*,
     render::primitives::Aabb,
     window::{CursorGrabMode, PrimaryWindow},
 };
 use fmc_protocol::messages;
-use wasmtime::{component::Linker, Engine, Store};
+use wasmtime::{Engine, Store, component::Linker};
 
 use crate::{
     assets::models::{Model, Models},
     game_state::GameState,
     networking::NetworkClient,
     player::{Head, Player},
-    world::{blocks::Blocks, models::ModelEntities, world_map::WorldMap, Origin},
+    world::{Origin, blocks::Blocks, models::ModelEntities, world_map::WorldMap},
 };
 
 pub struct WasmPlugin;
@@ -453,8 +453,8 @@ impl wit::PluginImports for WasmState {
 
             if min.cmple(transformed_aabb.max()).all() || max.cmpge(transformed_aabb.min()).all() {
                 let Some(model_id) = model_entites.get_model_id(&entity) else {
-                    // TODO: This should be a safe unwrap but fails intermittently.
-                    error!("Found unregistered model when running plugin");
+                    // Models may be spawned by a plugin or the client itself, in which case they
+                    // won't be accounted for in the ModelEntities
                     continue;
                 };
                 models.push(model_id);

@@ -4,8 +4,8 @@ use std::{
 };
 
 use bevy::{
-    animation::{ActiveAnimation, RepeatAnimation},
-    gltf::Gltf,
+    animation::{ActiveAnimation, AnimationTarget, RepeatAnimation},
+    gltf::{Gltf, GltfNode},
     math::DVec3,
     pbr::{ExtendedMaterial, NotShadowCaster},
     prelude::*,
@@ -36,6 +36,7 @@ impl Plugin for ModelPlugin {
             .add_systems(
                 Update,
                 (
+                    on_model_spawn,
                     handle_model_add_delete,
                     handle_custom_models,
                     update_model_asset,
@@ -48,6 +49,81 @@ impl Plugin for ModelPlugin {
                 )
                     .run_if(in_state(GameState::Playing)),
             );
+    }
+}
+
+#[derive(Component, Default, Deref, DerefMut, Debug)]
+struct Bones(HashMap<usize, Entity>);
+
+// Map of the bones + points all animation targets to one central AnimationPlayer at the root entity.
+fn on_model_spawn(
+    mut commands: Commands,
+    models: Res<Models>,
+    gltf_nodes: Res<Assets<GltfNode>>,
+    gltfs: Res<Assets<Gltf>>,
+    children: Query<&Children>,
+    mut animation_targets: Query<(&Name, Option<&mut AnimationTarget>)>,
+    mut added_scenes: Query<
+        (Entity, &Model),
+        (With<AnimationPlayer>, With<SceneRoot>, Added<Children>),
+    >,
+) {
+    fn traverse_bones(
+        root: Entity,
+        child: Entity,
+        bones: &mut Bones,
+        gltf: &Gltf,
+        gltf_nodes: &Assets<GltfNode>,
+        children: &Query<&Children>,
+        animation_targets: &mut Query<(&Name, Option<&mut AnimationTarget>)>,
+    ) {
+        if let Ok((name, mut maybe_animation_target)) = animation_targets.get_mut(child) {
+            if let Some(animation_target) = &mut maybe_animation_target {
+                animation_target.player = root;
+            }
+
+            if let Some(node_handle) = gltf.named_nodes.get(name.as_str()) {
+                let node = gltf_nodes.get(node_handle).unwrap();
+                bones.insert(node.index, child);
+            }
+        }
+
+        if let Ok(node_children) = children.get(child) {
+            for node_child in node_children {
+                traverse_bones(
+                    root,
+                    *node_child,
+                    bones,
+                    gltf,
+                    gltf_nodes,
+                    children,
+                    animation_targets,
+                );
+            }
+        }
+    }
+
+    for (root_entity, model) in added_scenes.iter_mut() {
+        let Model::Asset(id) = model else {
+            continue;
+        };
+
+        let model_config = models.get_config(id).unwrap();
+
+        let gltf = gltfs.get(&model_config.gltf_handle).unwrap();
+
+        let mut bones = Bones::default();
+        traverse_bones(
+            root_entity,
+            root_entity,
+            &mut bones,
+            &gltf,
+            &gltf_nodes,
+            &children,
+            &mut animation_targets,
+        );
+
+        commands.entity(root_entity).try_insert(bones);
     }
 }
 
@@ -260,7 +336,7 @@ fn handle_model_add_delete(
                 AnimationGraphHandle(model_config.animation_graph.clone().unwrap()),
                 AnimationPlayer::default(),
                 AnimationTransitions::default(),
-                TransformInterpolation::default(),
+                TransformInterpolator::default(),
                 MovesWithOrigin,
             ))
             .id();
@@ -346,7 +422,7 @@ fn handle_custom_models(
                     scale: custom_model.scale,
                 },
                 AnimationPlayer::default(),
-                TransformInterpolation::default(),
+                TransformInterpolator::default(),
                 MovesWithOrigin,
             ))
             .id();
@@ -383,78 +459,110 @@ fn update_model_asset(
     }
 }
 
-#[derive(Component)]
-struct TransformInterpolation {
+struct Interpolation {
     progress: f32,
-    translation: DVec3,
+    translation: Vec3,
     rotation: Quat,
     scale: Vec3,
 }
 
-impl Default for TransformInterpolation {
+impl Default for Interpolation {
     fn default() -> Self {
         Self {
             progress: 1.0,
-            translation: DVec3::default(),
+            translation: Vec3::default(),
             rotation: Quat::default(),
             scale: Vec3::default(),
         }
     }
 }
 
+#[derive(Component, Default)]
+struct TransformInterpolator {
+    // TODO: Convertt to SmallVec to avoid the allocation, just linear search when inserting.
+    bones: HashMap<Entity, Interpolation>,
+}
+
 fn handle_transform_updates(
+    origin: Res<Origin>,
     model_entities: Res<ModelEntities>,
     mut transform_updates: EventReader<messages::ModelUpdateTransform>,
-    mut model_query: Query<&mut TransformInterpolation, With<Model>>,
+    mut model_query: Query<(&mut TransformInterpolator, &Bones), With<Model>>,
 ) {
     for transform_update in transform_updates.read() {
-        if let Some(entity) = model_entities.get_entity(&transform_update.model_id) {
-            // TODO: I think this should be bug, server should not send model same tick it sends
-            // transform updated. But there is 1-frame delay for model entity spawn for command
+        if let Some(model_entity) = model_entities.get_entity(&transform_update.model_id) {
+            // TODO: I don't think this should continue, server should not send model same tick it sends
+            // transform updates. But there is 1-frame delay for model entity spawn for command
             // application. Should be disconnect I think, if bevy ever gets immediate command
             // application.
-            let mut interpolation = match model_query.get_mut(entity) {
+            let (mut interpolator, bones) = match model_query.get_mut(model_entity) {
                 Ok(m) => m,
                 Err(_) => continue,
             };
 
-            interpolation.translation = transform_update.position;
-            interpolation.rotation = transform_update.rotation;
-            interpolation.scale = transform_update.scale;
-            interpolation.progress = 0.0;
+            if let Some(bone_id) = transform_update.bone {
+                let Some(bone_entity) = bones.get(&bone_id) else {
+                    warn!("Server tried to set the transform of a bone that doesn't exist.");
+                    continue;
+                };
+
+                interpolator.bones.insert(
+                    *bone_entity,
+                    Interpolation {
+                        progress: 0.0,
+                        translation: transform_update.position.as_vec3(),
+                        rotation: transform_update.rotation,
+                        scale: transform_update.scale,
+                    },
+                );
+            } else {
+                interpolator.bones.insert(
+                    model_entity,
+                    Interpolation {
+                        progress: 0.0,
+                        translation: origin.to_local(transform_update.position),
+                        rotation: transform_update.rotation,
+                        scale: transform_update.scale,
+                    },
+                );
+            }
         }
     }
 }
 
 fn interpolation(
-    origin: Res<Origin>,
-    mut model_query: Query<
-        (&mut Transform, &mut TransformInterpolation),
-        (
-            With<Model>,
-            Or<(Changed<GlobalTransform>, Changed<TransformInterpolation>)>,
-        ),
-    >,
+    mut interpolator_query: Query<&mut TransformInterpolator>,
+    mut model_query: Query<&mut Transform, Or<(With<Model>, With<Name>)>>,
 ) {
-    for (mut transform, mut interpolation) in model_query.iter_mut() {
-        interpolation.progress += 1.0 / 6.0;
-        if interpolation.progress > 1.0 {
-            continue;
+    for mut interpolator in interpolator_query.iter_mut() {
+        for (bone_entity, interpolation) in interpolator.bones.iter_mut() {
+            if interpolation.progress >= 1.0 {
+                continue;
+            }
+
+            // TODO: This is frame dependant, can't have that
+            interpolation.progress += 1.0 / 6.0;
+            interpolation.progress = interpolation.progress.clamp(0.0, 1.0);
+
+            let Ok(mut transform) = model_query.get_mut(*bone_entity) else {
+                warn!("Interpolation error: Missing model bone");
+                continue;
+            };
+
+            let interpolation_transform = Transform {
+                translation: interpolation.translation,
+                rotation: interpolation.rotation,
+                scale: interpolation.scale,
+            };
+
+            let new_transform = Animatable::interpolate(
+                &*transform,
+                &interpolation_transform,
+                interpolation.progress,
+            );
+
+            transform.set_if_neq(new_transform);
         }
-
-        let interpolation_transform = Transform {
-            translation: (interpolation.translation - origin.as_dvec3()).as_vec3(),
-            rotation: interpolation.rotation,
-            scale: interpolation.scale,
-        };
-
-        let new_transform = Animatable::interpolate(
-            &*transform,
-            &interpolation_transform,
-            interpolation.progress,
-        );
-
-        transform.set_if_neq(new_transform);
     }
 }
 
