@@ -75,7 +75,7 @@ fn add_and_remove_subscribers(
     world_map: Res<WorldMap>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     connections: Query<(Entity, &ChunkPosition), Added<Player>>,
-    mut disconnections: RemovedComponents<Player>,
+    mut disconnections: EventReader<NetworkEvent>,
     mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
 ) {
     for (entity, chunk_position) in connections.iter() {
@@ -88,10 +88,14 @@ fn add_and_remove_subscribers(
             .insert(MovementTracker::new(*chunk_position));
     }
 
-    for entity in disconnections.read() {
+    for network_event in disconnections.read() {
+        let NetworkEvent::Disconnected { entity } = network_event else {
+            continue;
+        };
+
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
-            .remove(&entity)
+            .remove(entity)
             .unwrap();
 
         for chunk_position in subscribed_chunks {
@@ -99,7 +103,7 @@ fn add_and_remove_subscribers(
                 .chunk_to_subscribers
                 .get_mut(&chunk_position)
                 .unwrap();
-            subscribers.remove(&entity);
+            subscribers.remove(entity);
 
             if subscribers.len() == 0 {
                 chunk_subscriptions
