@@ -35,7 +35,7 @@ impl Rng {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UniformDistribution<T> {
     start: T,
     range: T,
@@ -50,37 +50,39 @@ impl<T: private::UniformType> UniformDistribution<T> {
             range: high - low,
         }
     }
+
+    pub fn sample(&self, rng: &mut Rng) -> T {
+        T::sample(rng, self.start, self.range)
+    }
 }
 
 mod private {
-    pub trait UniformType: PartialOrd + Copy + std::ops::Sub<Output = Self> {}
-    impl UniformType for f32 {}
-    impl UniformType for u32 {}
-    impl UniformType for i32 {}
-    impl UniformType for usize {}
-}
-
-impl UniformDistribution<f32> {
-    pub fn sample(&self, rng: &mut Rng) -> f32 {
-        self.start + rng.next_f32() * self.range
+    use super::Rng;
+    pub trait UniformType:
+        PartialOrd + Copy + std::ops::Sub<Output = Self> + std::fmt::Debug
+    {
+        fn sample(rng: &mut Rng, start: Self, range: Self) -> Self;
     }
-}
 
-impl UniformDistribution<u32> {
-    pub fn sample(&self, rng: &mut Rng) -> u32 {
-        self.start + rng.next_u32() % (self.range + 1)
+    impl UniformType for f32 {
+        fn sample(rng: &mut Rng, start: Self, range: Self) -> Self {
+            start + rng.next_f32() * range
+        }
     }
-}
-
-impl UniformDistribution<i32> {
-    pub fn sample(&self, rng: &mut Rng) -> i32 {
-        self.start + rng.next_i32().abs() % (self.range + 1)
+    impl UniformType for u32 {
+        fn sample(rng: &mut Rng, start: Self, range: Self) -> Self {
+            start + rng.next_u32() % (range + 1)
+        }
     }
-}
-
-impl UniformDistribution<usize> {
-    pub fn sample(&self, rng: &mut Rng) -> usize {
-        self.start + rng.next_usize() % (self.range + 1)
+    impl UniformType for i32 {
+        fn sample(rng: &mut Rng, start: Self, range: Self) -> Self {
+            start + rng.next_i32().abs() % (range + 1)
+        }
+    }
+    impl UniformType for usize {
+        fn sample(rng: &mut Rng, start: Self, range: Self) -> Self {
+            start + rng.next_usize() % (range + 1)
+        }
     }
 }
 
@@ -140,5 +142,51 @@ impl<'a, T> Iterator for ChooseIter<'a, T> {
                     .get_unchecked(self.choose.range.sample(self.rng)),
             )
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WeightedIndex<T: private::UniformType + PartialOrd> {
+    cumulative_weights: Vec<T>,
+    weight_distribution: UniformDistribution<T>,
+}
+
+impl<T: private::UniformType + PartialOrd> WeightedIndex<T> {
+    pub fn new(weights: &[&T]) -> Result<WeightedIndex<T>, ()>
+    where
+        T: core::ops::AddAssign + Clone + Default,
+    {
+        let mut total_weight = T::default();
+        let mut cumulative_weights = Vec::<T>::with_capacity(weights.len());
+
+        // TODO: What is this reference mess (have to do &T in the function parameter to make the
+        // compiler understand) make it impl Iterator or something?
+        for w in weights.iter().cloned() {
+            if !(*w >= T::default()) {
+                return Err(());
+            }
+            total_weight += *w;
+            cumulative_weights.push(total_weight);
+        }
+
+        Ok(WeightedIndex {
+            cumulative_weights,
+            weight_distribution: UniformDistribution::new(T::default(), total_weight),
+        })
+    }
+
+    pub fn sample(&self, rng: &mut Rng) -> usize {
+        use ::core::cmp::Ordering;
+        let chosen_weight = self.weight_distribution.sample(rng);
+        // Find the first item which has a weight *higher* than the chosen weight.
+        self.cumulative_weights
+            .binary_search_by(|w| {
+                if *w <= chosen_weight {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            })
+            .unwrap_err()
     }
 }

@@ -12,7 +12,6 @@ use bevy::{
     ecs::system::EntityCommands,
     math::{DQuat, DVec3},
 };
-use rand::{distributions::WeightedIndex, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -24,6 +23,7 @@ use crate::{
     players::Camera,
     prelude::*,
     random::Rng,
+    random::WeightedIndex,
     world::chunk::{Chunk, ChunkPosition},
 };
 
@@ -377,7 +377,7 @@ struct BlockDropJson {
 enum BlockDropKindJson {
     Single(String),
     Multiple { item_name: String, count: u32 },
-    Chance(Vec<(f64, Self)>),
+    Chance(Vec<(f32, Self)>),
 }
 
 #[derive(Debug, Clone)]
@@ -387,16 +387,16 @@ struct BlockDrop {
 }
 
 impl BlockDrop {
-    fn drop(&self, with_tool: bool) -> Option<(ItemId, u32)> {
+    fn drop(&self, rng: &mut Rng, with_tool: bool) -> Option<(ItemId, u32)> {
         if self.requires_tool && !with_tool {
             return None;
         } else {
-            return Some(self.drop.drop());
+            return Some(self.drop.drop(rng));
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 enum BlockDropKind {
     Single(ItemId),
     Multiple {
@@ -406,7 +406,7 @@ enum BlockDropKind {
     // TODO: There's no way to define something that drops only one thing n% of the time.
     Chance {
         // The probablities of the drops.
-        weights: WeightedIndex<f64>,
+        weights: WeightedIndex<f32>,
         drops: Vec<Self>,
     },
 }
@@ -435,7 +435,7 @@ impl BlockDropKind {
                     drops.push(drop);
                 }
 
-                let weights = match WeightedIndex::new(weights) {
+                let weights = match WeightedIndex::new(&weights) {
                     Ok(w) => w,
                     Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
                 };
@@ -445,13 +445,11 @@ impl BlockDropKind {
         }
     }
 
-    fn drop(&self) -> (ItemId, u32) {
+    fn drop(&self, rng: &mut Rng) -> (ItemId, u32) {
         match &self {
             BlockDropKind::Single(item_id) => (*item_id, 1),
             BlockDropKind::Multiple { item_id, count } => (*item_id, *count),
-            BlockDropKind::Chance { weights, drops } => {
-                drops[weights.sample(&mut rand::thread_rng())].drop()
-            }
+            BlockDropKind::Chance { weights, drops } => drops[weights.sample(rng)].drop(rng),
         }
     }
 }
@@ -660,15 +658,15 @@ impl BlockConfig {
         }
     }
 
-    pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<(ItemId, u32)> {
+    pub fn drop(&self, rng: &mut Rng, tool: Option<&ItemConfig>) -> Option<(ItemId, u32)> {
         let Some(block_drop) = &self.drop else {
             return None;
         };
 
         if let Some(tool) = tool.and_then(|t| t.tool.as_ref()) {
-            return block_drop.drop(self.tools.contains(&tool.name));
+            return block_drop.drop(rng, self.tools.contains(&tool.name));
         } else {
-            return block_drop.drop(false);
+            return block_drop.drop(rng, false);
         }
     }
 
