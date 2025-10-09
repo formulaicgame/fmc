@@ -693,10 +693,10 @@ impl BlockConfig {
         }
     }
 
-    pub fn drag(&self) -> DVec3 {
-        match &self.friction {
-            Friction::Surface { .. } => DVec3::ZERO,
-            Friction::Drag(drag) => *drag,
+    pub fn drag(&self) -> Option<DVec3> {
+        match self.friction {
+            Friction::Surface { .. } => None,
+            Friction::Drag(drag) => Some(drag),
         }
     }
 

@@ -402,6 +402,7 @@ pub struct ModelMesh {
     pub indices: Vec<u32>,
 }
 
+// TODO: Needs reference to name so it can be printed in error messages
 pub struct ModelConfig {
     pub id: ModelAssetId,
     // Map from animation name (as stored in the gltf file) to its index

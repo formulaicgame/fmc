@@ -18,16 +18,15 @@ const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ObjectMap::default()).add_systems(
-            Update,
-            (
-                simulate_physics.in_set(PhysicsSystems),
-                apply_acceleration.before(simulate_physics),
-                buoyancy.before(apply_acceleration),
-                update_object_map,
-                trigger_update_on_block_change,
-            ),
-        );
+        app.insert_resource(Time::<Fixed>::from_seconds(1.0 / 60.0))
+            .insert_resource(ObjectMap::default())
+            .add_systems(Update, (update_object_map, trigger_update_on_block_change))
+            .add_systems(
+                FixedUpdate,
+                (buoyancy, apply_acceleration, simulate_physics)
+                    .chain()
+                    .in_set(PhysicsSystems),
+            );
     }
 }
 
@@ -249,14 +248,11 @@ impl ObjectMap {
     }
 }
 
-// BUG: Wanted to use Vec3A end to end, but the Vec3A::max_element function considers NaN to be
-// greater than any number, where Vec3::max_element is opposite.
-//
 // Moves all entities with collider along their velocity vector and resolves any collisions that
 // occur with the environment.
 fn simulate_physics(
     world_map: Res<WorldMap>,
-    time: Res<Time>,
+    time: Res<Time<Fixed>>,
     mut entities: Query<(&mut Transform, &mut Physics, &Collider)>,
 ) {
     for (mut transform, mut physics, entity_collider) in entities.iter_mut() {
@@ -276,20 +272,18 @@ fn simulate_physics(
 
         let blocks = Blocks::get();
 
+        let delta_time = DVec3::splat(time.delta_secs_f64());
+        let mut new_position = transform.translation + physics.velocity * delta_time;
         let mut friction = DVec3::ZERO;
+        let mut move_back = DVec3::ZERO;
 
-        for directional_velocity in [
+        for velocity in [
             DVec3::new(0.0, physics.velocity.y, 0.0),
             DVec3::new(physics.velocity.x, 0.0, physics.velocity.z),
         ] {
-            let pos_after_move = transform.with_translation(
-                transform.translation + directional_velocity * time.delta_secs_f64(),
-            );
-            // let entity_collider = entity_collider.transform(&pos_after_move);
+            let pos_after_move =
+                transform.with_translation(transform.translation + velocity * delta_time);
 
-            // TODO: Allocation is unnecessary
-            // Check for collisions with all blocks within the aabb.
-            let mut collisions = Vec::new();
             for block_position in entity_collider.iter_block_positions(&pos_after_move) {
                 let block_id = match world_map.get_block(block_position) {
                     Some(id) => id,
@@ -313,41 +307,45 @@ fn simulate_physics(
                     ..default()
                 };
 
-                if let Some(intersection) = entity_collider.intersection(
+                let Some(overlap) = entity_collider.intersection(
                     &pos_after_move,
                     &block_transform,
                     &block_config.collider,
-                ) {
-                    if block_config.is_solid() {
-                        collisions.push((intersection, block_config));
-                    } else {
-                        friction = friction.max(block_config.drag());
-                    }
-                }
-            }
+                ) else {
+                    continue;
+                };
 
-            // TODO: This is remnant of when I tried to do all three axes at once. It could
-            // probably be made to be simpler.
-            let mut move_back = DVec3::ZERO;
-            let delta_time = DVec3::splat(time.delta_secs_f64());
-            // Resolve the conflicts by moving the aabb the opposite way of the velocity vector on the
-            // axis it takes the longest time to resolve the conflict.
-            for (collision, block_config) in collisions {
-                let backwards_time = collision / -directional_velocity;
+                if let Some(drag) = block_config.drag() {
+                    friction = friction.max(drag);
+                    continue;
+                }
+
+                let backwards_time = overlap / -velocity;
                 // Small epsilon to delta time because of precision.
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
                     & backwards_time.cmpgt(DVec3::ZERO);
                 let resolution_axis =
                     DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
 
-                if resolution_axis == backwards_time.y {
+                if physics.grounded.y && overlap.y > 0.0 && overlap.y < 0.51 {
+                    // This let's the player step up short distances when moving horizontally
+                    move_back.y = move_back.y.max(0.05_f64.min(overlap.y + overlap.y / 100.0));
+                    physics.grounded.y = true;
+                    physics.velocity.y = 0.0;
+
+                    if velocity.y.is_sign_positive() {
+                        friction = friction.max(block_config.surface_friction(BlockFace::Bottom));
+                    } else {
+                        friction = friction.max(block_config.surface_friction(BlockFace::Top));
+                    }
+                } else if resolution_axis == backwards_time.y {
                     if physics.velocity.y.is_sign_positive() {
                         friction = friction.max(block_config.surface_friction(BlockFace::Bottom));
                     } else {
                         friction = friction.max(block_config.surface_friction(BlockFace::Top));
                     }
 
-                    move_back.y = collision.y + collision.y / 100.0;
+                    move_back.y = overlap.y + overlap.y / 100.0;
                     physics.velocity.y = 0.0;
                     physics.grounded.y = true;
                 } else if resolution_axis == backwards_time.x {
@@ -357,7 +355,7 @@ fn simulate_physics(
                         friction = friction.max(block_config.surface_friction(BlockFace::Right));
                     }
 
-                    move_back.x = collision.x + collision.x / 100.0;
+                    move_back.x = overlap.x + overlap.x / 100.0;
                     physics.velocity.x = 0.0;
                     physics.grounded.x = true;
                 } else if resolution_axis == backwards_time.z {
@@ -367,7 +365,7 @@ fn simulate_physics(
                         friction = friction.max(block_config.surface_friction(BlockFace::Front));
                     }
 
-                    move_back.z = collision.z + collision.z / 100.0;
+                    move_back.z = overlap.z + overlap.z / 100.0;
                     physics.velocity.z = 0.0;
                     physics.grounded.z = true;
                 } else {
@@ -388,18 +386,19 @@ fn simulate_physics(
                             valid_axes,
                             DVec3::ZERO,
                         );
-                        move_back += (valid_axes + valid_axes / 100.0) * -directional_velocity;
+                        move_back += (valid_axes + valid_axes / 100.0) * -velocity;
                     }
                 }
             }
+        }
 
-            if (transform.translation - (pos_after_move.translation + move_back))
-                .abs()
-                .cmpgt(DVec3::splat(0.0001))
-                .any()
-            {
-                transform.translation = pos_after_move.translation + move_back;
-            }
+        new_position += move_back;
+        if (new_position - transform.translation)
+            .abs()
+            .cmpgt(DVec3::splat(0.0001))
+            .any()
+        {
+            transform.translation = new_position;
         }
 
         // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
@@ -454,11 +453,11 @@ fn trigger_update_on_block_change(
     }
 }
 
-fn apply_acceleration(time: Res<Time>, mut objects: Query<(Ref<GlobalTransform>, &mut Physics)>) {
-    for (transform, mut physics) in objects.iter_mut() {
-        if !transform.is_changed() {
-            // If the transform isn't modified it is considered stationary. Stationary objects are
-            // skipped until some external force is applied to them or a block around them changes.
+fn apply_acceleration(time: Res<Time<Fixed>>, mut objects: Query<&mut Physics>) {
+    for mut physics in objects.iter_mut() {
+        if physics.velocity == DVec3::ZERO && physics.acceleration == DVec3::ZERO {
+            // Stationary objects are skipped until some external force is applied to them or a
+            // block around them changes. Physics calculations are expensive.
             continue;
         }
 
@@ -487,16 +486,14 @@ fn buoyancy(
         };
         let block_config = Blocks::get().get_config(&block_id);
 
-        if block_config.is_solid() {
+        let Some(drag) = block_config.drag() else {
             continue;
-        }
+        };
 
         // We want to let the object bob a little when it enters the water, but when it has
         // stabilized
         //let offset_from_top_of_block = 1.0 - (waterline_position.y - block_position.y as f64);
-        if buoyancy.density < block_config.drag().y
-            && waterline_position.y < block_position.y as f64 + 1.0
-        {
+        if buoyancy.density < drag.y && waterline_position.y < block_position.y as f64 + 1.0 {
             //if offset_from_top_of_block < 0.05 {
             //    acceleration.0 += -GRAVITY;
             //} else {
