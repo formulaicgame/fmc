@@ -8,7 +8,7 @@ use crate::{
     blocks::{BlockConfig, BlockId},
     database::Database,
     models::{ModelAssetId, Models},
-    random::{Rng, WeightedIndex},
+    random::{Rng, UniformDistribution, WeightedIndex},
 };
 
 pub type ItemId = u32;
@@ -319,68 +319,93 @@ pub struct Tool {
     pub efficiency: f32,
 }
 
-// TODO: There's no way to define something that drops only one thing n% of the time.
-#[derive(Clone, Debug)]
-pub enum DropTable {
-    Single(ItemId),
-    Multiple {
-        item_id: ItemId,
-        count: u32,
-    },
-    Weighted {
-        // The probablities of the drops.
-        weights: WeightedIndex<f32>,
-        drops: Vec<Self>,
-    },
+#[derive(Debug, Deserialize)]
+pub struct DropTableJson {
+    probability: f32,
+    weights: Vec<f32>,
+    drops: Vec<DropJson>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum DropTableJson {
-    Single(String),
-    Multiple { item_name: String, count: u32 },
-    Weighted(Vec<(f32, Self)>),
+struct DropJson {
+    item_name: String,
+    min: u32,
+    max: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct DropTable {
+    probability: f32,
+    weights: WeightedIndex<f32>,
+    drops: Vec<(ItemId, UniformDistribution<u32>)>,
 }
 
 impl DropTable {
-    pub fn from_json(json: &DropTableJson, items: &Items) -> Result<DropTable, String> {
-        match json {
-            DropTableJson::Single(item_name) => match items.get_id(item_name) {
-                Some(id) => Ok(Self::Single(id)),
-                None => Err(format!("No item by the name {}", item_name)),
-            },
-            DropTableJson::Multiple { item_name, count } => match items.get_id(item_name) {
-                Some(item_id) => Ok(Self::Multiple {
-                    item_id,
-                    count: *count,
-                }),
-                None => Err(format!("No item by the name {}", item_name)),
-            },
-            DropTableJson::Weighted(list) => {
-                let mut weights = Vec::with_capacity(list.len());
-                let mut drops = Vec::with_capacity(list.len());
-
-                for (weight, drop_json) in list {
-                    weights.push(weight);
-                    let drop = Self::from_json(drop_json, items)?;
-                    drops.push(drop);
-                }
-
-                let weights = match WeightedIndex::new(&weights) {
-                    Ok(w) => w,
-                    Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
-                };
-
-                Ok(Self::Weighted { weights, drops })
-            }
+    pub fn empty() -> Self {
+        Self {
+            probability: 0.0,
+            weights: WeightedIndex::new(Vec::new()).unwrap(),
+            drops: Vec::new(),
         }
     }
 
-    pub fn drop(&self, rng: &mut Rng) -> (ItemId, u32) {
-        match &self {
-            Self::Single(item_id) => (*item_id, 1),
-            Self::Multiple { item_id, count } => (*item_id, *count),
-            Self::Weighted { weights, drops } => drops[weights.sample(rng)].drop(rng),
+    pub fn new(
+        probability: f32,
+        weights: &Vec<f32>,
+        drops: &Vec<(ItemId, u32, u32)>,
+    ) -> Result<Self, String> {
+        if drops.is_empty() {
+            return Err("'drops' cannot be empty".to_owned());
+        } else if weights.len() != drops.len() {
+            return Err("'drops' and 'weights' must be of the same length".to_owned());
         }
+
+        let weights = match WeightedIndex::new(weights) {
+            Ok(w) => w,
+            Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
+        };
+
+        let drops = drops
+            .iter()
+            .map(|(item_id, min, max)| (*item_id, UniformDistribution::new(*min, *max)))
+            .collect();
+
+        Ok(Self {
+            probability: probability.max(0.0).min(1.0),
+            weights,
+            drops,
+        })
+    }
+
+    pub fn from_json(json: &DropTableJson, items: &Items) -> Result<DropTable, String> {
+        let mut drops = Vec::with_capacity(json.drops.len());
+        for drop in json.drops.iter() {
+            if let Some(item_id) = items.get_id(&drop.item_name) {
+                drops.push((item_id, UniformDistribution::new(drop.min, drop.max)));
+            } else {
+                return Err(format!("No item by the name '{}'", drop.item_name));
+            }
+        }
+
+        let weights = match WeightedIndex::new(&json.weights) {
+            Ok(w) => w,
+            Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
+        };
+
+        Ok(Self {
+            probability: json.probability.max(0.0).min(1.0),
+            weights,
+            drops,
+        })
+    }
+
+    pub fn drop(&self, mut rng: &mut Rng) -> Option<(ItemId, u32)> {
+        if rng.next_f32() > self.probability {
+            return None;
+        }
+
+        let (item_id, distribution) = &self.drops[self.weights.sample(&mut rng)];
+        let count = distribution.sample(&mut rng);
+        return Some((*item_id, count));
     }
 }

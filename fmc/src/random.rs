@@ -146,22 +146,21 @@ impl<'a, T> Iterator for ChooseIter<'a, T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct WeightedIndex<T: private::UniformType + PartialOrd> {
+pub struct WeightedIndex<T: private::UniformType> {
     cumulative_weights: Vec<T>,
     weight_distribution: UniformDistribution<T>,
 }
 
-impl<T: private::UniformType + PartialOrd> WeightedIndex<T> {
-    pub fn new(weights: &[&T]) -> Result<WeightedIndex<T>, ()>
+impl<T: private::UniformType> WeightedIndex<T> {
+    pub fn new<'a>(weights: impl IntoIterator<Item = &'a T>) -> Result<WeightedIndex<T>, ()>
     where
-        T: core::ops::AddAssign + Clone + Default,
+        T: core::ops::AddAssign + Clone + Default + 'a,
     {
         let mut total_weight = T::default();
-        let mut cumulative_weights = Vec::<T>::with_capacity(weights.len());
+        let iter = weights.into_iter();
+        let mut cumulative_weights = Vec::<T>::with_capacity(iter.size_hint().0);
 
-        // TODO: What is this reference mess (have to do &T in the function parameter to make the
-        // compiler understand) make it impl Iterator or something?
-        for w in weights.iter().cloned() {
+        for w in iter {
             if !(*w >= T::default()) {
                 return Err(());
             }
