@@ -8,6 +8,7 @@ use crate::{
     blocks::{BlockConfig, BlockId},
     database::Database,
     models::{ModelAssetId, Models},
+    random::{Rng, WeightedIndex},
 };
 
 pub type ItemId = u32;
@@ -316,4 +317,70 @@ impl ItemStack {
 pub struct Tool {
     pub name: String,
     pub efficiency: f32,
+}
+
+// TODO: There's no way to define something that drops only one thing n% of the time.
+#[derive(Clone, Debug)]
+pub enum DropTable {
+    Single(ItemId),
+    Multiple {
+        item_id: ItemId,
+        count: u32,
+    },
+    Weighted {
+        // The probablities of the drops.
+        weights: WeightedIndex<f32>,
+        drops: Vec<Self>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum DropTableJson {
+    Single(String),
+    Multiple { item_name: String, count: u32 },
+    Weighted(Vec<(f32, Self)>),
+}
+
+impl DropTable {
+    pub fn from_json(json: &DropTableJson, items: &Items) -> Result<DropTable, String> {
+        match json {
+            DropTableJson::Single(item_name) => match items.get_id(item_name) {
+                Some(id) => Ok(Self::Single(id)),
+                None => Err(format!("No item by the name {}", item_name)),
+            },
+            DropTableJson::Multiple { item_name, count } => match items.get_id(item_name) {
+                Some(item_id) => Ok(Self::Multiple {
+                    item_id,
+                    count: *count,
+                }),
+                None => Err(format!("No item by the name {}", item_name)),
+            },
+            DropTableJson::Weighted(list) => {
+                let mut weights = Vec::with_capacity(list.len());
+                let mut drops = Vec::with_capacity(list.len());
+
+                for (weight, drop_json) in list {
+                    weights.push(weight);
+                    let drop = Self::from_json(drop_json, items)?;
+                    drops.push(drop);
+                }
+
+                let weights = match WeightedIndex::new(&weights) {
+                    Ok(w) => w,
+                    Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
+                };
+
+                Ok(Self::Weighted { weights, drops })
+            }
+        }
+    }
+
+    pub fn drop(&self, rng: &mut Rng) -> (ItemId, u32) {
+        match &self {
+            Self::Single(item_id) => (*item_id, 1),
+            Self::Multiple { item_id, count } => (*item_id, *count),
+            Self::Weighted { weights, drops } => drops[weights.sample(rng)].drop(rng),
+        }
+    }
 }

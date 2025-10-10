@@ -17,13 +17,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     assets::AssetSet,
     database::Database,
-    items::{ItemConfig, ItemId, Items},
+    items::{DropTable, DropTableJson, ItemConfig, ItemId, ItemStack, Items},
     models::{ModelAssetId, Models},
     physics::{Collider, ColliderJson, shapes::Aabb},
     players::Camera,
     prelude::*,
-    random::Rng,
-    random::WeightedIndex,
+    random::{Rng, WeightedIndex},
     world::chunk::{Chunk, ChunkPosition},
 };
 
@@ -101,19 +100,16 @@ fn load_blocks_to_resource(
 
         let drop = match block_config_json.drop {
             Some(drop) => {
-                let kind = match BlockDropKind::from_json(&drop.drop, &items) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        panic!(
-                            "Failed to read 'drop' field for block at: {}\nError: {}",
-                            file_path.display(),
-                            e
-                        )
-                    }
+                let Some(item) = items.get_id(&drop.item) else {
+                    panic!(
+                        "Failed to read 'drop' field for block at: {}\nError: No item by the name {}",
+                        file_path.display(),
+                        &drop.item
+                    );
                 };
                 Some(BlockDrop {
                     requires_tool: drop.requires_tool,
-                    drop: kind,
+                    item,
                 })
             }
             None => None,
@@ -369,89 +365,13 @@ impl Blocks {
 struct BlockDropJson {
     #[serde(default)]
     requires_tool: bool,
-    drop: BlockDropKindJson,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum BlockDropKindJson {
-    Single(String),
-    Multiple { item_name: String, count: u32 },
-    Chance(Vec<(f32, Self)>),
+    item: String,
 }
 
 #[derive(Debug, Clone)]
 struct BlockDrop {
     requires_tool: bool,
-    drop: BlockDropKind,
-}
-
-impl BlockDrop {
-    fn drop(&self, rng: &mut Rng, with_tool: bool) -> Option<(ItemId, u32)> {
-        if self.requires_tool && !with_tool {
-            return None;
-        } else {
-            return Some(self.drop.drop(rng));
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum BlockDropKind {
-    Single(ItemId),
-    Multiple {
-        item_id: ItemId,
-        count: u32,
-    },
-    // TODO: There's no way to define something that drops only one thing n% of the time.
-    Chance {
-        // The probablities of the drops.
-        weights: WeightedIndex<f32>,
-        drops: Vec<Self>,
-    },
-}
-
-impl BlockDropKind {
-    fn from_json(json: &BlockDropKindJson, items: &Items) -> Result<BlockDropKind, String> {
-        match json {
-            BlockDropKindJson::Single(item_name) => match items.get_id(item_name) {
-                Some(id) => Ok(Self::Single(id)),
-                None => Err(format!("No item by the name {}", item_name)),
-            },
-            BlockDropKindJson::Multiple { item_name, count } => match items.get_id(item_name) {
-                Some(item_id) => Ok(Self::Multiple {
-                    item_id,
-                    count: *count,
-                }),
-                None => Err(format!("No item by the name {}", item_name)),
-            },
-            BlockDropKindJson::Chance(list) => {
-                let mut weights = Vec::with_capacity(list.len());
-                let mut drops = Vec::with_capacity(list.len());
-
-                for (weight, drop_json) in list {
-                    weights.push(weight);
-                    let drop = Self::from_json(drop_json, items)?;
-                    drops.push(drop);
-                }
-
-                let weights = match WeightedIndex::new(&weights) {
-                    Ok(w) => w,
-                    Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
-                };
-
-                Ok(Self::Chance { weights, drops })
-            }
-        }
-    }
-
-    fn drop(&self, rng: &mut Rng) -> (ItemId, u32) {
-        match &self {
-            BlockDropKind::Single(item_id) => (*item_id, 1),
-            BlockDropKind::Multiple { item_id, count } => (*item_id, *count),
-            BlockDropKind::Chance { weights, drops } => drops[weights.sample(rng)].drop(rng),
-        }
-    }
+    item: ItemId,
 }
 
 // Paths to textures used by a cube, relative to /textures/
@@ -592,7 +512,7 @@ impl BlockConfigJson {
             Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
         };
 
-        // This filters out parent configs
+        // Filter out parent configs
         if json.get("name").is_some_and(|name| name.is_string()) {
             // TODO: When this fails, theres no way to know which field made it panic.
             return match serde_json::from_value(json) {
@@ -658,15 +578,19 @@ impl BlockConfig {
         }
     }
 
-    pub fn drop(&self, rng: &mut Rng, tool: Option<&ItemConfig>) -> Option<(ItemId, u32)> {
+    pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<ItemId> {
         let Some(block_drop) = &self.drop else {
             return None;
         };
 
-        if let Some(tool) = tool.and_then(|t| t.tool.as_ref()) {
-            return block_drop.drop(rng, self.tools.contains(&tool.name));
+        if block_drop.requires_tool
+            && !tool
+                .map(|tool| &tool.name)
+                .is_some_and(|name| self.tools.contains(name))
+        {
+            return None;
         } else {
-            return block_drop.drop(rng, false);
+            return Some(block_drop.item);
         }
     }
 
