@@ -461,7 +461,7 @@ fn update_model_asset(
 
 struct Interpolation {
     progress: f32,
-    translation: Vec3,
+    translation: DVec3,
     rotation: Quat,
     scale: Vec3,
 }
@@ -470,7 +470,7 @@ impl Default for Interpolation {
     fn default() -> Self {
         Self {
             progress: 1.0,
-            translation: Vec3::default(),
+            translation: DVec3::default(),
             rotation: Quat::default(),
             scale: Vec3::default(),
         }
@@ -479,8 +479,8 @@ impl Default for Interpolation {
 
 #[derive(Component, Default)]
 struct TransformInterpolator {
-    // TODO: Convertt to SmallVec to avoid the allocation, just linear search when inserting.
-    bones: HashMap<Entity, Interpolation>,
+    // TODO: Convert to SmallVec to avoid the allocation, just linear search when inserting.
+    entities: HashMap<Entity, Interpolation>,
 }
 
 fn handle_transform_updates(
@@ -488,6 +488,7 @@ fn handle_transform_updates(
     model_entities: Res<ModelEntities>,
     mut transform_updates: EventReader<messages::ModelUpdateTransform>,
     mut model_query: Query<(&mut TransformInterpolator, &Bones), With<Model>>,
+    mut transform_query: Query<&mut Transform>,
 ) {
     for transform_update in transform_updates.read() {
         if let Some(model_entity) = model_entities.get_entity(&transform_update.model_id) {
@@ -506,21 +507,21 @@ fn handle_transform_updates(
                     continue;
                 };
 
-                interpolator.bones.insert(
+                interpolator.entities.insert(
                     *bone_entity,
                     Interpolation {
                         progress: 0.0,
-                        translation: transform_update.position.as_vec3(),
+                        translation: transform_update.position,
                         rotation: transform_update.rotation,
                         scale: transform_update.scale,
                     },
                 );
             } else {
-                interpolator.bones.insert(
+                interpolator.entities.insert(
                     model_entity,
                     Interpolation {
                         progress: 0.0,
-                        translation: origin.to_local(transform_update.position),
+                        translation: transform_update.position,
                         rotation: transform_update.rotation,
                         scale: transform_update.scale,
                     },
@@ -531,11 +532,12 @@ fn handle_transform_updates(
 }
 
 fn interpolation(
+    origin: Res<Origin>,
     mut interpolator_query: Query<&mut TransformInterpolator>,
-    mut model_query: Query<&mut Transform, Or<(With<Model>, With<Name>)>>,
+    mut model_query: Query<(&mut Transform, Has<Model>), Or<(With<Model>, With<Name>)>>,
 ) {
     for mut interpolator in interpolator_query.iter_mut() {
-        for (bone_entity, interpolation) in interpolator.bones.iter_mut() {
+        for (bone_entity, interpolation) in interpolator.entities.iter_mut() {
             if interpolation.progress >= 1.0 {
                 continue;
             }
@@ -544,13 +546,18 @@ fn interpolation(
             interpolation.progress += 1.0 / 6.0;
             interpolation.progress = interpolation.progress.clamp(0.0, 1.0);
 
-            let Ok(mut transform) = model_query.get_mut(*bone_entity) else {
+            let Ok((mut transform, is_model)) = model_query.get_mut(*bone_entity) else {
                 warn!("Interpolation error: Missing model bone");
                 continue;
             };
 
             let interpolation_transform = Transform {
-                translation: interpolation.translation,
+                translation: if is_model {
+                    origin.to_local(interpolation.translation)
+                } else {
+                    // If it's not a model, it's a bone. They always have local positions.
+                    interpolation.translation.as_vec3()
+                },
                 rotation: interpolation.rotation,
                 scale: interpolation.scale,
             };

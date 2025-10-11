@@ -73,7 +73,7 @@ fn update_origin(
         return;
     };
 
-    let true_translation = player_transform.translation().as_dvec3() + origin.0.as_dvec3();
+    let true_translation = origin.to_global(player_transform.translation());
     let new_origin = crate::utils::world_position_to_chunk_pos(true_translation.floor().as_ivec3());
 
     if new_origin == origin.0 {
