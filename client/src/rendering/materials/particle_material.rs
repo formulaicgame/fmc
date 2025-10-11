@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{Handle, load_internal_asset, weak_handle},
     image::Image,
     prelude::*,
     reflect::TypePath,
@@ -8,7 +8,7 @@ use bevy::{
 
 use crate::{rendering::lighting::LightMap, world::Origin};
 
-const PARTICLE_SHADER: Handle<Shader> = Handle::weak_from_u128(34956038049630945);
+const PARTICLE_SHADER: Handle<Shader> = weak_handle!("d0c4577a-75e0-4794-9355-eb4b7a8a2036");
 
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {

@@ -7,9 +7,9 @@ use serde::Deserialize;
 use crate::{
     networking::NetworkClient,
     ui::{
+        UiState,
         client::GuiState,
         server::{InterfaceVisibilityEvent, Interfaces},
-        UiState,
     },
 };
 
@@ -127,7 +127,7 @@ fn handle_key_presses(
                     && interface_config.keyboard_focus != KeyboardFocus::Full)
                     || *pressed_key == KeyCode::Escape
                 {
-                    interface_events.send(InterfaceVisibilityEvent {
+                    interface_events.write(InterfaceVisibilityEvent {
                         interface_entity,
                         visible: false,
                     });

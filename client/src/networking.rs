@@ -7,9 +7,9 @@ use std::{
 use bevy::{
     ecs::system::SystemParam,
     prelude::*,
-    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
-use fmc_protocol::{messages, MessageType, ServerBound};
+use fmc_protocol::{MessageType, ServerBound, messages};
 use serde::Serialize;
 
 use crate::{assets::AssetState, game_state::GameState, settings::Settings};
@@ -466,7 +466,7 @@ fn register_client_disconnect_events(
     mut network_events: EventWriter<messages::Disconnect>,
 ) {
     if let Ok(message) = net.disconnect_events.pop() {
-        network_events.send(messages::Disconnect { message });
+        network_events.write(messages::Disconnect { message });
     }
 }
 

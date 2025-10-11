@@ -301,7 +301,7 @@ fn handle_new_chunks(
             }
         }
 
-        new_chunk_events.send(NewChunkEvent {
+        new_chunk_events.write(NewChunkEvent {
             position: chunk.position,
         });
 

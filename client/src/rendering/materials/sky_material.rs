@@ -1,11 +1,11 @@
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, weak_handle},
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     render::{mesh::MeshVertexBufferLayoutRef, render_resource::*},
 };
 
-const SKY_SHADER: Handle<Shader> = Handle::weak_from_u128(1708015959337029744);
+const SKY_SHADER: Handle<Shader> = weak_handle!("996ffae4-c429-4924-bf5d-ce18f3f93ca8");
 
 pub struct SkyMaterialPlugin;
 impl Plugin for SkyMaterialPlugin {

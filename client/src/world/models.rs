@@ -484,11 +484,9 @@ struct TransformInterpolator {
 }
 
 fn handle_transform_updates(
-    origin: Res<Origin>,
     model_entities: Res<ModelEntities>,
     mut transform_updates: EventReader<messages::ModelUpdateTransform>,
     mut model_query: Query<(&mut TransformInterpolator, &Bones), With<Model>>,
-    mut transform_query: Query<&mut Transform>,
 ) {
     for transform_update in transform_updates.read() {
         if let Some(model_entity) = model_entities.get_entity(&transform_update.model_id) {

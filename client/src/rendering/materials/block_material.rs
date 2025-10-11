@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{Handle, load_internal_asset, weak_handle},
     image::Image,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
@@ -13,7 +13,7 @@ use bevy::{
     },
 };
 
-const BLOCK_SHADER: Handle<Shader> = Handle::weak_from_u128(234982304982304);
+const BLOCK_SHADER: Handle<Shader> = weak_handle!("ec7e9459-fc8b-4c8c-8c07-d1290da4e9de");
 
 pub struct BlockMaterialPlugin;
 impl Plugin for BlockMaterialPlugin {

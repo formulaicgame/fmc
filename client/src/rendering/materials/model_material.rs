@@ -1,5 +1,5 @@
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, weak_handle},
     math::{DVec3, Vec3A},
     pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
     prelude::*,
@@ -21,7 +21,7 @@ use crate::{
     world::Origin,
 };
 
-const MODEL_SHADER: Handle<Shader> = Handle::weak_from_u128(34096891246294360);
+const MODEL_SHADER: Handle<Shader> = weak_handle!("5271e945-44f0-49e2-9ca1-50225dbb5565");
 
 pub type ModelMaterial = ExtendedMaterial<StandardMaterial, ModelMaterialExtension>;
 
