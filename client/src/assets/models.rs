@@ -406,14 +406,16 @@ impl JsonModel {
         let mut world = World::new();
         let mut entity_commands = world.spawn_empty();
         let entity = entity_commands.id();
+        let name = Name::new("block_model");
         entity_commands.insert((
             Transform::default(),
             Visibility::default(),
             AnimationPlayer::default(),
             AnimationTarget {
-                id: AnimationTargetId::from_name(&Name::new("block_model")),
+                id: AnimationTargetId::from_name(&name),
                 player: entity,
             },
+            name,
             Mesh3d(asset_server.add(mesh)),
             MeshMaterial3d(material_handle.clone()),
         ));

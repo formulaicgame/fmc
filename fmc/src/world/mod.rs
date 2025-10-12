@@ -221,7 +221,6 @@ fn handle_block_updates(
                 };
 
                 let prev_block = chunk.set_block(block_index, block_id);
-                dbg!(&Blocks::get().get_config(&prev_block).name);
                 let prev_block_state = chunk.set_block_state(block_index, block_state);
 
                 if let BlockUpdate::Replace { block_data, .. } = &event {

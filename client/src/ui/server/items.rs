@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     assets::models::{ModelAssetId, Models},
-    game_state::GameState,
     networking::NetworkClient,
-    ui::CursorVisibility,
+    ui::{CursorVisibility, UiState},
     world::blocks::{BlockId, Blocks},
 };
 
@@ -35,7 +34,7 @@ impl Plugin for ItemPlugin {
                 update_cursor_item_stack_position,
                 keyboard_select_item_box,
             )
-                .run_if(in_state(GameState::Playing)),
+                .run_if(in_state(UiState::ServerInterfaces)),
         );
     }
 }

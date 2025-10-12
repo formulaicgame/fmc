@@ -145,7 +145,7 @@ fn equip_item(
         if let Some(item_id) = item_box.item_stack.item() {
             let item = items.get(&item_id);
 
-            // This prevents triggering the switch animation when switching between the same items.
+            // This prevents triggering the equip animation when switching between the same items.
             // The server also sends a full interface update anytime an item is picked up that is
             // caught by this.
             if hand.equipped == Some(item.equip_model) {
@@ -257,6 +257,10 @@ fn play_equip_animation(
             *hand_model = Model::Asset(*model_id);
 
             let gltf = gltfs.get(&model.gltf_handle).unwrap();
+            // I've confirmed through bevy_inspector_egui that the scene is spawned correctly. I
+            // think it's a spawn order bug. Spawning the bottom of the hierarchy before the top or
+            // something.
+            info!("The following warning (if any) is a bevy bug");
             *scene_handle = SceneRoot(gltf.scenes[0].clone());
             *animation_graph = AnimationGraphHandle(model.animation_graph.clone().unwrap());
         } else {
