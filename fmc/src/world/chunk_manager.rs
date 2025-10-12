@@ -24,9 +24,9 @@ use super::chunk::ChunkPosition;
 pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ChunkUnloadEvent>()
-            .add_event::<ChunkLoadEvent>()
-            .add_event::<ChunkSubscriptionEvent>()
+        app.add_message::<ChunkUnloadEvent>()
+            .add_message::<ChunkLoadEvent>()
+            .add_message::<ChunkSubscriptionEvent>()
             .insert_resource(ChunkSubscriptions::default())
             .add_systems(
                 Update,
@@ -75,8 +75,8 @@ fn add_and_remove_subscribers(
     world_map: Res<WorldMap>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     connections: Query<(Entity, &ChunkPosition), Added<Player>>,
-    mut disconnections: EventReader<NetworkEvent>,
-    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
+    mut disconnections: MessageReader<NetworkEvent>,
+    mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
 ) {
     for (entity, chunk_position) in connections.iter() {
         chunk_subscriptions
@@ -120,20 +120,20 @@ fn add_and_remove_subscribers(
 }
 
 /// Sent when a player subscribes to a new chunk
-#[derive(Event)]
+#[derive(Message)]
 pub struct ChunkSubscriptionEvent {
     pub player_entity: Entity,
     pub chunk_position: ChunkPosition,
 }
 
 /// Event sent when a chunk is being unloaded.
-#[derive(Event, Debug)]
+#[derive(Message, Debug)]
 pub struct ChunkUnloadEvent {
     pub position: ChunkPosition,
 }
 
 /// Event sent when a chunk has just been loaded.
-#[derive(Event, Debug)]
+#[derive(Message, Debug)]
 pub struct ChunkLoadEvent {
     /// The position of the chunk
     pub position: ChunkPosition,
@@ -160,8 +160,8 @@ fn manage_subscriptions(
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     player_query: Query<(Entity, &MovementTracker, &RenderDistance), Changed<ChunkPosition>>,
-    mut subscription_events: EventReader<ChunkSubscriptionEvent>,
-    mut unload_chunk_events: EventWriter<ChunkUnloadEvent>,
+    mut subscription_events: MessageReader<ChunkSubscriptionEvent>,
+    mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 
@@ -273,7 +273,7 @@ fn subscribe_to_visible_chunks(
         (Entity, &mut MovementTracker, &RenderDistance),
         Changed<MovementTracker>,
     >,
-    mut subscription_events: EventWriter<ChunkSubscriptionEvent>,
+    mut subscription_events: MessageWriter<ChunkSubscriptionEvent>,
     mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
     mut already_visited: Local<HashSet<ChunkPosition>>,
 ) {
@@ -373,7 +373,7 @@ fn handle_chunk_loading_tasks(
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut chunk_tracker_query: Query<&mut MovementTracker>,
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
-    mut chunk_load_event_writer: EventWriter<ChunkLoadEvent>,
+    mut chunk_load_event_writer: MessageWriter<ChunkLoadEvent>,
 ) {
     for (entity, mut task) in chunks.iter_mut() {
         if let Some((new_chunk_position, chunk)) = future::block_on(future::poll_once(&mut task.0))
@@ -515,7 +515,7 @@ fn handle_chunk_loading_tasks(
 fn unload_chunks(
     mut commands: Commands,
     mut world_map: ResMut<WorldMap>,
-    mut unload_chunk_events: EventReader<ChunkUnloadEvent>,
+    mut unload_chunk_events: MessageReader<ChunkUnloadEvent>,
 ) {
     for event in unload_chunk_events.read() {
         let Some(chunk) = world_map.remove_chunk(&event.position) else {

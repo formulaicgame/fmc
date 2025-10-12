@@ -5,7 +5,7 @@ use bevy::{
 use fmc_protocol_derive::ClientBound;
 use serde::{Deserialize, Serialize};
 
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub enum ParticleEffect {
     Explosion {
         /// Spawn location

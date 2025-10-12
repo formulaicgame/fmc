@@ -1,19 +1,15 @@
 use bevy::{
-    asset::{Handle, load_internal_asset, weak_handle},
+    asset::{Handle, load_internal_asset, uuid_handle},
     image::Image,
+    mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
-    render::{
-        alpha::AlphaMode,
-        mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
-        render_asset::RenderAssets,
-        render_resource::*,
-        texture::GpuImage,
-    },
+    render::{alpha::AlphaMode, render_asset::RenderAssets, render_resource::*, texture::GpuImage},
+    shader::ShaderRef,
 };
 
-const BLOCK_SHADER: Handle<Shader> = weak_handle!("ec7e9459-fc8b-4c8c-8c07-d1290da4e9de");
+const BLOCK_SHADER: Handle<Shader> = uuid_handle!("ec7e9459-fc8b-4c8c-8c07-d1290da4e9de");
 
 pub struct BlockMaterialPlugin;
 impl Plugin for BlockMaterialPlugin {
@@ -133,7 +129,7 @@ impl From<&BlockMaterial> for BlockMaterialKey {
 
 impl Material for BlockMaterial {
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,

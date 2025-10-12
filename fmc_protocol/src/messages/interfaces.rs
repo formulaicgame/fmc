@@ -1,17 +1,17 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Change the visibility of an interface
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct InterfaceVisibilityUpdate {
     pub interface_path: String,
     pub visible: bool,
 }
 
 /// Changes the visibility of nodes within interfaces
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InterfaceNodeVisibilityUpdate {
     /// List of (interface node path, visibility[true for visible, false for hidden]).
     pub updates: Vec<(String, bool)>,
@@ -48,7 +48,7 @@ pub struct ItemStack {
 }
 
 /// Update the content of an interface.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InterfaceItemBoxUpdate {
     /// Remove the previous item boxes before adding these. If this is true, the updates are
     /// assumed to be ordered. The index will be ignored.
@@ -177,7 +177,7 @@ pub struct InterfaceEquipItem {
 // }
 
 /// A text update for a text box
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct InterfaceTextUpdate {
     /// Interface identifier, formatted like "root/child/grandchild/..etc", e.g.
     /// "chat/history"
@@ -245,7 +245,7 @@ pub struct InterfaceTextInput {
 }
 
 /// Set the value of a setting in the client's settings interface.
-#[derive(ClientBound, ServerBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, ServerBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub enum GuiSetting {
     /// Input text box
     TextBox {

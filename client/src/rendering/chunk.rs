@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use bevy::{
+    asset::RenderAssetUsages,
+    mesh::Indices,
     prelude::*,
-    render::{
-        mesh::Indices, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology,
-        view::NoFrustumCulling,
-    },
+    render::render_resource::PrimitiveTopology,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
 
@@ -14,7 +13,7 @@ use crate::{
     rendering::materials::BlockMaterial,
     world::{
         Origin,
-        blocks::{Block, BlockFace, BlockId, BlockRotation, BlockState, Blocks, QuadPrimitive},
+        blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
         world_map::{WorldMap, chunk::Chunk},
     },
 };
@@ -30,7 +29,7 @@ pub struct ChunkMeshPlugin;
 
 impl Plugin for ChunkMeshPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ChunkMeshEvent>();
+        app.add_message::<ChunkMeshEvent>();
         app.add_systems(
             Update,
             (mesh_system, ApplyDeferred, handle_mesh_tasks)
@@ -42,7 +41,7 @@ impl Plugin for ChunkMeshPlugin {
 }
 
 // Sent whenever we want to redraw a chunk
-#[derive(Event)]
+#[derive(Message)]
 pub struct ChunkMeshEvent {
     /// Position of the chunk.
     pub chunk_position: IVec3,
@@ -61,7 +60,7 @@ fn mesh_system(
     world_map: Res<WorldMap>,
     light_map: Res<LightMap>,
     blocks: Res<Blocks>,
-    mut mesh_events: EventReader<ChunkMeshEvent>,
+    mut mesh_events: MessageReader<ChunkMeshEvent>,
 ) {
     let thread_pool = AsyncComputeTaskPool::get();
 

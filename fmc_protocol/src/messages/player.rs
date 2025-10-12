@@ -3,28 +3,28 @@ use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
 
 /// Configure the player's aabb
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerAabb {
     pub center: Vec3,
     pub half_extents: Vec3,
 }
 
 /// A player's position. Used by client to report its position or for the server to dictate.
-#[derive(ClientBound, ServerBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, ServerBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerPosition {
     /// Position of the player.
     pub position: DVec3,
 }
 
 /// The position the server wants to place the player's camera in.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerCameraPosition {
     /// Camera position relative to the player position.
     pub position: Vec3,
 }
 
 /// A player's camera rotation. Used by client to report its facing or for the server to dictate.
-#[derive(ClientBound, ServerBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, ServerBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerCameraRotation {
     /// Where the player camera is looking.
     pub rotation: Quat,

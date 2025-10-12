@@ -1,4 +1,4 @@
-use bevy::prelude::{Event, Resource};
+use bevy::prelude::{Message, Resource};
 use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use crate::BlockId;
 pub struct ClientReady;
 
 /// Initial server configuration needed for client setup.
-#[derive(Resource, Event, ClientBound, Serialize, Deserialize, Debug, Clone)]
+#[derive(Resource, Message, ClientBound, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerConfig {
     /// Hash of the assets the server wants used.
     pub assets_hash: u64,
@@ -32,7 +32,7 @@ pub struct ClientIdentification {
 }
 
 /// Forceful disconnection by the server.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug)]
 pub struct Disconnect {
     /// Reason for the disconnect, optional
     pub message: String,
@@ -41,14 +41,14 @@ pub struct Disconnect {
 // TODO: This is meant to be temporary. As day/night is defined client-side, the server only sends
 // the time of day (as angle of sun).
 /// Sets the time of day.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct Time {
     /// Angle of the sun
     pub angle: f32,
 }
 
 /// A set of assets from the server
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug)]
 pub struct AssetResponse {
     /// Assets stored as a tarball
     pub file: Vec<u8>,

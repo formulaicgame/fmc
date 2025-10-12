@@ -1,8 +1,9 @@
 use bevy::{
-    asset::{load_internal_binary_asset, weak_handle},
+    asset::{load_internal_binary_asset, uuid_handle},
+    ecs::system::NonSendMarker,
     prelude::*,
-    window::{CursorGrabMode, PrimaryWindow, WindowResized},
-    winit::WinitWindows,
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowResized},
+    winit::WINIT_WINDOWS,
 };
 
 use crate::settings::Settings;
@@ -16,7 +17,7 @@ mod client;
 pub mod server;
 pub mod text_input;
 
-pub const DEFAULT_FONT_HANDLE: Handle<Font> = weak_handle!("2b53f27a-6c3b-4e46-b83c-048d60c035a7");
+pub const DEFAULT_FONT_HANDLE: Handle<Font> = uuid_handle!("2b53f27a-6c3b-4e46-b83c-048d60c035a7");
 pub const DEFAULT_FONT_SIZE: f32 = 7.0;
 const DOUBLE_CLICK_DELAY: f32 = 0.4;
 
@@ -33,7 +34,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                scale_ui.run_if(on_event::<WindowResized>.or(resource_changed::<Scale>)),
+                scale_ui.run_if(on_message::<WindowResized>.or(resource_changed::<Scale>)),
                 change_ui_state.run_if(state_changed::<client::GuiState>),
                 cursor_visibiltiy.run_if(resource_changed::<CursorVisibility>),
             ),
@@ -84,20 +85,22 @@ impl Scale {
 fn scaling_setup(
     mut commands: Commands,
     settings: Res<Settings>,
-    winit_windows: NonSend<WinitWindows>,
     windows: Query<Entity, With<Window>>,
+    _non_send_marker: NonSendMarker,
 ) {
-    let entity = windows.single().unwrap();
-    let id = winit_windows.entity_to_winit.get(&entity).unwrap();
-    let monitor = winit_windows.windows.get(id).unwrap();
-    let monitor = monitor.available_monitors().next().unwrap();
-    let resolution = monitor.size().to_logical(monitor.scale_factor());
-    commands.insert_resource(Scale {
-        base_scale: 4.0 * resolution.width / 1920.0,
-        variable_scale: 1.0,
-        resolution_width: resolution.width,
-        resolution_height: resolution.height,
-    });
+    WINIT_WINDOWS.with_borrow(|winit_windows| {
+        let entity = windows.single().unwrap();
+        let id = winit_windows.entity_to_winit.get(&entity).unwrap();
+        let monitor = winit_windows.windows.get(id).unwrap();
+        let monitor = monitor.available_monitors().next().unwrap();
+        let resolution = monitor.size().to_logical(monitor.scale_factor());
+        commands.insert_resource(Scale {
+            base_scale: 4.0 * resolution.width / 1920.0,
+            variable_scale: 1.0,
+            resolution_width: resolution.width,
+            resolution_height: resolution.height,
+        });
+    })
 }
 
 // TODO: Scaling like this uses a lot of memory because of how font sizes are stored.
@@ -137,20 +140,20 @@ struct CursorVisibility {
 }
 
 fn cursor_visibiltiy(
-    mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut window: Single<&mut Window, With<PrimaryWindow>>,
+    mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
     cursor_visibility: Res<CursorVisibility>,
 ) {
     let should_be_visible = cursor_visibility.gui || cursor_visibility.server;
-    let mut window = window.single_mut().unwrap();
 
-    if should_be_visible && !window.cursor_options.visible {
-        window.cursor_options.visible = true;
-        window.cursor_options.grab_mode = CursorGrabMode::None;
+    if should_be_visible && !cursor.visible {
+        cursor.visible = true;
+        cursor.grab_mode = CursorGrabMode::None;
         let position = Vec2::new(window.width() / 2.0, window.height() / 2.0);
         window.set_cursor_position(Some(position));
-    } else if !should_be_visible && window.cursor_options.visible {
-        window.cursor_options.visible = false;
-        window.cursor_options.grab_mode = if cfg!(unix) {
+    } else if !should_be_visible && cursor.visible {
+        cursor.visible = false;
+        cursor.grab_mode = if cfg!(unix) {
             CursorGrabMode::Locked
         } else {
             CursorGrabMode::Confined

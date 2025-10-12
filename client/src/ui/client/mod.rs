@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{
-    asset::{load_internal_binary_asset, weak_handle, RenderAssetUsages},
+    asset::{RenderAssetUsages, load_internal_binary_asset, uuid_handle},
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
 };
@@ -23,7 +23,7 @@ mod widgets;
 const BASE_SIZE: Val = Val::Px(1.0);
 
 // Background used for all interfaces
-const BACKGROUND: Handle<Image> = weak_handle!("65ff3831-5ee8-4815-b32b-95ea615b2248");
+const BACKGROUND: Handle<Image> = uuid_handle!("65ff3831-5ee8-4815-b32b-95ea615b2248");
 
 pub struct GuiPlugin;
 impl Plugin for GuiPlugin {

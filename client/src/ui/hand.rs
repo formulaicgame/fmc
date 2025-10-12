@@ -1,10 +1,10 @@
 use bevy::{
     animation::AnimationTarget,
+    camera::visibility::RenderLayers,
     gltf::Gltf,
     prelude::*,
-    render::view::RenderLayers,
     scene::SceneInstanceReady,
-    window::{CursorGrabMode, PrimaryWindow},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use fmc_protocol::messages;
 
@@ -51,13 +51,13 @@ impl Plugin for HandPlugin {
 ///
 /// See [#12461](https://github.com/bevyengine/bevy/issues/12461) for current status.
 pub fn apply_render_layers(
-    trigger: Trigger<SceneInstanceReady>,
+    scene: On<SceneInstanceReady>,
     mut commands: Commands,
     children: Query<&Children>,
     transforms: Query<&Transform, Without<RenderLayers>>,
     query: Query<(Entity, &RenderLayers)>,
 ) {
-    let Ok((parent, render_layers)) = query.get(trigger.target()) else {
+    let Ok((parent, render_layers)) = query.get(scene.entity) else {
         return;
     };
     children.iter_descendants(parent).for_each(|entity| {
@@ -388,14 +388,14 @@ fn play_use_animation(
     models: Res<Models>,
     animation_graphs: Res<Assets<AnimationGraph>>,
     animation_clips: Res<Assets<AnimationClip>>,
-    window: Query<&Window, With<PrimaryWindow>>,
+    cursor: Single<&CursorOptions, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut hand_query: Query<(&mut AnimationPlayer, &Hand)>,
 ) {
     // TODO: Needs a robust way to see if interface is open
     //
     // Only play if not in interface
-    if window.single().unwrap().cursor_options.visible {
+    if cursor.visible {
         return;
     }
 
@@ -440,10 +440,10 @@ fn play_use_animation(
 
 fn send_clicks(
     net: Res<NetworkClient>,
-    window: Query<&Window, With<PrimaryWindow>>,
+    cursor: Single<&CursorOptions, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
 ) {
-    if window.single().unwrap().cursor_options.grab_mode != CursorGrabMode::None {
+    if cursor.grab_mode != CursorGrabMode::None {
         if mouse_button_input.pressed(MouseButton::Left) {
             net.send_message(messages::LeftClick::Press);
         } else if mouse_button_input.just_released(MouseButton::Left) {
@@ -475,7 +475,7 @@ fn send_clicks(
 //     camera_transform: Query<&GlobalTransform, With<PlayerCameraMarker>>,
 //     // We pretend the block update came from the server so it instantly updates without having to
 //     // rebound of the server.
-//     mut block_updates_events: EventWriter<messages::BlockUpdates>,
+//     mut block_updates_events: MessageWriter<messages::BlockUpdates>,
 // ) {
 //     if mouse_button_input.just_pressed(MouseButton::Right) {
 //         let (player_aabb, player_position) = player_query.single();

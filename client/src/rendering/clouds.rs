@@ -1,49 +1,50 @@
 use bevy::{
-    asset::{load_internal_asset, weak_handle, RenderAssetUsages, UntypedAssetId},
+    asset::{RenderAssetUsages, UntypedAssetId, load_internal_asset, uuid_handle},
     core_pipeline::{
+        FullscreenShader,
         core_3d::{
-            graph::{Core3d, Node3d},
             CORE_3D_DEPTH_FORMAT,
+            graph::{Core3d, Node3d},
         },
-        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
-        oit::{
-            resolve::node::OitResolvePass,
-            {OitBuffers, OrderIndependentTransparencySettings},
-        },
+        oit::{OitBuffers, OrderIndependentTransparencySettings, resolve::node::OitResolvePass},
         prepass::ViewPrepassTextures,
     },
     ecs::{
         component::Tick,
         query::QueryItem,
-        system::{lifetimeless::SRes, SystemParamItem},
+        system::{SystemParamItem, lifetimeless::SRes},
     },
-    math::primitives::{Cuboid, Sphere},
-    math::FloatOrd,
+    math::{
+        FloatOrd,
+        primitives::{Cuboid, Sphere},
+    },
+    mesh::MeshVertexBufferLayoutRef,
     pbr::{
         DrawMesh, FogMeta, GpuFog, GpuLights, LightMeta, MeshInputUniform, MeshPipeline,
         MeshPipelineKey, MeshPipelineViewLayoutKey, MeshUniform, RenderMeshInstances,
-        SetMeshBindGroup, SetMeshViewBindGroup, ViewFogUniformOffset, ViewLightsUniformOffset,
+        SetMeshBindGroup, SetMeshViewBindGroup, SetMeshViewEmptyBindGroup, ViewFogUniformOffset,
+        ViewLightsUniformOffset,
     },
     platform::collections::HashSet,
     prelude::*,
     render::{
+        Extract, Render, RenderApp, RenderDebugFlags, RenderSystems,
         batching::{
-            gpu_preprocessing::{
-                batch_and_prepare_sorted_render_phase, GpuPreprocessingMode,
-                GpuPreprocessingSupport, IndirectParametersCpuMetadata,
-                UntypedPhaseIndirectParametersBuffers,
-            },
             GetBatchData, GetFullBatchData,
+            gpu_preprocessing::{
+                GpuPreprocessingMode, GpuPreprocessingSupport, IndirectParametersCpuMetadata,
+                UntypedPhaseIndirectParametersBuffers, batch_and_prepare_sorted_render_phase,
+            },
         },
         camera::ExtractedCamera,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{
+            RenderMesh,
             allocator::{MeshAllocator, SlabId},
-            MeshVertexBufferLayoutRef, RenderMesh,
         },
         render_asset::RenderAssets,
         render_graph::{
-            NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
+            NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_phase::{
             AddRenderCommand, BinnedPhaseItem, BinnedRenderPhasePlugin, BinnedRenderPhaseType,
@@ -58,7 +59,6 @@ use bevy::{
             ExtractedView, NoIndirectDrawing, RenderVisibleEntities, RetainedViewEntity,
             ViewDepthTexture, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
         },
-        Extract, Render, RenderApp, RenderDebugFlags, RenderSet,
     },
     tasks::Task,
 };
@@ -68,13 +68,13 @@ use std::ops::Range;
 use crate::{
     assets::AssetState,
     game_state::GameState,
-    player::{camera::MainCamera, Player},
-    world::{world_map::chunk::Chunk, Origin},
+    player::{Player, camera::MainCamera},
+    world::{Origin, world_map::chunk::Chunk},
 };
 
 pub const CLOUD_PREPASS_SHADER: Handle<Shader> =
-    weak_handle!("a206b28c-44ed-49eb-bddd-4ce631db920f");
-pub const CLOUD_SHADER: Handle<Shader> = weak_handle!("fb9a8e52-d5a6-458a-9c10-62e78154d5c3");
+    uuid_handle!("a206b28c-44ed-49eb-bddd-4ce631db920f");
+pub const CLOUD_SHADER: Handle<Shader> = uuid_handle!("fb9a8e52-d5a6-458a-9c10-62e78154d5c3");
 
 pub struct CloudPlugin;
 impl Plugin for CloudPlugin {
@@ -243,8 +243,8 @@ impl Plugin for CloudPhasePlugin {
             .add_systems(
                 Render,
                 (
-                    prepare_cloud_texture.in_set(RenderSet::PrepareResources),
-                    queue_custom_meshes.in_set(RenderSet::QueueMeshes),
+                    prepare_cloud_texture.in_set(RenderSystems::PrepareResources),
+                    queue_custom_meshes.in_set(RenderSystems::QueueMeshes),
                 ),
             );
 
@@ -313,15 +313,18 @@ impl SpecializedMeshPipeline for CloudPipeline {
         // This will automatically generate the correct `VertexBufferLayout` based on the vertex attributes
         let vertex_buffer_layout = layout.0.get_layout(&vertex_attributes)?;
 
+        let view_layout = self
+            .mesh_pipeline
+            .get_view_layout(MeshPipelineViewLayoutKey::from(key));
+
         Ok(RenderPipelineDescriptor {
             label: Some("Cloud Mesh Pipeline".into()),
             // We want to reuse the data from bevy so we use the same bind groups as the default
             // mesh pipeline
             layout: vec![
                 // Bind group 0 is the view uniform
-                self.mesh_pipeline
-                    .get_view_layout(MeshPipelineViewLayoutKey::from(key))
-                    .clone(),
+                view_layout.main_layout.clone(),
+                view_layout.empty_layout.clone(),
                 // Bind group 1 is the mesh uniform
                 self.mesh_pipeline.mesh_layouts.model_only.clone(),
             ],
@@ -329,13 +332,13 @@ impl SpecializedMeshPipeline for CloudPipeline {
             vertex: VertexState {
                 shader: CLOUD_PREPASS_SHADER.clone(),
                 shader_defs: vec![],
-                entry_point: "vertex".into(),
+                entry_point: Some("vertex".into()),
                 buffers: vec![vertex_buffer_layout],
             },
             fragment: Some(FragmentState {
                 shader: CLOUD_PREPASS_SHADER.clone(),
                 shader_defs: vec![],
-                entry_point: "fragment".into(),
+                entry_point: Some("fragment".into()),
                 targets: vec![
                     // Clouds coverage
                     Some(ColorTargetState {
@@ -393,8 +396,10 @@ type DrawCloud3d = (
     SetItemPipeline,
     // This will set the view bindings in group 0
     SetMeshViewBindGroup<0>,
+    // This will set an empty bind group in group 1
+    SetMeshViewEmptyBindGroup<1>,
     // This will set the mesh bindings in group 1
-    SetMeshBindGroup<1>,
+    SetMeshBindGroup<2>,
     // This will draw the mesh
     DrawMesh,
 );
@@ -807,7 +812,7 @@ impl ViewNode for CustomDrawNode {
         &self,
         graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (_main_camera, camera, view, depth, cloud_textures): QueryItem<'w, Self::ViewQuery>,
+        (_main_camera, camera, view, depth, cloud_textures): QueryItem<'w, '_, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         // First, we need to get our phases resource
@@ -829,11 +834,13 @@ impl ViewNode for CustomDrawNode {
                 Some(RenderPassColorAttachment {
                     view: &cloud_textures.coverage.default_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: Operations::default(),
                 }),
                 Some(RenderPassColorAttachment {
                     view: &cloud_textures.depth.default_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: Operations::default(),
                 }),
             ],
@@ -967,6 +974,7 @@ impl ViewNode for PostProcessNode {
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: post_process.destination,
                 resolve_target: None,
+                depth_slice: None,
                 ops: Operations::default(),
             })],
             depth_stencil_attachment: None,
@@ -1001,6 +1009,7 @@ struct PostProcessPipeline {
 
 impl FromWorld for PostProcessPipeline {
     fn from_world(world: &mut World) -> Self {
+        let fullscreen_shader = FullscreenShader::from_world(world);
         let render_device = world.resource::<RenderDevice>();
 
         let layout = render_device.create_bind_group_layout(
@@ -1035,11 +1044,11 @@ impl FromWorld for PostProcessPipeline {
                 .queue_render_pipeline(RenderPipelineDescriptor {
                     label: Some("post_process_pipeline".into()),
                     layout: vec![layout.clone()],
-                    vertex: fullscreen_shader_vertex_state(),
+                    vertex: fullscreen_shader.to_vertex_state(),
                     fragment: Some(FragmentState {
                         shader: CLOUD_SHADER.clone(),
                         shader_defs: vec!["OIT_ENABLED".into()],
-                        entry_point: "fragment".into(),
+                        entry_point: Some("fragment".into()),
                         targets: vec![Some(ColorTargetState {
                             format: TextureFormat::bevy_default(),
                             blend: None,

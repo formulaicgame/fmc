@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use bevy::{
+    asset::RenderAssetUsages,
     ecs::system::EntityCommands,
     image::{CompressedImageFormats, ImageSampler},
     prelude::*,
-    render::render_asset::RenderAssetUsages,
 };
 use fmc_protocol::messages;
 use serde::Deserialize;
@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
-    ui::{text_input::TextBox, DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE},
+    ui::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, text_input::TextBox},
 };
 
 use self::items::{CursorItemBox, ItemBoxSection};
@@ -29,7 +29,7 @@ const INTERFACE_TEXTURE_PATH: &str = "server_assets/active/textures/interfaces/"
 pub struct ServerInterfacesPlugin;
 impl Plugin for ServerInterfacesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<InterfaceVisibilityEvent>()
+        app.add_message::<InterfaceVisibilityEvent>()
             .insert_resource(InterfaceStack::default())
             .add_plugins((
                 items::ItemPlugin,
@@ -377,7 +377,7 @@ fn cleanup(
 }
 
 /// Event used by keybindings to toggle an interface open or closed.
-#[derive(Event)]
+#[derive(Message)]
 struct InterfaceVisibilityEvent {
     pub interface_entity: Entity,
     pub visible: bool,
@@ -431,6 +431,7 @@ struct NodeStyle {
     box_sizing: BoxSizing,
     position_type: PositionType,
     overflow: Overflow,
+    scrollbar_width: f32,
     overflow_clip_margin: OverflowClipMargin,
     left: Val,
     right: Val,
@@ -500,6 +501,7 @@ impl Default for NodeStyle {
             max_height: Val::Auto,
             aspect_ratio: None,
             overflow: Overflow::DEFAULT,
+            scrollbar_width: 0.0,
             overflow_clip_margin: OverflowClipMargin::DEFAULT,
             row_gap: Val::ZERO,
             column_gap: Val::ZERO,
@@ -521,6 +523,7 @@ impl From<NodeStyle> for Node {
             box_sizing: value.box_sizing,
             position_type: value.position_type,
             overflow: value.overflow,
+            scrollbar_width: value.scrollbar_width,
             overflow_clip_margin: value.overflow_clip_margin,
             left: value.left,
             right: value.right,
@@ -642,7 +645,7 @@ fn handle_server_node_visibility_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     mut interface_query: Query<&mut Visibility, With<InterfaceNode>>,
-    mut visibility_update_events: EventReader<messages::InterfaceNodeVisibilityUpdate>,
+    mut visibility_update_events: MessageReader<messages::InterfaceNodeVisibilityUpdate>,
 ) {
     for visibility_updates in visibility_update_events.read() {
         for (interface_path, should_be_visible) in visibility_updates.updates.iter() {
@@ -674,8 +677,8 @@ fn handle_server_interface_visibility_updates(
     interfaces: Res<Interfaces>,
     net: Res<NetworkClient>,
     interface_query: Query<&Visibility, With<InterfaceConfig>>,
-    mut server_interface_visibility_events: EventReader<messages::InterfaceVisibilityUpdate>,
-    mut interface_visibility_events: EventWriter<InterfaceVisibilityEvent>,
+    mut server_interface_visibility_events: MessageReader<messages::InterfaceVisibilityUpdate>,
+    mut interface_visibility_events: MessageWriter<InterfaceVisibilityEvent>,
 ) {
     for event in server_interface_visibility_events.read() {
         let interface_entity = match interfaces.get(&event.interface_path) {
@@ -701,7 +704,7 @@ fn handle_visibility_events(
     mut cursor_visibility: ResMut<CursorVisibility>,
     mut interface_stack: ResMut<InterfaceStack>,
     mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
-    mut interface_visibility_events: EventReader<InterfaceVisibilityEvent>,
+    mut interface_visibility_events: MessageReader<InterfaceVisibilityEvent>,
 ) {
     for event in interface_visibility_events.read() {
         if *ui_state.get() == UiState::Gui {
@@ -750,7 +753,7 @@ fn handle_visibility_events(
 fn interface_visibility(
     ui_state: Res<State<UiState>>,
     mut interface_stack: ResMut<InterfaceStack>,
-    mut interface_toggle_events: EventWriter<InterfaceVisibilityEvent>,
+    mut interface_toggle_events: MessageWriter<InterfaceVisibilityEvent>,
     mut interface_query: Query<(Entity, &mut Visibility, &InterfaceConfig)>,
 ) {
     if *ui_state.get() == UiState::Gui {

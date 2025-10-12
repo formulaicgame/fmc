@@ -1,12 +1,10 @@
 use std::{collections::HashMap, io::prelude::*};
 
 use bevy::{
+    asset::RenderAssetUsages,
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
-    render::{
-        render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
-    },
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
 use crate::networking::NetworkClient;

@@ -1,12 +1,10 @@
 use std::f32::consts::{PI, TAU};
 
 use bevy::{
+    asset::RenderAssetUsages,
     math::primitives::Sphere,
+    mesh::{Indices, PrimitiveTopology, SphereKind},
     prelude::*,
-    render::{
-        mesh::{Indices, PrimitiveTopology, SphereKind},
-        render_asset::RenderAssetUsages,
-    },
 };
 use fmc_protocol::messages;
 
@@ -111,7 +109,7 @@ fn pass_time(
     mut sky_box_query: Query<&mut Transform, With<SkyBox>>,
     mut sun_query: Query<&mut Transform, (With<Sun>, Without<SkyBox>, Without<Moon>)>,
     mut moon_query: Query<&mut Transform, (With<Moon>, Without<SkyBox>, Without<Sun>)>,
-    mut server_time_events: EventReader<messages::Time>,
+    mut server_time_events: MessageReader<messages::Time>,
 ) {
     let angle = if let Some(t) = server_time_events.read().last() {
         // TODO: Should probably disconnect if above TAU to force the server to be compliant.

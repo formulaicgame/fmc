@@ -65,7 +65,7 @@ impl Drop for SinglePlayerServer {
 fn start_server(
     mut net: ResMut<NetworkClient>,
     mut server: ResMut<SinglePlayerServer>,
-    mut connection_events: EventWriter<ConnectionEvent>,
+    mut connection_events: MessageWriter<ConnectionEvent>,
 ) {
     if let Some(world_path) = server.path.take() {
         let exe_path = String::from("fmc_server/server") + std::env::consts::EXE_SUFFIX;
@@ -102,7 +102,7 @@ fn kill_server(time: Res<Time>, mut singleplayer_server: ResMut<SinglePlayerServ
     if let Some(timer) = singleplayer_server.kill_timer.as_mut() {
         timer.tick(time.delta());
 
-        if timer.finished() {
+        if timer.is_finished() {
             error!("Couldn't stop server gracefully, killing it.");
             singleplayer_server.process.as_mut().unwrap().kill().ok();
             singleplayer_server.process = None;

@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    asset::{load_internal_binary_asset, weak_handle, RenderAssetUsages},
+    asset::{RenderAssetUsages, load_internal_binary_asset, uuid_handle},
     image::{CompressedImageFormats, ImageSampler, ImageType},
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
@@ -19,17 +19,17 @@ use crate::{
     networking::{ConnectionEvent, Identity},
     settings::Settings,
     singleplayer::SinglePlayerServer,
-    ui::{text_input::*, DOUBLE_CLICK_DELAY},
+    ui::{DOUBLE_CLICK_DELAY, text_input::*},
 };
 
-use super::{widgets::*, GuiState, Interface, Interfaces, BACKGROUND, BASE_SIZE};
+use super::{BACKGROUND, BASE_SIZE, GuiState, Interface, Interfaces, widgets::*};
 
-pub const PLAY_BUTTON: Handle<Image> = weak_handle!("ab907f7d-9c04-46c6-b13f-7158a8d90a03");
-pub const EDIT_BUTTON: Handle<Image> = weak_handle!("2f9842c2-b1dd-4c8a-aa80-75b8b00f2a88");
-pub const DELETE_BUTTON: Handle<Image> = weak_handle!("cdab585e-f900-4c18-ab59-3eecfd1bff79");
-pub const LIST_ITEM_TEXTURE: Handle<Image> = weak_handle!("cee5b158-a6f0-4639-ba29-fa9e343768b4");
+pub const PLAY_BUTTON: Handle<Image> = uuid_handle!("ab907f7d-9c04-46c6-b13f-7158a8d90a03");
+pub const EDIT_BUTTON: Handle<Image> = uuid_handle!("2f9842c2-b1dd-4c8a-aa80-75b8b00f2a88");
+pub const DELETE_BUTTON: Handle<Image> = uuid_handle!("cdab585e-f900-4c18-ab59-3eecfd1bff79");
+pub const LIST_ITEM_TEXTURE: Handle<Image> = uuid_handle!("cee5b158-a6f0-4639-ba29-fa9e343768b4");
 pub const LIST_ITEM_PLACEHOLDER_IMAGE: Handle<Image> =
-    weak_handle!("13d6092a-bcb3-4583-8581-d1701f3463e9");
+    uuid_handle!("13d6092a-bcb3-4583-8581-d1701f3463e9");
 
 const CONTENT_WIDTH: Val = Val::Percent(56.0);
 
@@ -614,7 +614,7 @@ enum MainButton {
 }
 
 fn scroll(
-    mut mouse_wheel: EventReader<MouseWheel>,
+    mut mouse_wheel: MessageReader<MouseWheel>,
     tabs: Query<(&Node, &Tabs), Without<Interaction>>,
     mut world_list: Query<&mut ScrollPosition, (With<WorldList>, Without<ServerList>)>,
     mut server_list: Query<&mut ScrollPosition, With<ServerList>>,
@@ -639,7 +639,7 @@ fn scroll(
             server_list.single_mut().unwrap()
         };
 
-        scroll_position.offset_y -= dy;
+        scroll_position.y -= dy;
     }
 }
 
@@ -774,7 +774,7 @@ fn handle_list_item_interactions(
     list_items: Query<(Entity, Ref<Interaction>, &ListItem)>,
     mut server_list: Query<(Entity, &mut ServerList)>,
     button_clicks: Query<(&Interaction, &ListItemButton), Changed<Interaction>>,
-    mut connection_events: EventWriter<ConnectionEvent>,
+    mut connection_events: MessageWriter<ConnectionEvent>,
     mut last_click: Local<Option<(Entity, std::time::Instant)>>,
 ) {
     for (list_item_entity, interaction, list_item) in list_items.iter() {
@@ -882,7 +882,7 @@ fn handle_main_button_clicks(
     mut configured_world: ResMut<super::world_configuration::ConfiguredWorld>,
     buttons: Query<(&Interaction, &MainButton, &InheritedVisibility)>,
     server_input: Query<&TextBox, With<ServerTextBox>>,
-    mut connection_events: EventWriter<ConnectionEvent>,
+    mut connection_events: MessageWriter<ConnectionEvent>,
 ) {
     for (interaction, button, visibility) in buttons.iter() {
         let connect_with_enter =

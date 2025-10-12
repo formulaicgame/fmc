@@ -1,10 +1,6 @@
 use std::time::Duration;
 
-use bevy::{
-    math::Vec3A,
-    prelude::*,
-    render::{mesh::VertexAttributeValues, primitives::Aabb},
-};
+use bevy::{camera::primitives::Aabb, math::Vec3A, mesh::VertexAttributeValues, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
@@ -15,7 +11,7 @@ use crate::{
     utils,
     world::{
         MovesWithOrigin, Origin,
-        blocks::{BlockFace, Blocks, Friction},
+        blocks::{BlockFace, Blocks},
         world_map::WorldMap,
     },
 };
@@ -57,7 +53,7 @@ fn handle_particles_from_server(
     net: Res<NetworkClient>,
     origin: Res<Origin>,
     asset_server: Res<AssetServer>,
-    mut new_effects: EventReader<messages::ParticleEffect>,
+    mut new_effects: MessageReader<messages::ParticleEffect>,
     mut rng: Local<utils::Rng>,
 ) {
     const TEXTURE_PATH: &str = "server_assets/active/textures/";
@@ -192,7 +188,7 @@ fn despawn_particles(
 ) {
     for (entity, mut particle) in to_despawn.iter_mut() {
         particle.lifetime.tick(time.delta());
-        if particle.lifetime.finished() {
+        if particle.lifetime.is_finished() {
             commands.entity(entity).despawn();
         }
     }

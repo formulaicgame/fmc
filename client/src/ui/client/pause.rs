@@ -7,16 +7,16 @@ use bevy::{
 use fmc_protocol::messages;
 use serde::Deserialize;
 
-use super::{GuiState, Interface, Interfaces, BASE_SIZE};
+use super::{BASE_SIZE, GuiState, Interface, Interfaces};
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
     player::Head,
     settings::Settings,
     ui::{
-        client::widgets::{colors, ButtonSelection, ButtonStyle, SettingsWidget, Slider, Widgets},
-        text_input::TextBox,
         Scale,
+        client::widgets::{ButtonSelection, ButtonStyle, SettingsWidget, Slider, Widgets, colors},
+        text_input::TextBox,
     },
 };
 
@@ -412,7 +412,7 @@ struct ServerSetting {
 
 fn server_settings(
     net: Res<NetworkClient>,
-    mut setting_updates: EventReader<messages::GuiSetting>,
+    mut setting_updates: MessageReader<messages::GuiSetting>,
     mut sliders: Query<(Mut<Slider>, &ServerSetting)>,
     mut text_boxes: Query<(Mut<TextBox>, &ServerSetting)>,
     mut button_selections: Query<(Mut<ButtonSelection>, &ServerSetting)>,
@@ -564,7 +564,7 @@ fn escape_key(
 // TODO: If the client was paused by being unfocused it should unpause when focused again.
 fn pause_when_unfocused(
     mut gui_state: ResMut<NextState<GuiState>>,
-    mut focus_events: EventReader<WindowFocused>,
+    mut focus_events: MessageReader<WindowFocused>,
 ) {
     for event in focus_events.read() {
         if !event.focused {

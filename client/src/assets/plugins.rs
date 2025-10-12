@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use bevy::{
+    camera::primitives::Aabb,
     ecs::system::SystemState,
     input::{ButtonState, keyboard::KeyboardInput},
     math::{Mat3A, Vec3A},
     prelude::*,
-    render::primitives::Aabb,
-    window::{CursorGrabMode, PrimaryWindow},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use fmc_protocol::messages;
 use wasmtime::{Engine, Store, component::Linker};
@@ -16,7 +16,7 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     player::{Head, Player},
-    world::{Origin, blocks::Blocks, models::ModelEntities, world_map::WorldMap},
+    world::{Origin, models::ModelEntities, world_map::WorldMap},
 };
 
 pub struct WasmPlugin;
@@ -106,7 +106,7 @@ pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
 fn run_plugins(world: &mut World) {
     let mut host = world.remove_resource::<WasmHost>().unwrap();
     let mut data_events = world
-        .remove_resource::<Events<messages::PluginData>>()
+        .remove_resource::<Messages<messages::PluginData>>()
         .unwrap();
 
     let state = host.store.data_mut();
@@ -154,7 +154,7 @@ fn run_plugins(world: &mut World) {
 
 fn plugin_activation(
     mut wasm_host: ResMut<WasmHost>,
-    mut plugins_events: EventReader<messages::Plugin>,
+    mut plugins_events: MessageReader<messages::Plugin>,
 ) {
     for event in plugins_events.read() {
         match event {
@@ -265,7 +265,7 @@ pub(super) struct WasmHost {
     linker: Linker<WasmState>,
     enabled: HashMap<String, Instance>,
     disabled: HashMap<String, Instance>,
-    keyboard_events: SystemState<EventReader<'static, 'static, KeyboardInput>>,
+    keyboard_events: SystemState<MessageReader<'static, 'static, KeyboardInput>>,
 }
 
 impl WasmHost {
@@ -323,10 +323,9 @@ impl wit::PluginImports for WasmState {
     fn keyboard_input(&mut self) -> Vec<wit::KeyboardKey> {
         if self
             .world()
-            .query_filtered::<&Window, With<PrimaryWindow>>()
+            .query_filtered::<&CursorOptions, With<PrimaryWindow>>()
             .single(self.world())
             .unwrap()
-            .cursor_options
             .grab_mode
             == CursorGrabMode::None
         {

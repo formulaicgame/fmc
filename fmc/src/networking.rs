@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use bevy::{ecs::system::SystemParam, utils::syncunsafecell::SyncUnsafeCell};
+use bevy::{ecs::system::SystemParam, platform::cell::SyncUnsafeCell};
 use fmc_protocol::{ClientBound, MessageType, messages};
 use serde::Serialize;
 
@@ -36,16 +36,16 @@ pub struct ServerPlugin;
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, server_setup)
-            .add_event::<NetworkEvent>()
-            .add_event::<NetworkMessage<messages::LeftClick>>()
-            .add_event::<NetworkMessage<messages::RightClick>>()
-            .add_event::<NetworkMessage<messages::RenderDistance>>()
-            .add_event::<NetworkMessage<messages::PlayerCameraRotation>>()
-            .add_event::<NetworkMessage<messages::PlayerPosition>>()
-            .add_event::<NetworkMessage<messages::InterfaceEquipItem>>()
-            .add_event::<NetworkMessage<messages::InterfaceInteraction>>()
-            .add_event::<NetworkMessage<messages::InterfaceTextInput>>()
-            .add_event::<NetworkMessage<messages::GuiSetting>>()
+            .add_message::<NetworkEvent>()
+            .add_message::<NetworkMessage<messages::LeftClick>>()
+            .add_message::<NetworkMessage<messages::RightClick>>()
+            .add_message::<NetworkMessage<messages::RenderDistance>>()
+            .add_message::<NetworkMessage<messages::PlayerCameraRotation>>()
+            .add_message::<NetworkMessage<messages::PlayerPosition>>()
+            .add_message::<NetworkMessage<messages::InterfaceEquipItem>>()
+            .add_message::<NetworkMessage<messages::InterfaceInteraction>>()
+            .add_message::<NetworkMessage<messages::InterfaceTextInput>>()
+            .add_message::<NetworkMessage<messages::GuiSetting>>()
             .add_systems(First, read_messages)
             .add_systems(
                 PreUpdate,
@@ -422,7 +422,7 @@ impl UninitializedConnection {
 }
 
 /// Sent immediately after a client connects or disconnects
-#[derive(Event)]
+#[derive(Message)]
 pub enum NetworkEvent {
     /// Provided for symmetry, prefer listening for `Added<Player>`
     Connected { entity: Entity },
@@ -469,7 +469,7 @@ fn handle_new_connections(
     assets: Res<Assets>,
     server_config: ServerConfig,
     mut server: ResMut<Server>,
-    mut network_events: EventWriter<NetworkEvent>,
+    mut network_events: MessageWriter<NetworkEvent>,
     mut uninitialized_connections: Local<Vec<UninitializedConnection>>,
 ) {
     while let Ok((tcp_stream, socket_addr)) = server.listener.accept() {
@@ -553,7 +553,7 @@ fn handle_new_connections(
     });
 }
 
-fn disconnect_players(mut network_events: EventWriter<NetworkEvent>, server: ResMut<Server>) {
+fn disconnect_players(mut network_events: MessageWriter<NetworkEvent>, server: ResMut<Server>) {
     // Can't split borrows when behind a ResMut
     let server = server.into_inner();
 
@@ -568,7 +568,7 @@ fn disconnect_players(mut network_events: EventWriter<NetworkEvent>, server: Res
 
 fn remove_disconnected_player_entities(
     mut commands: Commands,
-    mut network_events: EventReader<NetworkEvent>,
+    mut network_events: MessageReader<NetworkEvent>,
 ) {
     for network_event in network_events.read() {
         if let NetworkEvent::Disconnected { entity } = network_event {
@@ -580,7 +580,7 @@ fn remove_disconnected_player_entities(
 fn log_connections(
     server: Res<Server>,
     player_query: Query<&Player>,
-    mut network_events: EventReader<NetworkEvent>,
+    mut network_events: MessageReader<NetworkEvent>,
 ) {
     for network_event in network_events.read() {
         match network_event {
@@ -601,7 +601,7 @@ fn log_connections(
 }
 
 /// A message received from a client
-#[derive(Event, Deref, Debug)]
+#[derive(Message, Deref, Debug)]
 pub struct NetworkMessage<T: fmc_protocol::ServerBound> {
     pub player_entity: Entity,
     #[deref]
@@ -610,19 +610,19 @@ pub struct NetworkMessage<T: fmc_protocol::ServerBound> {
 
 // All ServerBound message events that are valid after connection initialization
 #[derive(SystemParam)]
-struct EventWriters<'w> {
-    left_click: EventWriter<'w, NetworkMessage<messages::LeftClick>>,
-    right_click: EventWriter<'w, NetworkMessage<messages::RightClick>>,
-    render_distance: EventWriter<'w, NetworkMessage<messages::RenderDistance>>,
-    player_camera_rotation: EventWriter<'w, NetworkMessage<messages::PlayerCameraRotation>>,
-    player_position: EventWriter<'w, NetworkMessage<messages::PlayerPosition>>,
-    interface_equip_item: EventWriter<'w, NetworkMessage<messages::InterfaceEquipItem>>,
-    interface_interaction: EventWriter<'w, NetworkMessage<messages::InterfaceInteraction>>,
-    interface_text_input: EventWriter<'w, NetworkMessage<messages::InterfaceTextInput>>,
-    gui_setting: EventWriter<'w, NetworkMessage<messages::GuiSetting>>,
+struct MessageWriters<'w> {
+    left_click: MessageWriter<'w, NetworkMessage<messages::LeftClick>>,
+    right_click: MessageWriter<'w, NetworkMessage<messages::RightClick>>,
+    render_distance: MessageWriter<'w, NetworkMessage<messages::RenderDistance>>,
+    player_camera_rotation: MessageWriter<'w, NetworkMessage<messages::PlayerCameraRotation>>,
+    player_position: MessageWriter<'w, NetworkMessage<messages::PlayerPosition>>,
+    interface_equip_item: MessageWriter<'w, NetworkMessage<messages::InterfaceEquipItem>>,
+    interface_interaction: MessageWriter<'w, NetworkMessage<messages::InterfaceInteraction>>,
+    interface_text_input: MessageWriter<'w, NetworkMessage<messages::InterfaceTextInput>>,
+    gui_setting: MessageWriter<'w, NetworkMessage<messages::GuiSetting>>,
 }
 
-fn read_messages(server: ResMut<Server>, mut event_writers: EventWriters) {
+fn read_messages(server: ResMut<Server>, mut event_writers: MessageWriters) {
     let server = server.into_inner();
 
     // During the last tick the message/compression buffer might have grown. This growth is for surge

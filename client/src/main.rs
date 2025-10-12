@@ -70,7 +70,7 @@ fn main() {
 // https://github.com/bevyengine/bevy/issues/4049
 // https://github.com/bevyengine/bevy/issues/2068
 fn fix_keys_not_released_on_focus_loss(
-    mut focus_events: EventReader<WindowFocused>,
+    mut focus_events: MessageReader<WindowFocused>,
     mut key_input: ResMut<ButtonInput<KeyCode>>,
 ) {
     for event in focus_events.read() {

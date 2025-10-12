@@ -1,13 +1,12 @@
 use bevy::{
     animation::{AnimationTarget, AnimationTargetId, animated_field},
-    gltf::{Gltf, GltfMesh, GltfNode, GltfPrimitive},
+    asset::RenderAssetUsages,
+    camera::primitives::{Aabb, MeshAabb},
+    gltf::{Gltf, GltfMesh, GltfNode},
     math::Vec3A,
     platform::collections::HashMap,
     prelude::*,
-    render::{
-        mesh::MeshAabb, primitives::Aabb, render_asset::RenderAssetUsages,
-        render_resource::PrimitiveTopology,
-    },
+    render::render_resource::PrimitiveTopology,
 };
 
 use fmc_protocol::messages;
@@ -710,7 +709,7 @@ fn on_gltf_load(
     gltf_nodes: Res<Assets<GltfNode>>,
     meshes: Res<Assets<Mesh>>,
     asset_server: Res<AssetServer>,
-    mut asset_events: EventReader<AssetEvent<Gltf>>,
+    mut asset_events: MessageReader<AssetEvent<Gltf>>,
 ) {
     for event in asset_events.read() {
         let AssetEvent::Added { id } = event else {

@@ -34,8 +34,8 @@ impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(RenderDistance { chunks: 16 })
             .insert_resource(BlockUpdateCache::default())
-            .init_resource::<Events<BlockUpdate>>()
-            .add_event::<ChangedBlockEvent>()
+            .init_resource::<Messages<BlockUpdate>>()
+            .add_message::<ChangedBlockEvent>()
             .add_plugins(chunk_manager::ChunkManagerPlugin)
             .add_systems(
                 Update,
@@ -43,7 +43,7 @@ impl Plugin for WorldPlugin {
                     update_chunk_positions,
                     change_player_render_distance,
                     save_blocks_to_database
-                        .run_if(on_timer(Duration::from_secs(5)).or(on_event::<AppExit>)),
+                        .run_if(on_timer(Duration::from_secs(5)).or(on_message::<AppExit>)),
                 ),
             )
             .add_systems(
@@ -80,7 +80,7 @@ fn change_player_render_distance(
     net: Res<Server>,
     max_render_distance: Res<RenderDistance>,
     mut player_render_distance_query: Query<&mut RenderDistance>,
-    mut render_distance_events: EventReader<NetworkMessage<messages::RenderDistance>>,
+    mut render_distance_events: MessageReader<NetworkMessage<messages::RenderDistance>>,
 ) {
     for render_distance_update in render_distance_events.read() {
         let mut render_distance = player_render_distance_query
@@ -111,7 +111,7 @@ fn change_player_render_distance(
 // adjacent blocks separately.
 //
 /// Event sent in response to a block update.
-#[derive(Event)]
+#[derive(Message)]
 pub struct ChangedBlockEvent {
     /// The position of the block that was changed.
     pub position: BlockPosition,
@@ -165,7 +165,7 @@ impl Index<[BlockFace; 2]> for ChangedBlockEvent {
 /// Change a block in the [WorldMap]
 ///
 /// DO NOT listen for this. If you need to know when a block changes listen for ChangedBlockEvent
-#[derive(Event)]
+#[derive(Message)]
 pub enum BlockUpdate {
     /// Change one block to another.
     Replace {
@@ -193,8 +193,8 @@ fn handle_block_updates(
     net: Res<Server>,
     mut world_map: ResMut<WorldMap>,
     chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
-    mut block_events: ResMut<Events<BlockUpdate>>,
-    mut changed_block_events: EventWriter<ChangedBlockEvent>,
+    mut block_events: ResMut<Messages<BlockUpdate>>,
+    mut changed_block_events: MessageWriter<ChangedBlockEvent>,
     mut block_update_cache: ResMut<BlockUpdateCache>,
     mut chunked_updates: Local<HashMap<ChunkPosition, Vec<(usize, BlockId, Option<u16>)>>>,
 ) {
@@ -221,6 +221,7 @@ fn handle_block_updates(
                 };
 
                 let prev_block = chunk.set_block(block_index, block_id);
+                dbg!(&Blocks::get().get_config(&prev_block).name);
                 let prev_block_state = chunk.set_block_state(block_index, block_state);
 
                 if let BlockUpdate::Replace { block_data, .. } = &event {
@@ -390,7 +391,7 @@ async fn save_blocks(
 
 fn save_blocks_to_database(
     database: Res<Database>,
-    exit_events: EventReader<AppExit>,
+    exit_events: MessageReader<AppExit>,
     mut cache: ResMut<BlockUpdateCache>,
 ) {
     let block_updates = cache.updates.clone();
@@ -410,7 +411,7 @@ fn save_blocks_to_database(
 
 fn send_changed_block_event(
     world_map: &WorldMap,
-    changed_block_events: &mut EventWriter<ChangedBlockEvent>,
+    changed_block_events: &mut MessageWriter<ChangedBlockEvent>,
     position: BlockPosition,
     prev_block_id: BlockId,
     prev_block_state: Option<BlockState>,

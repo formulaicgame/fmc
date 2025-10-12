@@ -1,7 +1,4 @@
-use bevy::{
-    prelude::*,
-    render::{mesh::MeshVertexAttribute, render_resource::VertexFormat},
-};
+use bevy::{mesh::MeshVertexAttribute, prelude::*, render::render_resource::VertexFormat};
 
 mod block_material;
 mod model_material;

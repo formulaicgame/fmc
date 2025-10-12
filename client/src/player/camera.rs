@@ -1,11 +1,9 @@
 use bevy::{
+    camera::visibility::RenderLayers,
     input::mouse::AccumulatedMouseMotion,
     prelude::*,
-    render::{
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        view::RenderLayers,
-    },
-    window::{CursorGrabMode, PrimaryWindow},
+    render::extract_component::{ExtractComponent, ExtractComponentPlugin},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 
 use fmc_protocol::messages;
@@ -106,18 +104,17 @@ fn update_render_distance(
 
 /// Handles looking around if cursor is locked
 fn rotate_camera(
-    window: Query<&Window, With<PrimaryWindow>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    cursor_options: Single<&CursorOptions, With<PrimaryWindow>>,
     settings: Res<Settings>,
     net: Res<NetworkClient>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera_query: Query<&mut Transform, With<Head>>,
 ) {
-    let window = window.single().unwrap();
-
     if mouse_motion.delta != Vec2::ZERO {
         let mut transform = camera_query.single_mut().unwrap();
 
-        if window.cursor_options.grab_mode == CursorGrabMode::None {
+        if cursor_options.grab_mode == CursorGrabMode::None {
             return;
         }
 
@@ -139,7 +136,7 @@ fn rotate_camera(
 
 // Forced camera rotation by the server.
 fn handle_camera_rotation_from_server(
-    mut camera_rotation_events: EventReader<messages::PlayerCameraRotation>,
+    mut camera_rotation_events: MessageReader<messages::PlayerCameraRotation>,
     mut camera_q: Query<&mut Transform, With<Head>>,
 ) {
     for rotation_event in camera_rotation_events.read() {
@@ -150,7 +147,7 @@ fn handle_camera_rotation_from_server(
 
 // Forced camera position by the server
 fn handle_camera_position_from_server(
-    mut camera_position_events: EventReader<messages::PlayerCameraPosition>,
+    mut camera_position_events: MessageReader<messages::PlayerCameraPosition>,
     mut camera_q: Query<&mut Transform, With<Head>>,
 ) {
     for position_event in camera_position_events.read() {

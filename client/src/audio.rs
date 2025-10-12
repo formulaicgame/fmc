@@ -1,4 +1,4 @@
-use bevy::{audio::Volume, math::DVec3, prelude::*, render::primitives::Aabb};
+use bevy::{audio::Volume, camera::primitives::Aabb, math::DVec3, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
@@ -36,7 +36,7 @@ fn play_sounds(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     origin: Res<Origin>,
-    mut sound_events: EventReader<messages::Sound>,
+    mut sound_events: MessageReader<messages::Sound>,
 ) {
     for sound in sound_events.read() {
         commands.spawn((
@@ -52,7 +52,7 @@ fn play_sounds(
 
 fn toggle_client_side_sound(
     mut client_side_audio: ResMut<ClientSideAudio>,
-    mut toggle_events: EventReader<messages::EnableClientAudio>,
+    mut toggle_events: MessageReader<messages::EnableClientAudio>,
 ) {
     for event in toggle_events.read() {
         client_side_audio.enabled = event.0;

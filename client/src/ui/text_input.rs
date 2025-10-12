@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use bevy::{
     input::{
-        keyboard::{Key, KeyboardInput},
         ButtonState,
+        keyboard::{Key, KeyboardInput},
     },
     prelude::*,
 };
@@ -72,7 +72,7 @@ fn focus(
     >,
     newly_visible: Query<(Entity, &TextBox, &InheritedVisibility), Changed<InheritedVisibility>>,
     previous_focus: Query<(Entity, &InheritedVisibility), With<TextBoxFocus>>,
-    mut keyboard_input: EventReader<KeyboardInput>,
+    mut keyboard_input: MessageReader<KeyboardInput>,
 ) {
     let mut new_focus = false;
 
@@ -168,7 +168,7 @@ fn add_text(
 
 fn edit(
     mut focused_text_box: Query<&mut TextBox, With<TextBoxFocus>>,
-    mut keyboard_input: EventReader<KeyboardInput>,
+    mut keyboard_input: MessageReader<KeyboardInput>,
 ) {
     if let Ok(mut text_box) = focused_text_box.single_mut() {
         // TODO: There is currently no way to read the keyboard input properly. Res<Input<Keycode>> has

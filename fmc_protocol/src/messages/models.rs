@@ -4,7 +4,7 @@ use fmc_protocol_derive::ClientBound;
 use serde::{Deserialize, Serialize};
 
 /// Spawn a new model.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct NewModel {
     /// Id used to reference it when updating. If the same id is sent twice, the old model will be
     /// replaced.
@@ -23,7 +23,7 @@ pub struct NewModel {
 }
 
 /// Spawn a custom model that is not part of the assets
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct SpawnCustomModel {
     /// Id used to reference it when updating. If the same id is sent twice, the old model will be
     /// replaced.
@@ -79,14 +79,14 @@ impl Default for SpawnCustomModel {
 }
 
 /// Delete an existing model.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct DeleteModel {
     /// Id of the model
     pub model_id: u32,
 }
 
 /// Update the asset used by a model.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ModelUpdateAsset {
     /// Id of the model
     pub model_id: u32,
@@ -95,7 +95,7 @@ pub struct ModelUpdateAsset {
 }
 
 /// Update the transform of a model.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ModelUpdateTransform {
     /// Id of the model
     pub model_id: u32,
@@ -110,7 +110,7 @@ pub struct ModelUpdateTransform {
 }
 
 /// Play an animation of a model
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ModelPlayAnimation {
     /// Id of the model
     pub model_id: u32,
@@ -126,7 +126,7 @@ pub struct ModelPlayAnimation {
 }
 
 /// Change the base color of a model's material
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ModelColor {
     /// Id of the model
     pub model_id: u32,

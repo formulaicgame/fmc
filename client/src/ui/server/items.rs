@@ -337,7 +337,7 @@ fn handle_item_box_updates(
     interface_paths: Res<InterfacePaths>,
     items: Res<Items>,
     interface_item_box_query: Query<Option<&Children>, With<ItemBoxSection>>,
-    mut item_box_update_events: EventReader<messages::InterfaceItemBoxUpdate>,
+    mut item_box_update_events: MessageReader<messages::InterfaceItemBoxUpdate>,
 ) {
     for item_box_update in item_box_update_events.read() {
         for (interface_path, new_item_boxes) in item_box_update.updates.iter() {
@@ -545,7 +545,7 @@ fn left_click_item_box(
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
     mut item_box_query: Query<(&mut ItemBox, &Interaction, &ChildOf), Changed<Interaction>>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
-    mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
+    mut item_box_update_events: MessageWriter<messages::InterfaceItemBoxUpdate>,
 ) {
     for (mut item_box, interaction, parent) in item_box_query.iter_mut() {
         if *interaction != Interaction::Pressed {
@@ -625,7 +625,7 @@ fn right_click_item_box(
     item_box_section_query: Query<(&ItemBoxSection, &InterfaceNode)>,
     mut item_box_query: Query<(&mut ItemBox, &Interaction, &ChildOf)>,
     mut cursor_item_box_query: Query<&mut CursorItemBox>,
-    mut item_box_update_events: EventWriter<messages::InterfaceItemBoxUpdate>,
+    mut item_box_update_events: MessageWriter<messages::InterfaceItemBoxUpdate>,
 ) {
     if !mouse_button_input.just_pressed(MouseButton::Right) {
         return;
@@ -735,7 +735,7 @@ fn right_click_item_box(
 
 fn update_cursor_item_stack_position(
     ui_scale: Res<UiScale>,
-    mut cursor_move_event: EventReader<CursorMoved>,
+    mut cursor_move_event: MessageReader<CursorMoved>,
     mut held_item_stack_query: Query<&mut Node, With<CursorItemBox>>,
 ) {
     for cursor_movement in cursor_move_event.read() {

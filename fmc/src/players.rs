@@ -118,7 +118,7 @@ fn send_aabb(
 
 fn handle_player_position_updates(
     mut player_query: Query<&mut Transform, With<Player>>,
-    mut position_events: EventReader<NetworkMessage<messages::PlayerPosition>>,
+    mut position_events: MessageReader<NetworkMessage<messages::PlayerPosition>>,
 ) {
     for position_update in position_events.read() {
         if !position_update.position.is_finite() {
@@ -134,7 +134,7 @@ fn handle_player_position_updates(
 // how the player model should be positioned.
 fn handle_camera_rotation_updates(
     mut player_query: Query<&mut Camera>,
-    mut camera_rotation_events: EventReader<NetworkMessage<messages::PlayerCameraRotation>>,
+    mut camera_rotation_events: MessageReader<NetworkMessage<messages::PlayerCameraRotation>>,
 ) {
     for rotation_update in camera_rotation_events.read() {
         let mut camera = player_query.get_mut(rotation_update.player_entity).unwrap();

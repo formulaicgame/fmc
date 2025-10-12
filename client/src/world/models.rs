@@ -5,15 +5,14 @@ use std::{
 
 use bevy::{
     animation::{ActiveAnimation, AnimationTarget, RepeatAnimation},
+    asset::RenderAssetUsages,
+    camera::primitives::{Aabb, MeshAabb},
     gltf::{Gltf, GltfNode},
+    light::NotShadowCaster,
     math::DVec3,
-    pbr::{ExtendedMaterial, NotShadowCaster},
+    mesh::Indices,
+    pbr::ExtendedMaterial,
     prelude::*,
-    render::{
-        mesh::{Indices, MeshAabb},
-        primitives::Aabb,
-        render_asset::RenderAssetUsages,
-    },
 };
 use fmc_protocol::messages;
 
@@ -297,8 +296,8 @@ fn handle_model_add_delete(
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
     mut model_entities: ResMut<ModelEntities>,
-    mut deleted_models: EventReader<messages::DeleteModel>,
-    mut new_models: EventReader<messages::NewModel>,
+    mut deleted_models: MessageReader<messages::DeleteModel>,
+    mut new_models: MessageReader<messages::NewModel>,
 ) {
     for deleted_model in deleted_models.read() {
         if let Some(entity) = model_entities.remove(deleted_model.model_id) {
@@ -357,7 +356,7 @@ fn handle_custom_models(
     mut commands: Commands,
     origin: Res<Origin>,
     mut model_entities: ResMut<ModelEntities>,
-    mut new_models: EventReader<messages::SpawnCustomModel>,
+    mut new_models: MessageReader<messages::SpawnCustomModel>,
     mut cache: Local<TextureCache>,
 ) {
     for custom_model in new_models.read() {
@@ -367,7 +366,7 @@ fn handle_custom_models(
         }
 
         let mut mesh = Mesh::new(
-            bevy::render::mesh::PrimitiveTopology::TriangleList,
+            bevy::mesh::PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
         );
 
@@ -437,7 +436,7 @@ fn update_model_asset(
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
     mut model_query: Query<(&mut SceneRoot, &mut AnimationGraphHandle, &mut Model)>,
-    mut asset_updates: EventReader<messages::ModelUpdateAsset>,
+    mut asset_updates: MessageReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
         if let Some(entity) = model_entities.get_entity(&asset_update.model_id) {
@@ -485,7 +484,7 @@ struct TransformInterpolator {
 
 fn handle_transform_updates(
     model_entities: Res<ModelEntities>,
-    mut transform_updates: EventReader<messages::ModelUpdateTransform>,
+    mut transform_updates: MessageReader<messages::ModelUpdateTransform>,
     mut model_query: Query<(&mut TransformInterpolator, &Bones), With<Model>>,
 ) {
     for transform_update in transform_updates.read() {
@@ -579,7 +578,7 @@ fn play_animations(
         (&mut Model, &mut AnimationPlayer, &mut AnimationTransitions),
         With<AnimationGraphHandle>,
     >,
-    mut animation_events: EventReader<messages::ModelPlayAnimation>,
+    mut animation_events: MessageReader<messages::ModelPlayAnimation>,
 ) {
     for animation in animation_events.read() {
         let Some(model_entity) = model_entities.get_entity(&animation.model_id) else {
@@ -655,7 +654,7 @@ fn handle_model_color(
     material_query: Query<&MeshMaterial3d<ModelMaterial>>,
     model_entities: Res<ModelEntities>,
     mut materials: ResMut<Assets<ModelMaterial>>,
-    mut color_updates: EventReader<messages::ModelColor>,
+    mut color_updates: MessageReader<messages::ModelColor>,
 ) {
     fn change_color(
         color: Color,

@@ -28,35 +28,35 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(identity)
             .insert_resource(NetworkClient::new())
-            .add_event::<ConnectionEvent>()
-            .add_event::<messages::AssetResponse>()
-            .add_event::<messages::Disconnect>()
-            .add_event::<messages::ServerConfig>()
-            .add_event::<messages::Time>()
-            .add_event::<messages::Chunk>()
-            .add_event::<messages::BlockUpdates>()
-            .add_event::<messages::NewModel>()
-            .add_event::<messages::DeleteModel>()
-            .add_event::<messages::ModelPlayAnimation>()
-            .add_event::<messages::ModelUpdateAsset>()
-            .add_event::<messages::ModelUpdateTransform>()
-            .add_event::<messages::ModelColor>()
-            .add_event::<messages::SpawnCustomModel>()
-            .add_event::<messages::PlayerAabb>()
-            .add_event::<messages::PlayerCameraPosition>()
-            .add_event::<messages::PlayerCameraRotation>()
-            .add_event::<messages::PlayerPosition>()
-            .add_event::<messages::InterfaceItemBoxUpdate>()
-            .add_event::<messages::InterfaceNodeVisibilityUpdate>()
-            .add_event::<messages::InterfaceTextUpdate>()
-            .add_event::<messages::InterfaceVisibilityUpdate>()
-            .add_event::<messages::GuiSetting>()
-            .add_event::<messages::EnableClientAudio>()
-            .add_event::<messages::Sound>()
-            .add_event::<messages::ParticleEffect>()
-            .add_event::<messages::Plugin>()
+            .add_message::<ConnectionEvent>()
+            .add_message::<messages::AssetResponse>()
+            .add_message::<messages::Disconnect>()
+            .add_message::<messages::ServerConfig>()
+            .add_message::<messages::Time>()
+            .add_message::<messages::Chunk>()
+            .add_message::<messages::BlockUpdates>()
+            .add_message::<messages::NewModel>()
+            .add_message::<messages::DeleteModel>()
+            .add_message::<messages::ModelPlayAnimation>()
+            .add_message::<messages::ModelUpdateAsset>()
+            .add_message::<messages::ModelUpdateTransform>()
+            .add_message::<messages::ModelColor>()
+            .add_message::<messages::SpawnCustomModel>()
+            .add_message::<messages::PlayerAabb>()
+            .add_message::<messages::PlayerCameraPosition>()
+            .add_message::<messages::PlayerCameraRotation>()
+            .add_message::<messages::PlayerPosition>()
+            .add_message::<messages::InterfaceItemBoxUpdate>()
+            .add_message::<messages::InterfaceNodeVisibilityUpdate>()
+            .add_message::<messages::InterfaceTextUpdate>()
+            .add_message::<messages::InterfaceVisibilityUpdate>()
+            .add_message::<messages::GuiSetting>()
+            .add_message::<messages::EnableClientAudio>()
+            .add_message::<messages::Sound>()
+            .add_message::<messages::ParticleEffect>()
+            .add_message::<messages::Plugin>()
             // Updated manually
-            .init_resource::<Events<messages::PluginData>>()
+            .init_resource::<Messages<messages::PluginData>>()
             .add_systems(OnEnter(GameState::Playing), send_client_ready)
             .add_systems(
                 PreUpdate,
@@ -74,7 +74,7 @@ impl Plugin for ClientPlugin {
     }
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct ConnectionEvent {
     pub address: String,
 }
@@ -300,7 +300,7 @@ fn send_client_ready(net: Res<NetworkClient>) {
 fn connect(
     mut net: ResMut<NetworkClient>,
     identity: Res<Identity>,
-    mut connection_events: EventReader<ConnectionEvent>,
+    mut connection_events: MessageReader<ConnectionEvent>,
     mut game_state: ResMut<NextState<GameState>>,
 ) {
     if let Some(Some(result)) = net
@@ -463,7 +463,7 @@ fn initialize_connection(
 // message to piggyback of the same code path as a disconnection initiated by the server.
 fn register_client_disconnect_events(
     net: Res<NetworkClient>,
-    mut network_events: EventWriter<messages::Disconnect>,
+    mut network_events: MessageWriter<messages::Disconnect>,
 ) {
     if let Ok(message) = net.disconnect_events.pop() {
         network_events.write(messages::Disconnect { message });
@@ -473,7 +473,7 @@ fn register_client_disconnect_events(
 fn disconnect(
     mut net: ResMut<NetworkClient>,
     mut game_state: ResMut<NextState<GameState>>,
-    mut disconnect_events: EventReader<messages::Disconnect>,
+    mut disconnect_events: MessageReader<messages::Disconnect>,
 ) {
     for _ in disconnect_events.read() {
         if let Some(connection) = net.connection.take() {
@@ -521,37 +521,37 @@ impl Identity {
 
 // TODO: Write a macro for all this
 #[derive(SystemParam)]
-struct EventWriters<'w> {
-    asset_response: EventWriter<'w, messages::AssetResponse>,
-    disconnect: EventWriter<'w, messages::Disconnect>,
-    server_config: EventWriter<'w, messages::ServerConfig>,
-    time: EventWriter<'w, messages::Time>,
-    chunk: EventWriter<'w, messages::Chunk>,
-    block_updates: EventWriter<'w, messages::BlockUpdates>,
-    new_model: EventWriter<'w, messages::NewModel>,
-    delete_model: EventWriter<'w, messages::DeleteModel>,
-    model_play_animation: EventWriter<'w, messages::ModelPlayAnimation>,
-    model_update_asset: EventWriter<'w, messages::ModelUpdateAsset>,
-    model_update_transform: EventWriter<'w, messages::ModelUpdateTransform>,
-    spawn_custom_model: EventWriter<'w, messages::SpawnCustomModel>,
-    model_color: EventWriter<'w, messages::ModelColor>,
-    player_aabb: EventWriter<'w, messages::PlayerAabb>,
-    player_camera_position: EventWriter<'w, messages::PlayerCameraPosition>,
-    player_camera_rotation: EventWriter<'w, messages::PlayerCameraRotation>,
-    player_position: EventWriter<'w, messages::PlayerPosition>,
-    interface_item_box_update: EventWriter<'w, messages::InterfaceItemBoxUpdate>,
-    interface_node_visibility_update: EventWriter<'w, messages::InterfaceNodeVisibilityUpdate>,
-    interface_text_update: EventWriter<'w, messages::InterfaceTextUpdate>,
-    interface_visibility_update: EventWriter<'w, messages::InterfaceVisibilityUpdate>,
-    gui_setting: EventWriter<'w, messages::GuiSetting>,
-    enable_client_audio: EventWriter<'w, messages::EnableClientAudio>,
-    sound: EventWriter<'w, messages::Sound>,
-    particle_effect: EventWriter<'w, messages::ParticleEffect>,
-    plugin: EventWriter<'w, messages::Plugin>,
-    plugin_data: EventWriter<'w, messages::PluginData>,
+struct MessageWriters<'w> {
+    asset_response: MessageWriter<'w, messages::AssetResponse>,
+    disconnect: MessageWriter<'w, messages::Disconnect>,
+    server_config: MessageWriter<'w, messages::ServerConfig>,
+    time: MessageWriter<'w, messages::Time>,
+    chunk: MessageWriter<'w, messages::Chunk>,
+    block_updates: MessageWriter<'w, messages::BlockUpdates>,
+    new_model: MessageWriter<'w, messages::NewModel>,
+    delete_model: MessageWriter<'w, messages::DeleteModel>,
+    model_play_animation: MessageWriter<'w, messages::ModelPlayAnimation>,
+    model_update_asset: MessageWriter<'w, messages::ModelUpdateAsset>,
+    model_update_transform: MessageWriter<'w, messages::ModelUpdateTransform>,
+    spawn_custom_model: MessageWriter<'w, messages::SpawnCustomModel>,
+    model_color: MessageWriter<'w, messages::ModelColor>,
+    player_aabb: MessageWriter<'w, messages::PlayerAabb>,
+    player_camera_position: MessageWriter<'w, messages::PlayerCameraPosition>,
+    player_camera_rotation: MessageWriter<'w, messages::PlayerCameraRotation>,
+    player_position: MessageWriter<'w, messages::PlayerPosition>,
+    interface_item_box_update: MessageWriter<'w, messages::InterfaceItemBoxUpdate>,
+    interface_node_visibility_update: MessageWriter<'w, messages::InterfaceNodeVisibilityUpdate>,
+    interface_text_update: MessageWriter<'w, messages::InterfaceTextUpdate>,
+    interface_visibility_update: MessageWriter<'w, messages::InterfaceVisibilityUpdate>,
+    gui_setting: MessageWriter<'w, messages::GuiSetting>,
+    enable_client_audio: MessageWriter<'w, messages::EnableClientAudio>,
+    sound: MessageWriter<'w, messages::Sound>,
+    particle_effect: MessageWriter<'w, messages::ParticleEffect>,
+    plugin: MessageWriter<'w, messages::Plugin>,
+    plugin_data: MessageWriter<'w, messages::PluginData>,
 }
 
-fn read_messages(net: ResMut<NetworkClient>, mut event_writers: EventWriters) {
+fn read_messages(net: ResMut<NetworkClient>, mut event_writers: MessageWriters) {
     if !net.is_connected() {
         return;
     }

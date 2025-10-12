@@ -23,7 +23,7 @@ pub struct ChunkManagerPlugin;
 impl Plugin for ChunkManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Pause>()
-            .add_event::<NewChunkEvent>()
+            .add_message::<NewChunkEvent>()
             .add_systems(
                 Update,
                 (
@@ -61,7 +61,7 @@ impl Plugin for ChunkManagerPlugin {
 }
 
 /// Event sent after a chunk has been added to the world map
-#[derive(Event)]
+#[derive(Message)]
 pub struct NewChunkEvent {
     pub position: IVec3,
 }
@@ -106,7 +106,7 @@ fn unload_chunks(
 //    origin: Res<Origin>,
 //    world_map: Res<WorldMap>,
 //    player_position: Query<&GlobalTransform, With<Player>>,
-//    mut chunk_request_events: EventWriter<ChunkRequestEvent>,
+//    mut chunk_request_events: MessageWriter<ChunkRequestEvent>,
 //    pause: Res<Pause>,
 //) {
 //    if pause.0 {
@@ -272,7 +272,7 @@ fn prepare_for_frustum_culling(
     }
 }
 
-// TODO: This could take ResMut<Events<ChunkResponse>> and drain the chunks to avoid
+// TODO: This could take ResMut<Messages<ChunkResponse>> and drain the chunks to avoid
 // reallocation. The lighting system listens for the same event, and it is nice to have the systems
 // self-contained. Maybe the world map should contain only the chunk entity. This way there would
 // no longer be a need for ComputeVisibleChunkFacesEvent either. Everything just listens for
@@ -286,8 +286,8 @@ fn handle_new_chunks(
     blocks: Res<Blocks>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
-    mut new_chunk_events: EventWriter<NewChunkEvent>,
-    mut received_chunks: EventReader<messages::Chunk>,
+    mut new_chunk_events: MessageWriter<NewChunkEvent>,
+    mut received_chunks: MessageReader<messages::Chunk>,
 ) {
     for chunk in received_chunks.read() {
         // TODO: Need to validate block state too. Server can crash client.
@@ -350,7 +350,7 @@ pub fn handle_block_updates(
     blocks: Res<Blocks>,
     origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
-    mut block_updates_events: EventReader<messages::BlockUpdates>,
+    mut block_updates_events: MessageReader<messages::BlockUpdates>,
 ) {
     for event in block_updates_events.read() {
         if event.blocks.len() == 0 {

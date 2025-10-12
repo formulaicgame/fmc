@@ -25,9 +25,9 @@
 #import bevy_core_pipeline::oit::oit_draw
 #endif
 
-@group(2) @binding(31)
+@group(#{MATERIAL_BIND_GROUP}) @binding(31)
 var block_textures: texture_2d_array<f32>;
-@group(2) @binding(32)
+@group(#{MATERIAL_BIND_GROUP}) @binding(32)
 var block_textures_sampler: sampler;
 
 struct Vertex {

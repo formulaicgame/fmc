@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 use fmc_protocol::messages;
 
-use super::{GuiState, Interface, Interfaces, BACKGROUND};
+use super::{BACKGROUND, GuiState, Interface, Interfaces};
 use crate::{
     assets::AssetState,
     game_state::GameState,
     networking::NetworkClient,
-    ui::client::{widgets::*, BASE_SIZE},
+    ui::client::{BASE_SIZE, widgets::*},
 };
 
 // TODO: I think this looks better as an event architecture. You have something you want to
@@ -23,7 +23,7 @@ impl Plugin for ConnectingPlugin {
                     press_cancel.run_if(in_state(GuiState::Connecting)),
                     downloading_assets_text.run_if(resource_added::<messages::ServerConfig>),
                     (disconnect_text, show_when_disconnected_for_reason)
-                        .run_if(on_event::<messages::Disconnect>),
+                        .run_if(on_message::<messages::Disconnect>),
                 ),
             )
             .add_systems(OnEnter(GameState::Connecting), show_when_connecting)
@@ -113,7 +113,7 @@ fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
 
 fn disconnect_text(
     mut status_text: Query<&mut Text, With<StatusText>>,
-    mut disconnect_events: EventReader<messages::Disconnect>,
+    mut disconnect_events: MessageReader<messages::Disconnect>,
 ) {
     for disconnect_event in disconnect_events.read() {
         let mut text = status_text.single_mut().unwrap();
@@ -124,7 +124,7 @@ fn disconnect_text(
 fn show_when_disconnected_for_reason(
     gui_state: Res<State<GuiState>>,
     mut next_gui_state: ResMut<NextState<GuiState>>,
-    mut disconnect_events: EventReader<messages::Disconnect>,
+    mut disconnect_events: MessageReader<messages::Disconnect>,
 ) {
     for event in disconnect_events.read() {
         if event.message.is_empty() || *gui_state.get() != GuiState::None {

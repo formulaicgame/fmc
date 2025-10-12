@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bevy::{color::Color, prelude::*, render::render_resource::Face};
+use bevy::{prelude::*, render::render_resource::Face};
 use serde::Deserialize;
 
 use crate::{

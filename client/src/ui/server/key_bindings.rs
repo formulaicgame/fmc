@@ -116,7 +116,7 @@ fn handle_key_presses(
     interfaces: Res<Interfaces>,
     mut gui_state: ResMut<NextState<GuiState>>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
-    mut interface_events: EventWriter<InterfaceVisibilityEvent>,
+    mut interface_events: MessageWriter<InterfaceVisibilityEvent>,
 ) {
     for pressed_key in input.get_just_pressed() {
         // Any open interface can be closed by pressing "e" or "escape". "e" will only close it if
@@ -158,7 +158,7 @@ fn handle_key_presses(
                     }
                 };
 
-                interface_events.send(InterfaceVisibilityEvent {
+                interface_events.write(InterfaceVisibilityEvent {
                     interface_entity: *entity,
                     visible: true,
                 });

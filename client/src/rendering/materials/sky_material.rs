@@ -1,11 +1,13 @@
 use bevy::{
-    asset::{load_internal_asset, weak_handle},
+    asset::{load_internal_asset, uuid_handle},
+    mesh::MeshVertexBufferLayoutRef,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    render::{mesh::MeshVertexBufferLayoutRef, render_resource::*},
+    render::render_resource::*,
+    shader::ShaderRef,
 };
 
-const SKY_SHADER: Handle<Shader> = weak_handle!("996ffae4-c429-4924-bf5d-ce18f3f93ca8");
+const SKY_SHADER: Handle<Shader> = uuid_handle!("996ffae4-c429-4924-bf5d-ce18f3f93ca8");
 
 pub struct SkyMaterialPlugin;
 impl Plugin for SkyMaterialPlugin {
@@ -86,7 +88,7 @@ impl From<&SkyMaterial> for SkyMaterialUniform {
 
 impl Material for SkyMaterial {
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,

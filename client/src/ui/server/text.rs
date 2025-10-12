@@ -5,8 +5,8 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     ui::{
-        text_input::{TextBox, TextBoxFocus},
         DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE,
+        text_input::{TextBox, TextBoxFocus},
     },
 };
 
@@ -50,7 +50,7 @@ fn handle_text_updates(
     net: Res<NetworkClient>,
     interface_paths: Res<InterfacePaths>,
     text_container_query: Query<(Option<&Children>, &TextContainer, Has<FadeLines>)>,
-    mut text_update_events: EventReader<messages::InterfaceTextUpdate>,
+    mut text_update_events: MessageReader<messages::InterfaceTextUpdate>,
 ) {
     for text_update in text_update_events.read() {
         let interface_entities = match interface_paths.get(&text_update.interface_path) {
@@ -126,7 +126,7 @@ fn handle_text_updates(
                 },
                 TextLayout {
                     linebreak: LineBreak::WordOrCharacter,
-                    justify: JustifyText::Left,
+                    justify: Justify::Left,
                 },
                 TextShadow {
                     offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
@@ -154,7 +154,7 @@ fn fade_lines(
     mut fading_query: Query<(Entity, &mut Visibility, &mut Fade)>,
 ) {
     for (entity, mut visibility, mut fade) in fading_query.iter_mut() {
-        if !fade.delay.finished() {
+        if !fade.delay.is_finished() {
             fade.delay.tick(time.delta());
         } else {
             commands.entity(entity).remove::<Fade>();

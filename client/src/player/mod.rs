@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::primitives::Aabb};
+use bevy::{camera::primitives::Aabb, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
@@ -78,7 +78,7 @@ fn setup_player(mut commands: Commands, settings: Res<Settings>) {
 }
 
 fn handle_aabb_update(
-    mut aabb_events: EventReader<messages::PlayerAabb>,
+    mut aabb_events: MessageReader<messages::PlayerAabb>,
     mut aabb_query: Query<&mut Aabb, With<Player>>,
 ) {
     for aabb_event in aabb_events.read() {
@@ -92,7 +92,7 @@ fn handle_aabb_update(
 
 fn handle_position_updates_from_server(
     origin: Res<Origin>,
-    mut position_events: EventReader<messages::PlayerPosition>,
+    mut position_events: MessageReader<messages::PlayerPosition>,
     mut player_query: Query<&mut Transform, With<Player>>,
 ) {
     for event in position_events.read() {

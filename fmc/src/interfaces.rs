@@ -12,7 +12,7 @@ use crate::{
 pub struct InterfacePlugin;
 impl Plugin for InterfacePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<RegisterInterfaceNode>()
+        app.add_message::<RegisterInterfaceNode>()
             .add_systems(
                 Update,
                 sort_interface_interactions.in_set(InterfaceEventRegistration),
@@ -42,7 +42,7 @@ pub(crate) struct InterfaceNodes(HashMap<String, Entity>);
 
 /// Register an interface node for a player to an entity, so that when the player interacts with the
 /// node, the entity is notified of the interaction.
-#[derive(Event)]
+#[derive(Message)]
 pub struct RegisterInterfaceNode {
     /// The player the node should be registered to.
     pub player_entity: Entity,
@@ -66,7 +66,7 @@ impl InterfaceEvents {
 
 fn register_interface_nodes(
     mut player_query: Query<&mut InterfaceNodes, With<Player>>,
-    mut registration_events: EventReader<RegisterInterfaceNode>,
+    mut registration_events: MessageReader<RegisterInterfaceNode>,
 ) {
     for registration in registration_events.read() {
         let mut interface_nodes = player_query.get_mut(registration.player_entity).unwrap();
@@ -79,7 +79,7 @@ fn sort_interface_interactions(
     net: Res<Server>,
     interface_nodes: Query<&InterfaceNodes>,
     mut interface_events: Query<&mut InterfaceEvents>,
-    mut interface_interactions: ResMut<Events<NetworkMessage<messages::InterfaceInteraction>>>,
+    mut interface_interactions: ResMut<Messages<NetworkMessage<messages::InterfaceInteraction>>>,
 ) {
     for interaction in interface_interactions.drain() {
         let interface_path = match &*interaction {

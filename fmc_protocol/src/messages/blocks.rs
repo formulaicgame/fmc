@@ -7,7 +7,7 @@ use fmc_protocol_derive::ClientBound;
 use crate::BlockId;
 
 /// Change individual blocks.
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct BlockUpdates {
     /// The position of the chunk that is to be changed.
     pub chunk_position: IVec3,

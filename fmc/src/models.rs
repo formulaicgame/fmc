@@ -755,7 +755,7 @@ fn send_models_on_chunk_subscription(
         &GlobalTransform,
         &ModelVisibility,
     )>,
-    mut chunk_sub_events: EventReader<ChunkSubscriptionEvent>,
+    mut chunk_sub_events: MessageReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {

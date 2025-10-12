@@ -1,10 +1,10 @@
 use bevy::{
-    asset::{load_internal_binary_asset, weak_handle, RenderAssetUsages},
+    asset::{RenderAssetUsages, load_internal_binary_asset, uuid_handle},
     ecs::system::EntityCommands,
     image::{CompressedImageFormats, ImageSampler, ImageType},
     input::{
-        keyboard::{Key, KeyboardInput},
         ButtonState,
+        keyboard::{Key, KeyboardInput},
     },
     prelude::*,
     ui::{FocusPolicy, RelativeCursorPosition},
@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::ui::{
-    client::{GuiState, BASE_SIZE},
-    text_input::TextBox,
     DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE,
+    client::{BASE_SIZE, GuiState},
+    text_input::TextBox,
 };
 
-const BUTTON_TEXTURE: Handle<Image> = weak_handle!("fefe18ec-6ad9-47e2-b1a1-8a31e22495b2");
-const TAB_TEXTURE: Handle<Image> = weak_handle!("d275b6df-1aec-4930-9802-54d5c06354e5");
-const DROPDOWN_ARROW_TEXTURE: Handle<Image> = weak_handle!("4a62be12-67cf-44e5-84af-b3c58ad88a0e");
+const BUTTON_TEXTURE: Handle<Image> = uuid_handle!("fefe18ec-6ad9-47e2-b1a1-8a31e22495b2");
+const TAB_TEXTURE: Handle<Image> = uuid_handle!("d275b6df-1aec-4930-9802-54d5c06354e5");
+const DROPDOWN_ARROW_TEXTURE: Handle<Image> = uuid_handle!("4a62be12-67cf-44e5-84af-b3c58ad88a0e");
 
 pub mod colors {
     use bevy::color::Color;
@@ -53,7 +53,7 @@ impl Plugin for WidgetPlugin {
         )
         .add_systems(
             PostUpdate,
-            move_slider_thumb.after(bevy::ui::UiSystem::Layout),
+            move_slider_thumb.after(bevy::ui::UiSystems::Layout),
         );
 
         let load_image = |bytes: &[u8], _path: String| -> Image {

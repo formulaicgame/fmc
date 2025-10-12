@@ -1,15 +1,12 @@
 use bevy::{
-    asset::{load_internal_asset, weak_handle},
+    asset::{load_internal_asset, uuid_handle},
+    camera::primitives::MeshAabb,
     math::{DVec3, Vec3A},
+    mesh::{MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef, VertexAttributeValues},
     pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
     prelude::*,
-    render::{
-        mesh::{
-            MeshAabb, MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef,
-            VertexAttributeValues,
-        },
-        render_resource::*,
-    },
+    render::render_resource::*,
+    shader::ShaderRef,
 };
 
 use std::collections::HashMap;
@@ -21,7 +18,7 @@ use crate::{
     world::Origin,
 };
 
-const MODEL_SHADER: Handle<Shader> = weak_handle!("5271e945-44f0-49e2-9ca1-50225dbb5565");
+const MODEL_SHADER: Handle<Shader> = uuid_handle!("5271e945-44f0-49e2-9ca1-50225dbb5565");
 
 pub type ModelMaterial = ExtendedMaterial<StandardMaterial, ModelMaterialExtension>;
 

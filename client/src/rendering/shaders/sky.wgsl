@@ -22,11 +22,11 @@ struct SkyMaterialUniform {
     sun_angle: f32,
 };
 
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<uniform> material: SkyMaterialUniform;
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var texture: texture_2d<f32>;
-@group(2) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var texture_sampler: sampler;
 
 @fragment

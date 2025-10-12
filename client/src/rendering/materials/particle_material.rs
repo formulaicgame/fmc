@@ -1,14 +1,15 @@
 use bevy::{
-    asset::{Handle, load_internal_asset, weak_handle},
+    asset::{Handle, load_internal_asset, uuid_handle},
     image::Image,
     prelude::*,
     reflect::TypePath,
     render::render_resource::*,
+    shader::ShaderRef,
 };
 
 use crate::{rendering::lighting::LightMap, world::Origin};
 
-const PARTICLE_SHADER: Handle<Shader> = weak_handle!("d0c4577a-75e0-4794-9355-eb4b7a8a2036");
+const PARTICLE_SHADER: Handle<Shader> = uuid_handle!("d0c4577a-75e0-4794-9355-eb4b7a8a2036");
 
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {

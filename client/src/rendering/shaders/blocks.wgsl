@@ -131,11 +131,11 @@ struct BlockMaterial {
     animation_frames: u32,
 };
 
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<uniform> material: BlockMaterial;
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var texture_array: texture_2d_array<f32>;
-@group(2) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var texture_array_sampler: sampler;
 
 @fragment

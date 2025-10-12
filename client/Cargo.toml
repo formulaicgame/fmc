@@ -6,7 +6,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.16.1", features = ["serialize", "wayland"]}
+bevy = { version = "0.17.2", features = ["serialize"]}
 
 fmc_protocol = { path = "../fmc_protocol", version = "0.1.3" }
 

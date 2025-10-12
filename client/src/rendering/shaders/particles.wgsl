@@ -20,11 +20,11 @@ struct ParticleMaterialUniform {
     base_color: vec4<f32>,
 }
 
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<uniform> material: ParticleMaterialUniform;
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var texture: texture_2d<f32>;
-@group(2) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var texture_sampler: sampler;
 
 const PIXEL_SIZE: f32 = 16.0;

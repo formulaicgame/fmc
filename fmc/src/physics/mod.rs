@@ -325,7 +325,7 @@ fn simulate_physics(
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
                     & backwards_time.cmpgt(DVec3::ZERO);
                 let resolution_axis =
-                    DVec3::select(valid_axes, backwards_time, DVec3::NAN).max_element();
+                    DVec3::select(valid_axes, backwards_time, DVec3::MIN).max_element();
 
                 if physics.grounded.y && overlap.y > 0.0 && overlap.y < 0.51 {
                     // This let's the player step up short distances when moving horizontally
@@ -427,7 +427,7 @@ fn update_object_map(
 fn trigger_update_on_block_change(
     object_map: Res<ObjectMap>,
     mut object_query: Query<&mut Transform, With<Physics>>,
-    mut block_updates: EventReader<ChangedBlockEvent>,
+    mut block_updates: MessageReader<ChangedBlockEvent>,
 ) {
     for block_update in block_updates.read() {
         let chunk_position = ChunkPosition::from(block_update.position);

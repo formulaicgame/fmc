@@ -28,7 +28,7 @@ pub struct LightingPlugin;
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(LightMap::default())
-            .add_event::<TestFinishedLightingEvent>()
+            .add_message::<TestFinishedLightingEvent>()
             .insert_resource(Queues::default())
             .add_systems(
                 Update,
@@ -424,7 +424,7 @@ fn handle_new_chunks(
     world_map: Res<WorldMap>,
     blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
-    mut new_chunks: EventReader<NewChunkEvent>,
+    mut new_chunks: MessageReader<NewChunkEvent>,
 ) {
     for new_chunk in new_chunks.read() {
         if light_map.chunks.contains_key(&new_chunk.position) {
@@ -580,7 +580,7 @@ fn handle_block_updates(
     blocks: Res<Blocks>,
     mut light_map: ResMut<LightMap>,
     mut light_update_queues: ResMut<Queues>,
-    mut block_updates_events: EventReader<messages::BlockUpdates>,
+    mut block_updates_events: MessageReader<messages::BlockUpdates>,
 ) {
     for block_updates in block_updates_events.read() {
         let Some(mut light_chunk) = light_map.chunks.remove(&block_updates.chunk_position) else {
@@ -681,7 +681,7 @@ fn propagate_light(
     blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
     mut light_map: ResMut<LightMap>,
-    mut chunk_mesh_events: EventWriter<TestFinishedLightingEvent>,
+    mut chunk_mesh_events: MessageWriter<TestFinishedLightingEvent>,
 ) {
     for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
         let mut update_queue = light_update_queues.remove(&chunk_position).unwrap();
@@ -1036,15 +1036,15 @@ fn light_chunk_unloading(world_map: Res<WorldMap>, mut light_map: ResMut<LightMa
     }
 }
 
-#[derive(Event, Hash, PartialEq, Eq)]
+#[derive(Message, Hash, PartialEq, Eq)]
 struct TestFinishedLightingEvent(IVec3);
 
 // TODO: Don't rebuild surrounding chunks unless a block at the edge of the chunk has changed.
 fn send_chunk_mesh_events(
     light_map: Res<LightMap>,
     light_update_queues: Res<Queues>,
-    mut lighting_events: EventReader<TestFinishedLightingEvent>,
-    mut chunk_mesh_events: EventWriter<ChunkMeshEvent>,
+    mut lighting_events: MessageReader<TestFinishedLightingEvent>,
+    mut chunk_mesh_events: MessageWriter<ChunkMeshEvent>,
 ) {
     // Multiple events are often sent so duplicates are removed through the hashset
     for light_event in lighting_events

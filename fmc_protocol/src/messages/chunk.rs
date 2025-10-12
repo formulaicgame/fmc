@@ -6,7 +6,7 @@ use fmc_protocol_derive::ClientBound;
 use serde::{Deserialize, Serialize};
 
 /// A chunk of blocks sent to a client
-#[derive(ClientBound, Event, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
 pub struct Chunk {
     /// The position the chunk takes in the block grid.
     pub position: IVec3,

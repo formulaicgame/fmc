@@ -7,6 +7,6 @@ repository = "https://github.com/formulaicgame/fmc_protocol"
 description = "The fmc protocol"
 
 [dependencies]
-bevy = { version = "0.16.1", features = [], default-features = false }
+bevy = { version = "0.17.2", features = [], default-features = false }
 serde = { version = "1.0.188", features = ["derive"] }
 fmc_protocol_derive = { path = "./fmc_protocol_derive", version = "0.1.0" }
