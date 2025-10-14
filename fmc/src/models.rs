@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::RandomState,
+};
 
 use bevy::{math::DVec3, prelude::*};
 use fmc_protocol::messages;
@@ -26,7 +29,6 @@ impl Plugin for ModelPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    send_models_on_chunk_subscription.before(send_animations),
                     //update_model_assets,
                     apply_movement_animations
                         .before(send_animations)
@@ -35,7 +37,7 @@ impl Plugin for ModelPlugin {
                     send_color,
                     remove_models.after(send_model_transform),
                     send_model_transform.after(TransformSystem::TransformPropagate),
-                    send_models
+                    (send_models, send_models_on_chunk_subscription)
                         .before(send_animations)
                         .after(TransformSystem::TransformPropagate),
                 )
@@ -211,7 +213,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(ModelVisibility, AnimationPlayer, Transform, ChunkPosition)]
+#[require(ModelVisibility, AnimationPlayer, Transform, ChunkPosition, Observers)]
 pub enum Model {
     Asset(ModelAssetId),
     Custom {
@@ -234,6 +236,64 @@ pub enum Model {
         /// Render mesh from both sides
         material_double_sided: bool,
     },
+}
+
+/// Limits which players can see a model
+#[derive(Component, Default)]
+pub struct Observers {
+    whitelist: HashSet<Entity>,
+    blacklist: HashSet<Entity>,
+}
+
+impl Observers {
+    pub fn include(&mut self, player: Entity) {
+        self.whitelist.insert(player);
+        self.blacklist.clear();
+    }
+
+    pub fn exclude(&mut self, player: Entity) {
+        if self.whitelist.is_empty() {
+            self.blacklist.insert(player);
+        }
+    }
+
+    pub fn is_included(&self, player: Entity) -> bool {
+        if !self.whitelist.is_empty() {
+            self.whitelist.contains(&player)
+        } else {
+            !self.blacklist.contains(&player)
+        }
+    }
+
+    fn filter<'a>(&'a self, players: &'a HashSet<Entity>) -> ObserversIter<'a> {
+        if !self.whitelist.is_empty() {
+            ObserversIter::Union(self.whitelist.union(players))
+        } else {
+            ObserversIter::Difference(players.difference(&self.blacklist))
+        }
+    }
+}
+
+enum ObserversIter<'a> {
+    Union(std::collections::hash_set::Union<'a, Entity, RandomState>),
+    Difference(std::collections::hash_set::Difference<'a, Entity, RandomState>),
+}
+
+impl<'a> Iterator for ObserversIter<'a> {
+    type Item = &'a Entity;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            ObserversIter::Union(iter) => iter.next(),
+            ObserversIter::Difference(iter) => iter.next(),
+        }
+    }
+}
+
+/// Attach the model to a bone of the parent's model.
+#[derive(Component, Clone, Copy)]
+pub struct BoneAttachment {
+    pub bone_id: usize,
 }
 
 #[derive(Component, PartialEq)]
@@ -521,13 +581,9 @@ fn send_model_transform(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut model_map: ResMut<ModelMap>,
-    model_query: Query<
-        (Entity, &GlobalTransform, &ModelVisibility, Ref<Model>),
-        Changed<GlobalTransform>,
-    >,
+    model_query: Query<(Entity, &Transform, &ModelVisibility, Ref<Model>), Changed<Transform>>,
 ) {
-    for (entity, global_transform, visibility, change_tracker) in model_query.iter() {
-        let transform = global_transform.compute_transform();
+    for (entity, transform, visibility, change_tracker) in model_query.iter() {
         let chunk_position = ChunkPosition::from(transform.translation);
 
         model_map.insert_or_move(chunk_position, entity);
@@ -556,7 +612,7 @@ fn send_model_transform(
 
 fn apply_movement_animations(
     time: Res<Time>,
-    mut models: Query<(&mut AnimationPlayer, Ref<GlobalTransform>)>,
+    mut models: Query<(&mut AnimationPlayer, Ref<Transform>)>,
 ) {
     for (mut animation_player, transform) in models.iter_mut() {
         if animation_player.last_position == DVec3::ZERO {
@@ -565,15 +621,15 @@ fn apply_movement_animations(
                 animation_player.play(idle_animation).repeat();
             }
 
-            animation_player.last_position = transform.translation();
+            animation_player.last_position = transform.translation;
         } else if let Some(move_animation) = animation_player.move_animation
             && transform.is_changed()
             // TODO: Even though it doesn't move the translation still changes when the model is
             // rotated! Probably some inaccuracy from converting fram a matrix representation.
-            && transform.translation() != animation_player.last_position
+            && transform.translation != animation_player.last_position
         {
             let speed = transform
-                .translation()
+                .translation
                 .xz()
                 .distance_squared(animation_player.last_position.xz())
                 / time.delta_secs_f64();
@@ -604,7 +660,7 @@ fn apply_movement_animations(
                 }
             }
 
-            animation_player.last_position = transform.translation();
+            animation_player.last_position = transform.translation;
         }
     }
 }
@@ -613,9 +669,12 @@ fn apply_movement_animations(
 fn update_model_assets(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    model_query: Query<(Entity, Ref<Model>, &GlobalTransform, &ModelVisibility), Changed<Model>>,
+    model_query: Query<
+        (Entity, Ref<Model>, &Observers, &Transform, &ModelVisibility),
+        Changed<Model>,
+    >,
 ) {
-    for (entity, model, transform, visibility) in model_query.iter() {
+    for (entity, model, observers, transform, visibility) in model_query.iter() {
         if !visibility.is_visible() || model.is_added() {
             continue;
         }
@@ -624,7 +683,7 @@ fn update_model_assets(
             continue;
         };
 
-        let chunk_pos = ChunkPosition::from(transform.translation());
+        let chunk_pos = ChunkPosition::from(transform.translation);
 
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
             Some(subs) => subs,
@@ -632,7 +691,7 @@ fn update_model_assets(
         };
 
         net.send_many(
-            subs,
+            observers.filter(subs),
             messages::ModelUpdateAsset {
                 model_id: entity.index(),
                 asset: model_id,
@@ -652,26 +711,17 @@ fn send_models(
             Option<&ChildOf>,
             &Model,
             &ModelVisibility,
+            &Observers,
             Option<&ModelColor>,
-            &GlobalTransform,
+            &Transform,
+            Option<&BoneAttachment>,
         ),
         Or<(Changed<ModelVisibility>, Changed<Model>)>,
     >,
 ) {
-    for (entity, maybe_parent, model, visibility, maybe_color, transform) in model_query.iter() {
-        let transform = transform.compute_transform();
-
-        // Don't send the player model to the player it belongs to.
-        let player_entity = if let Some(parent) = maybe_parent {
-            if let Ok(player_entity) = player_query.get(parent.0) {
-                Some(player_entity)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
+    for (entity, maybe_parent, model, visibility, observers, maybe_color, transform, maybe_bone) in
+        model_query.iter()
+    {
         let chunk_pos = ChunkPosition::from(transform.translation);
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
             Some(subs) => subs,
@@ -682,14 +732,15 @@ fn send_models(
             match model {
                 Model::Asset(model_id) => {
                     net.send_many(
-                        subs.iter().filter(|sub| Some(**sub) != player_entity),
+                        observers.filter(subs),
                         messages::NewModel {
-                            parent_id: None,
                             model_id: entity.index(),
-                            asset: *model_id,
+                            parent_id: maybe_parent.map(|p| p.parent().index()),
+                            parent_bone: maybe_bone.map(|b| b.bone_id),
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
                             scale: transform.scale.as_vec3(),
+                            asset: *model_id,
                         },
                     );
                 }
@@ -704,10 +755,11 @@ fn send_models(
                     material_alpha_cutoff,
                     material_double_sided,
                 } => net.send_many(
-                    subs.iter().filter(|sub| Some(**sub) != player_entity),
+                    observers.filter(subs),
                     messages::SpawnCustomModel {
                         model_id: entity.index(),
-                        parent_id: None,
+                        parent_id: maybe_parent.map(|p| p.parent().index()),
+                        parent_bone: maybe_bone.map(|b| b.bone_id),
                         position: transform.translation,
                         rotation: transform.rotation.as_quat(),
                         scale: transform.scale.as_vec3(),
@@ -726,7 +778,7 @@ fn send_models(
 
             if let Some(color) = maybe_color {
                 net.send_many(
-                    subs.iter().filter(|sub| Some(**sub) != player_entity),
+                    observers.filter(subs),
                     messages::ModelColor {
                         model_id: entity.index(),
                         color: color.to_hex(),
@@ -735,7 +787,7 @@ fn send_models(
             }
         } else {
             net.send_many(
-                subs.iter().filter(|sub| Some(**sub) != player_entity),
+                observers.filter(subs),
                 messages::DeleteModel {
                     model_id: entity.index(),
                 },
@@ -751,31 +803,32 @@ fn send_models_on_chunk_subscription(
     model_query: Query<(
         Option<&ChildOf>,
         &Model,
+        &Observers,
         &AnimationPlayer,
         &GlobalTransform,
         &ModelVisibility,
+        Option<&BoneAttachment>,
     )>,
     mut chunk_sub_events: MessageReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
         if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {
             for entity in model_entities.iter() {
-                let Ok((maybe_player_parent, model, animation_player, transform, visibility)) =
-                    model_query.get(*entity)
+                let Ok((
+                    maybe_parent,
+                    model,
+                    observers,
+                    animation_player,
+                    transform,
+                    visibility,
+                    maybe_bone,
+                )) = model_query.get(*entity)
                 else {
                     continue;
                 };
 
-                if !visibility.is_visible() {
+                if !visibility.is_visible() || !observers.is_included(chunk_sub.player_entity) {
                     continue;
-                }
-
-                // Don't send the player model to the player it belongs to.
-                if let Some(parent) = maybe_player_parent {
-                    let player_entity = player_query.get(parent.0).unwrap();
-                    if player_entity == chunk_sub.player_entity {
-                        continue;
-                    }
                 }
 
                 let transform = transform.compute_transform();
@@ -785,7 +838,8 @@ fn send_models_on_chunk_subscription(
                         net.send_one(
                             chunk_sub.player_entity,
                             messages::NewModel {
-                                parent_id: None,
+                                parent_id: maybe_parent.map(|p| p.parent().index()),
+                                parent_bone: maybe_bone.map(|b| b.bone_id),
                                 model_id: entity.index(),
                                 asset: *model_id,
                                 position: transform.translation,
@@ -808,7 +862,8 @@ fn send_models_on_chunk_subscription(
                         chunk_sub.player_entity,
                         messages::SpawnCustomModel {
                             model_id: entity.index(),
-                            parent_id: None,
+                            parent_id: maybe_parent.map(|p| p.parent().index()),
+                            parent_bone: maybe_bone.map(|b| b.bone_id),
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
                             scale: transform.scale.as_vec3(),
@@ -848,12 +903,12 @@ fn send_animations(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut animation_query: Query<
-        (Entity, &mut AnimationPlayer, &GlobalTransform),
+        (Entity, &mut AnimationPlayer, &Transform),
         Changed<AnimationPlayer>,
     >,
 ) {
     for (entity, mut animation_player, transform) in animation_query.iter_mut() {
-        let chunk_position = ChunkPosition::from(transform.translation());
+        let chunk_position = ChunkPosition::from(transform.translation);
 
         let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
             animation_player.animation_queue.clear();

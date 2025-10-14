@@ -12,6 +12,8 @@ pub struct NewModel {
     /// Inherit position/rotation from another model. If the parent transform changes, this model
     /// will change in the same way.
     pub parent_id: Option<u32>,
+    /// The bone the of the parent the model should be attached to.
+    pub parent_bone: Option<usize>,
     /// Position of the model
     pub position: DVec3,
     /// Rotation of the model
@@ -23,7 +25,7 @@ pub struct NewModel {
 }
 
 /// Spawn a custom model that is not part of the assets
-#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
+#[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SpawnCustomModel {
     /// Id used to reference it when updating. If the same id is sent twice, the old model will be
     /// replaced.
@@ -31,6 +33,8 @@ pub struct SpawnCustomModel {
     /// Inherit position/rotation from another model. If the parent transform changes, this model
     /// will change in the same way.
     pub parent_id: Option<u32>,
+    /// The bone the of the parent the model should be attached to.
+    pub parent_bone: Option<usize>,
     /// Position of the model
     pub position: DVec3,
     /// Rotation of the model
@@ -55,27 +59,6 @@ pub struct SpawnCustomModel {
     pub material_alpha_cutoff: f32,
     /// Render mesh from both sides
     pub material_double_sided: bool,
-}
-
-impl Default for SpawnCustomModel {
-    fn default() -> Self {
-        Self {
-            model_id: 0,
-            parent_id: None,
-            position: DVec3::ZERO,
-            rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
-            mesh_indices: Vec::new(),
-            mesh_vertices: Vec::new(),
-            mesh_normals: Vec::new(),
-            mesh_uvs: None,
-            material_color_texture: None,
-            material_parallax_texture: None,
-            material_alpha_mode: 0,
-            material_alpha_cutoff: 0.0,
-            material_double_sided: false,
-        }
-    }
 }
 
 /// Delete an existing model.
