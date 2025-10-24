@@ -3,8 +3,8 @@ use bevy::ecs::{component::Component, reflect::ReflectComponent};
 use bevy::math::{
     DAffine3 as Affine3A, DMat3 as Mat3, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3,
 };
-use bevy::reflect::prelude::*;
 use bevy::reflect::Reflect;
+use bevy::reflect::prelude::*;
 use std::ops::Mul;
 
 /// Describe the position of an entity. If the entity has a parent, the position is relative
@@ -128,6 +128,20 @@ impl Transform {
     #[must_use]
     pub fn looking_at(mut self, target: Vec3, up: Vec3) -> Self {
         self.look_at(target, up);
+        self
+    }
+
+    /// Returns this [`Transform`] with a new rotation so that [`Transform::forward`]
+    /// points in the given `direction` and [`Transform::up`] points towards `up`.
+    ///
+    /// In some cases it's not possible to construct a rotation. Another axis will be picked in those cases:
+    /// * if `direction` fails converting to `Dir3` (e.g if it is `Vec3::ZERO`), `Dir3::Z` is used instead
+    /// * if `up` fails converting to `Dir3`, `Dir3::Y` is used instead
+    /// * if `direction` is parallel with `up`, an orthogonal vector is used as the "right" direction
+    #[inline]
+    #[must_use]
+    pub fn looking_to(mut self, direction: Vec3, up: Vec3) -> Self {
+        self.look_to(direction, up);
         self
     }
 
@@ -322,10 +336,19 @@ impl Transform {
     /// `target` and its local `Y` direction is toward `up`.
     #[inline]
     pub fn look_at(&mut self, target: Vec3, up: Vec3) {
-        let forward = Vec3::normalize(self.translation - target);
-        let right = up.cross(forward).normalize();
-        let up = forward.cross(right);
-        self.rotation = Quat::from_mat3(&Mat3::from_cols(right, up, forward));
+        self.look_to(target - self.translation, up);
+    }
+
+    #[inline]
+    pub fn look_to(&mut self, direction: Vec3, up: Vec3) {
+        let back = -direction.try_normalize().unwrap_or(Vec3::Z);
+        let up = up.normalize();
+        let right = up
+            .cross(back.into())
+            .try_normalize()
+            .unwrap_or_else(|| up.any_orthonormal_vector());
+        let up = back.cross(right);
+        self.rotation = Quat::from_mat3(&Mat3::from_cols(right, up, back.into()));
     }
 
     /// Multiplies `self` with `transform` component by component, returning the

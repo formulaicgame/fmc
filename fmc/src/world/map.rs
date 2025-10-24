@@ -76,9 +76,10 @@ pub struct WorldMapRayCast<'a> {
     world_map: &'a WorldMap,
     max_distance: f64,
     forward: DVec3,
-    distance_next: DVec3,
-    distance_increment: DVec3,
+    current_distance: f64,
     current_block_position: BlockPosition,
+    distance_to_next: DVec3,
+    distance_increment: DVec3,
     step: IVec3,
 }
 
@@ -92,13 +93,13 @@ impl<'a> WorldMapRayCast<'a> {
         // fract_gl() uses x - x.floor(), which yields the correct value for all values with a
         // negative direction, e.g. fract_gl(-1.32) = 0.68. When the direction is positive it is
         // just inverted.
-        let mut distance_next = ray_transform.translation.fract_gl();
-        distance_next = DVec3::select(
+        let mut distance_to_next = ray_transform.translation.fract_gl();
+        distance_to_next = DVec3::select(
             direction.cmpeq(DVec3::ONE),
-            1.0 - distance_next,
-            distance_next,
+            1.0 - distance_to_next,
+            distance_to_next,
         );
-        distance_next = distance_next / forward.abs();
+        distance_to_next = distance_to_next / forward.abs();
 
         // How far along the forward vector you need to go to traverse one block in each direction.
         let distance_increment = 1.0 / forward.abs();
@@ -111,11 +112,16 @@ impl<'a> WorldMapRayCast<'a> {
             world_map,
             max_distance,
             forward,
-            distance_next,
-            distance_increment,
+            current_distance: 0.0,
             current_block_position,
+            distance_to_next,
+            distance_increment,
             step,
         }
+    }
+
+    pub fn distance(&self) -> f64 {
+        self.current_distance
     }
 
     pub fn position(&self) -> BlockPosition {
@@ -123,23 +129,21 @@ impl<'a> WorldMapRayCast<'a> {
     }
 
     pub fn next_block(&mut self) -> Option<BlockId> {
-        let next = self.distance_next.min_element();
+        self.current_distance = self.distance_to_next.min_element();
 
-        if (self.distance_next.min_element() * self.forward).length_squared()
-            > self.max_distance.powi(2)
-        {
+        if self.current_distance > self.max_distance {
             return None;
         }
 
-        if self.distance_next.x == next {
+        if self.distance_to_next.x == self.current_distance {
             self.current_block_position.x += self.step.x;
-            self.distance_next.x += self.distance_increment.x;
-        } else if self.distance_next.z == next {
+            self.distance_to_next.x += self.distance_increment.x;
+        } else if self.distance_to_next.z == self.current_distance {
             self.current_block_position.z += self.step.z;
-            self.distance_next.z += self.distance_increment.z;
+            self.distance_to_next.z += self.distance_increment.z;
         } else {
             self.current_block_position.y += self.step.y;
-            self.distance_next.y += self.distance_increment.y;
+            self.distance_to_next.y += self.distance_increment.y;
         }
 
         // TODO: Probably wise to cache the chunk

@@ -511,8 +511,11 @@ pub struct ModelMap {
 }
 
 impl ModelMap {
-    pub fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
-        return self.position2entity.get(chunk_position);
+    pub fn iter_entities(&self, chunk_position: &ChunkPosition) -> impl Iterator<Item = Entity> {
+        self.position2entity
+            .get(chunk_position)
+            .into_iter()
+            .flat_map(|entities| entities.iter().cloned())
     }
 
     fn insert_or_move(&mut self, chunk_position: ChunkPosition, entity: Entity) {
@@ -704,7 +707,6 @@ fn update_model_assets(
 fn send_models(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    player_query: Query<Entity, With<Player>>,
     model_query: Query<
         (
             Entity,
@@ -713,16 +715,26 @@ fn send_models(
             &ModelVisibility,
             &Observers,
             Option<&ModelColor>,
-            &Transform,
             Option<&BoneAttachment>,
+            &Transform,
+            &GlobalTransform,
         ),
         Or<(Changed<ModelVisibility>, Changed<Model>)>,
     >,
 ) {
-    for (entity, maybe_parent, model, visibility, observers, maybe_color, transform, maybe_bone) in
-        model_query.iter()
+    for (
+        entity,
+        maybe_parent,
+        model,
+        visibility,
+        observers,
+        maybe_color,
+        maybe_bone,
+        transform,
+        global_transform,
+    ) in model_query.iter()
     {
-        let chunk_pos = ChunkPosition::from(transform.translation);
+        let chunk_pos = ChunkPosition::from(global_transform.translation());
         let subs = match chunk_subscriptions.get_subscribers(&chunk_pos) {
             Some(subs) => subs,
             None => continue,
@@ -799,101 +811,96 @@ fn send_models(
 fn send_models_on_chunk_subscription(
     net: Res<Server>,
     model_map: Res<ModelMap>,
-    player_query: Query<Entity, With<Player>>,
     model_query: Query<(
         Option<&ChildOf>,
         &Model,
         &Observers,
         &AnimationPlayer,
-        &GlobalTransform,
+        &Transform,
         &ModelVisibility,
         Option<&BoneAttachment>,
     )>,
     mut chunk_sub_events: MessageReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
-        if let Some(model_entities) = model_map.get_entities(&chunk_sub.chunk_position) {
-            for entity in model_entities.iter() {
-                let Ok((
-                    maybe_parent,
-                    model,
-                    observers,
-                    animation_player,
-                    transform,
-                    visibility,
-                    maybe_bone,
-                )) = model_query.get(*entity)
-                else {
-                    continue;
-                };
+        for entity in model_map.iter_entities(&chunk_sub.chunk_position) {
+            let Ok((
+                maybe_parent,
+                model,
+                observers,
+                animation_player,
+                transform,
+                visibility,
+                maybe_bone,
+            )) = model_query.get(entity)
+            else {
+                continue;
+            };
 
-                if !visibility.is_visible() || !observers.is_included(chunk_sub.player_entity) {
-                    continue;
-                }
+            if !visibility.is_visible() || !observers.is_included(chunk_sub.player_entity) {
+                continue;
+            }
 
-                let transform = transform.compute_transform();
-
-                match model {
-                    Model::Asset(model_id) => {
-                        net.send_one(
-                            chunk_sub.player_entity,
-                            messages::NewModel {
-                                parent_id: maybe_parent.map(|p| p.parent().index()),
-                                parent_bone: maybe_bone.map(|b| b.bone_id),
-                                model_id: entity.index(),
-                                asset: *model_id,
-                                position: transform.translation,
-                                rotation: transform.rotation.as_quat(),
-                                scale: transform.scale.as_vec3(),
-                            },
-                        );
-                    }
-                    Model::Custom {
-                        mesh_indices,
-                        mesh_vertices,
-                        mesh_normals,
-                        material_color_texture,
-                        mesh_uvs,
-                        material_parallax_texture,
-                        material_alpha_mode,
-                        material_alpha_cutoff,
-                        material_double_sided,
-                    } => net.send_one(
+            match model {
+                Model::Asset(model_id) => {
+                    net.send_one(
                         chunk_sub.player_entity,
-                        messages::SpawnCustomModel {
-                            model_id: entity.index(),
+                        messages::NewModel {
                             parent_id: maybe_parent.map(|p| p.parent().index()),
                             parent_bone: maybe_bone.map(|b| b.bone_id),
+                            model_id: entity.index(),
+                            asset: *model_id,
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
                             scale: transform.scale.as_vec3(),
-                            mesh_indices: mesh_indices.clone(),
-                            mesh_vertices: mesh_vertices.clone(),
-                            mesh_normals: mesh_normals.clone(),
-                            mesh_uvs: mesh_uvs.clone(),
-                            material_color_texture: material_color_texture.clone(),
-                            material_parallax_texture: material_parallax_texture.clone(),
-                            material_alpha_mode: *material_alpha_mode,
-                            material_alpha_cutoff: *material_alpha_cutoff,
-                            material_double_sided: *material_double_sided,
-                        },
-                    ),
-                }
-
-                for animation in animation_player.playing.iter() {
-                    net.send_one(
-                        chunk_sub.player_entity,
-                        messages::ModelPlayAnimation {
-                            model_id: animation_player.target.unwrap_or(*entity).index(),
-                            animation_index: animation.animation_index,
-                            restart: animation.restart,
-                            repeat: animation.repeat,
-                            transition: animation
-                                .transition_from
-                                .and_then(|from| Some((from, animation.transition_duration))),
                         },
                     );
                 }
+                Model::Custom {
+                    mesh_indices,
+                    mesh_vertices,
+                    mesh_normals,
+                    material_color_texture,
+                    mesh_uvs,
+                    material_parallax_texture,
+                    material_alpha_mode,
+                    material_alpha_cutoff,
+                    material_double_sided,
+                } => net.send_one(
+                    chunk_sub.player_entity,
+                    messages::SpawnCustomModel {
+                        model_id: entity.index(),
+                        parent_id: maybe_parent.map(|p| p.parent().index()),
+                        parent_bone: maybe_bone.map(|b| b.bone_id),
+                        position: transform.translation,
+                        rotation: transform.rotation.as_quat(),
+                        scale: transform.scale.as_vec3(),
+                        mesh_indices: mesh_indices.clone(),
+                        mesh_vertices: mesh_vertices.clone(),
+                        mesh_normals: mesh_normals.clone(),
+                        mesh_uvs: mesh_uvs.clone(),
+                        material_color_texture: material_color_texture.clone(),
+                        material_parallax_texture: material_parallax_texture.clone(),
+                        material_alpha_mode: *material_alpha_mode,
+                        material_alpha_cutoff: *material_alpha_cutoff,
+                        material_double_sided: *material_double_sided,
+                    },
+                ),
+            }
+
+            for animation in animation_player.playing.iter() {
+                net.send_one(
+                    chunk_sub.player_entity,
+                    messages::ModelPlayAnimation {
+                        model_id: animation_player.target.unwrap_or(entity).index(),
+                        animation_index: animation.animation_index,
+                        restart: animation.restart,
+                        repeat: animation.repeat,
+                        transition: animation
+                            .transition_from
+                            .and_then(|from| Some((from, animation.transition_duration))),
+                    },
+                );
             }
         }
     }

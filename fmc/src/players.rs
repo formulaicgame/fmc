@@ -288,11 +288,8 @@ fn find_target(
 
         let chunk_position = ChunkPosition::from(transform.translation);
         for chunk_position in chunk_position.neighbourhood() {
-            let Some(model_entities) = model_map.get_entities(&chunk_position) else {
-                continue;
-            };
             for (entity, maybe_collider, maybe_block, model_transform) in
-                model_query.iter_many(model_entities)
+                model_query.iter_many(model_map.iter_entities(&chunk_position))
             {
                 if let Some(block_position) = maybe_block {
                     let Some(block_id) = world_map.get_block(*block_position) else {

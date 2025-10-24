@@ -4,7 +4,7 @@ use bevy::math::{DQuat, DVec3};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    blocks::{BlockFace, BlockPosition, BlockRotation, BlockState, Blocks},
+    blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks},
     prelude::*,
     world::{ChangedBlockEvent, WorldMap, chunk::ChunkPosition},
 };
@@ -161,7 +161,7 @@ impl Collider {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 pub struct PhysicsSystems;
 
-/// Adds physics simulation to an entity, requires that you add a [Collider] to function.
+/// Adds physics simulation to an entity, requires a [Collider] to function.
 #[derive(Component)]
 pub struct Physics {
     pub enabled: bool,
@@ -173,6 +173,12 @@ pub struct Physics {
     pub grounded: BVec3,
     /// Set this if the entity should be buoyant
     pub buoyancy: Option<Buoyancy>,
+    /// Can other objects collide with this object
+    pub collidable: bool,
+    /// The friction other objects experience when colliding with this object.
+    pub friction: Friction,
+    /// The mass of the object, the higher it is, the more velocity it retains
+    pub mass: f64,
 }
 
 impl Default for Physics {
@@ -183,6 +189,9 @@ impl Default for Physics {
             velocity: DVec3::default(),
             grounded: BVec3::FALSE,
             buoyancy: None,
+            collidable: true,
+            friction: Friction::Drag(DVec3::ZERO),
+            mass: 1.0,
         }
     }
 }
@@ -204,17 +213,64 @@ impl Default for Buoyancy {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum Friction {
+    Surface {
+        front: f64,
+        back: f64,
+        right: f64,
+        left: f64,
+        top: f64,
+        bottom: f64,
+    },
+    Drag(DVec3),
+}
+
+impl Friction {
+    pub fn surface_friction(&self, face: BlockFace) -> DVec3 {
+        match &self {
+            Friction::Surface {
+                front,
+                back,
+                right,
+                left,
+                top,
+                bottom,
+            } => match face {
+                BlockFace::Front => DVec3::splat(*front),
+                BlockFace::Back => DVec3::splat(*back),
+                BlockFace::Right => DVec3::splat(*right),
+                BlockFace::Left => DVec3::splat(*left),
+                BlockFace::Top => DVec3::splat(*top),
+                BlockFace::Bottom => DVec3::splat(*bottom),
+            },
+            Friction::Drag(_) => DVec3::ZERO,
+        }
+    }
+
+    pub fn drag(&self) -> Option<DVec3> {
+        match self {
+            Friction::Surface { .. } => None,
+            Friction::Drag(drag) => Some(*drag),
+        }
+    }
+}
+
 // Keeps track of which entities are in which chunks. To efficiently trigger physics updates for a
 // subset of entities when a chunk's blocks change.
 #[derive(Resource, Default)]
-struct ObjectMap {
+pub struct ObjectMap {
     objects: HashMap<ChunkPosition, HashSet<Entity>>,
     reverse: HashMap<Entity, ChunkPosition>,
 }
 
 impl ObjectMap {
-    fn get_entities(&self, chunk_position: &ChunkPosition) -> Option<&HashSet<Entity>> {
-        return self.objects.get(chunk_position);
+    pub fn iter_entities(&self, chunk_position: &ChunkPosition) -> impl Iterator<Item = Entity> {
+        self.objects
+            .get(chunk_position)
+            .into_iter()
+            .flat_map(|entities| entities.iter().cloned())
     }
 
     fn insert_or_move(&mut self, chunk_position: ChunkPosition, entity: Entity) {
@@ -256,7 +312,7 @@ fn simulate_physics(
     mut entities: Query<(&mut Transform, &mut Physics, &Collider)>,
 ) {
     for (mut transform, mut physics, entity_collider) in entities.iter_mut() {
-        if physics.velocity == DVec3::ZERO {
+        if !physics.enabled || physics.velocity == DVec3::ZERO {
             continue;
         }
 
@@ -320,75 +376,15 @@ fn simulate_physics(
                     continue;
                 }
 
-                let backwards_time = overlap / -velocity;
-                // Small epsilon to delta time because of precision.
-                let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
-                    & backwards_time.cmpgt(DVec3::ZERO);
-                let resolution_axis =
-                    DVec3::select(valid_axes, backwards_time, DVec3::MIN).max_element();
-
-                if physics.grounded.y && overlap.y > 0.0 && overlap.y < 0.51 {
-                    // This let's the player step up short distances when moving horizontally
-                    move_back.y = move_back.y.max(0.05_f64.min(overlap.y + overlap.y / 100.0));
-                    physics.grounded.y = true;
-                    physics.velocity.y = 0.0;
-
-                    if velocity.y.is_sign_positive() {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Bottom));
-                    } else {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Top));
-                    }
-                } else if resolution_axis == backwards_time.y {
-                    if physics.velocity.y.is_sign_positive() {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Bottom));
-                    } else {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Top));
-                    }
-
-                    move_back.y = overlap.y + overlap.y / 100.0;
-                    physics.velocity.y = 0.0;
-                    physics.grounded.y = true;
-                } else if resolution_axis == backwards_time.x {
-                    if physics.velocity.x.is_sign_positive() {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Left));
-                    } else {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Right));
-                    }
-
-                    move_back.x = overlap.x + overlap.x / 100.0;
-                    physics.velocity.x = 0.0;
-                    physics.grounded.x = true;
-                } else if resolution_axis == backwards_time.z {
-                    if physics.velocity.z.is_sign_positive() {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Back));
-                    } else {
-                        friction = friction.max(block_config.surface_friction(BlockFace::Front));
-                    }
-
-                    move_back.z = overlap.z + overlap.z / 100.0;
-                    physics.velocity.z = 0.0;
-                    physics.grounded.z = true;
-                } else {
-                    // When physics.velocity is really small there's numerical precision problems. Since a
-                    // resolution is guaranteed. Move it back by whatever the smallest resolution
-                    // direction is.
-                    let valid_axes = DVec3::select(
-                        backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 10.0),
-                        backwards_time,
-                        DVec3::NAN,
-                    );
-                    if valid_axes.x.is_finite()
-                        || valid_axes.y.is_finite()
-                        || valid_axes.z.is_finite()
-                    {
-                        let valid_axes = DVec3::select(
-                            valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
-                            valid_axes,
-                            DVec3::ZERO,
-                        );
-                        move_back += (valid_axes + valid_axes / 100.0) * -velocity;
-                    }
-                }
+                resolve_conflict(
+                    &mut physics,
+                    &mut move_back,
+                    &mut friction,
+                    &block_config.friction,
+                    &velocity,
+                    &overlap,
+                    &delta_time,
+                );
             }
         }
 
@@ -401,16 +397,90 @@ fn simulate_physics(
             transform.translation = new_position;
         }
 
-        // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
-        // should be parsed as 'physics.velocity *= friction^time'
         physics.velocity =
-            physics.velocity * (1.0 - friction).powf(4.0).powf(time.delta_secs_f64());
+            physics.velocity * (-friction / physics.mass * time.delta_secs_f64()).exp();
         // Clamp the physics.velocity when it is close to 0
         physics.velocity = DVec3::select(
             physics.velocity.abs().cmplt(DVec3::splat(0.01)),
             DVec3::ZERO,
             physics.velocity,
         );
+    }
+}
+
+fn resolve_conflict(
+    physics: &mut Physics,
+    move_back: &mut DVec3,
+    friction: &mut DVec3,
+    collider_friction: &Friction,
+    velocity: &DVec3,
+    overlap: &DVec3,
+    delta_time: &DVec3,
+) {
+    let backwards_time = overlap / -velocity;
+    // Small epsilon to delta time because of precision.
+    let valid_axes =
+        backwards_time.cmplt(delta_time + delta_time / 100.0) & backwards_time.cmpgt(DVec3::ZERO);
+    let resolution_axis = DVec3::select(valid_axes, backwards_time, DVec3::MIN).max_element();
+
+    if physics.grounded.y && overlap.y > 0.0 && overlap.y < 0.51 {
+        // This let's the player step up short distances when moving horizontally
+        move_back.y = move_back.y.max(0.05_f64.min(overlap.y + overlap.y / 100.0));
+        physics.grounded.y = true;
+        physics.velocity.y = 0.0;
+
+        if velocity.y.is_sign_positive() {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Bottom));
+        } else {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Top));
+        }
+    } else if resolution_axis == backwards_time.y {
+        if physics.velocity.y.is_sign_positive() {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Bottom));
+        } else {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Top));
+        }
+
+        move_back.y = overlap.y + overlap.y / 100.0;
+        physics.velocity.y = 0.0;
+        physics.grounded.y = true;
+    } else if resolution_axis == backwards_time.x {
+        if physics.velocity.x.is_sign_positive() {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Left));
+        } else {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Right));
+        }
+
+        move_back.x = overlap.x + overlap.x / 100.0;
+        physics.velocity.x = 0.0;
+        physics.grounded.x = true;
+    } else if resolution_axis == backwards_time.z {
+        if physics.velocity.z.is_sign_positive() {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Back));
+        } else {
+            *friction = friction.max(collider_friction.surface_friction(BlockFace::Front));
+        }
+
+        move_back.z = overlap.z + overlap.z / 100.0;
+        physics.velocity.z = 0.0;
+        physics.grounded.z = true;
+    } else {
+        // When physics.velocity is really small there's numerical precision problems. Since a
+        // resolution is guaranteed. Move it back by whatever the smallest resolution
+        // direction is.
+        let valid_axes = DVec3::select(
+            backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 10.0),
+            backwards_time,
+            DVec3::NAN,
+        );
+        if valid_axes.x.is_finite() || valid_axes.y.is_finite() || valid_axes.z.is_finite() {
+            let valid_axes = DVec3::select(
+                valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
+                valid_axes,
+                DVec3::ZERO,
+            );
+            *move_back += (valid_axes + valid_axes / 100.0) * -velocity;
+        }
     }
 }
 
@@ -426,27 +496,23 @@ fn update_object_map(
 
 fn trigger_update_on_block_change(
     object_map: Res<ObjectMap>,
-    mut object_query: Query<&mut Transform, With<Physics>>,
+    mut object_query: Query<&mut Physics>,
     mut block_updates: MessageReader<ChangedBlockEvent>,
 ) {
     for block_update in block_updates.read() {
         let chunk_position = ChunkPosition::from(block_update.position);
-        if let Some(item_entities) = object_map.get_entities(&chunk_position) {
-            for entity in item_entities.iter() {
-                if let Ok(mut transform) = object_query.get_mut(*entity) {
-                    transform.set_changed();
-                }
+        for entity in object_map.iter_entities(&chunk_position) {
+            if let Ok(mut physics) = object_query.get_mut(entity) {
+                physics.velocity += f64::EPSILON;
             }
         }
 
         let above_position = block_update.position + IVec3::Y;
         let above_chunk_position = ChunkPosition::from(above_position);
         if above_chunk_position != chunk_position {
-            if let Some(item_entities) = object_map.get_entities(&above_chunk_position) {
-                for entity in item_entities.iter() {
-                    if let Ok(mut transform) = object_query.get_mut(*entity) {
-                        transform.set_changed();
-                    }
+            for entity in object_map.iter_entities(&above_chunk_position) {
+                if let Ok(mut physics) = object_query.get_mut(entity) {
+                    physics.velocity += f64::EPSILON;
                 }
             }
         }

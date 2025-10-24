@@ -372,9 +372,8 @@ pub fn simulate_particle_physics(
             transform.translation = Vec3::from(particle_aabb.center - move_back);
         }
 
-        // XXX: Pow(4) is just to scale it further towards zero when friction is high. The function
-        // should be understood as 'velocity *= friction^time'
-        velocity.0 = velocity.0 * Vec3::from((1.0 - friction).powf(4.0).powf(time.delta_secs()));
+        let mass = 1.0;
+        velocity.0 *= Vec3::from((-friction / mass * time.delta_secs()).exp());
         // Clamp the velocity when it is close to 0
         velocity.0 = Vec3::select(
             velocity.0.abs().cmplt(Vec3::splat(0.01)),

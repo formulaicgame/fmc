@@ -19,7 +19,7 @@ use crate::{
     database::Database,
     items::{DropTable, DropTableJson, ItemConfig, ItemId, ItemStack, Items},
     models::{ModelAssetId, Models},
-    physics::{Collider, ColliderJson, shapes::Aabb},
+    physics::{Collider, ColliderJson, Friction, shapes::Aabb},
     players::Camera,
     prelude::*,
     random::{Rng, WeightedIndex},
@@ -595,31 +595,11 @@ impl BlockConfig {
     }
 
     pub fn surface_friction(&self, face: BlockFace) -> DVec3 {
-        match &self.friction {
-            Friction::Surface {
-                front,
-                back,
-                right,
-                left,
-                top,
-                bottom,
-            } => match face {
-                BlockFace::Front => DVec3::splat(*front),
-                BlockFace::Back => DVec3::splat(*back),
-                BlockFace::Right => DVec3::splat(*right),
-                BlockFace::Left => DVec3::splat(*left),
-                BlockFace::Top => DVec3::splat(*top),
-                BlockFace::Bottom => DVec3::splat(*bottom),
-            },
-            Friction::Drag(_) => DVec3::ZERO,
-        }
+        self.friction.surface_friction(face)
     }
 
     pub fn drag(&self) -> Option<DVec3> {
-        match self.friction {
-            Friction::Surface { .. } => None,
-            Friction::Drag(drag) => Some(drag),
-        }
+        self.friction.drag()
     }
 
     pub fn is_solid(&self) -> bool {
@@ -780,20 +760,6 @@ impl BlockFace {
             _ => unreachable!(),
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum Friction {
-    Surface {
-        front: f64,
-        back: f64,
-        right: f64,
-        left: f64,
-        top: f64,
-        bottom: f64,
-    },
-    Drag(DVec3),
 }
 
 /// Block data is extra data that is optionally used by blocks that have their own entity. It can

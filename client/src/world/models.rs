@@ -289,17 +289,32 @@ impl ModelEntities {
     }
 }
 
+// Stores child models until they can be spawned. This is necessary for two reasons:
+// The reception order of parents and children is arbitrary because of how bevy works. The server
+// can't iterate over models in insertion order, so the client has to wait for the parent to arrive
+// sometimes.
+// Even if they arrive in the correct order, if the child is to be placed relative to a parent
+// bone, the parent needs time to load the gltf, spawn the scene, and then build the [Bones]. The
+// child can only be inserted after all this is done.
+#[derive(Default, Deref, DerefMut)]
+struct ChildModelCache(HashMap<u32, (Timer, messages::NewModel)>);
+
 fn handle_model_add_delete(
-    net: Res<NetworkClient>,
     mut commands: Commands,
+    net: Res<NetworkClient>,
+    time: Res<Time>,
     origin: Res<Origin>,
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
+    bones_query: Query<&Bones>,
     mut model_entities: ResMut<ModelEntities>,
     mut deleted_models: MessageReader<messages::DeleteModel>,
     mut new_models: MessageReader<messages::NewModel>,
+    mut child_cache: Local<ChildModelCache>,
 ) {
     for deleted_model in deleted_models.read() {
+        child_cache.remove(&deleted_model.model_id);
+
         if let Some(entity) = model_entities.remove(deleted_model.model_id) {
             commands.entity(entity).despawn();
         }
@@ -309,6 +324,14 @@ fn handle_model_add_delete(
         // Server may send same id with intent to replace, in which case we delete and add anew
         if let Some(old_entity) = model_entities.remove(new_model.model_id) {
             commands.entity(old_entity).despawn();
+        }
+
+        if new_model.parent_id.is_some() {
+            child_cache.insert(
+                new_model.model_id,
+                (Timer::from_seconds(5.0, TimerMode::Once), new_model.clone()),
+            );
+            continue;
         }
 
         let Some(model_config) = models.get_config(&new_model.asset) else {
@@ -342,6 +365,66 @@ fn handle_model_add_delete(
 
         model_entities.insert(new_model.model_id, entity);
     }
+
+    child_cache.retain(|_key, (timer, new_model)| {
+        if timer.tick(time.delta()).just_finished() {
+            warn!("Failed to spawn child model");
+            return false;
+        }
+
+        let parent_id = new_model.parent_id.unwrap();
+        let Some(parent_entity) = model_entities.get_entity(&parent_id) else {
+            return true;
+        };
+
+        let parent_entity = if let Some(bone_id) = new_model.parent_bone {
+            let Ok(bones) = bones_query.get(parent_entity) else {
+                return true;
+            };
+            let Some(bone_entity) = bones.get(&bone_id) else {
+                warn!("Received invalid model bone");
+                return false;
+            };
+            *bone_entity
+        } else {
+            parent_entity
+        };
+
+        let Some(model_config) = models.get_config(&new_model.asset) else {
+            net.disconnect(format!(
+                "Server sent model asset id that doesn't exist, id: {}",
+                new_model.asset,
+            ));
+            return false;
+        };
+
+        let Some(gltf) = gltf_assets.get(&model_config.gltf_handle) else {
+            warn!("Gltf hasn't been loaded yet");
+            return false;
+        };
+
+        commands.entity(parent_entity).with_children(|parent| {
+            let entity = parent
+                .spawn((
+                    SceneRoot(gltf.scenes[0].clone()),
+                    Transform {
+                        translation: new_model.position.as_vec3(),
+                        rotation: new_model.rotation,
+                        scale: new_model.scale,
+                    },
+                    Model::Asset(new_model.asset),
+                    AnimationGraphHandle(model_config.animation_graph.clone().unwrap()),
+                    AnimationPlayer::default(),
+                    AnimationTransitions::default(),
+                    TransformInterpolator::default(),
+                ))
+                .id();
+
+            model_entities.insert(new_model.model_id, entity);
+        });
+
+        false
+    });
 }
 
 // The asset server will unload unused assets so we keep them here after first load to minimize

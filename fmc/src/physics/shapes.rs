@@ -65,7 +65,7 @@ impl Aabb {
         //     rot_mat.y_axis.abs(),
         //     rot_mat.z_axis.abs(),
         // );
-        //
+        //.len()
         // This is how you do it normally, each column will have a euclidean distance of 1. At a 45
         // degree angle around the y axis, this will give an x_axis of
         // [sqrt(2)/2=0.707, 0.0, 0.707], i.e. take 70% of the x extent and 70% of the z
@@ -116,6 +116,10 @@ impl Aabb {
         //    t_min = t_min.max(t1.min(t2));
         //    t_max = t_max.min(t1.max(t2));
         //}
+
+        if t_min < 0.0 {
+            return None;
+        }
 
         if t_max >= t_min {
             const FACES: [[BlockFace; 2]; 3] = [
