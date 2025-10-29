@@ -706,12 +706,11 @@ fn play_animations(
 
             transition.play(
                 &mut animation_player,
-                //*from_animation_index,
                 *animation_index,
                 Duration::from_secs_f32(duration),
             )
         } else {
-            animation_player.play(*animation_index)
+            transition.play(&mut animation_player, *animation_index, Duration::ZERO)
         };
 
         if active_animation.is_finished() || animation.restart {
@@ -759,24 +758,13 @@ fn handle_model_color(
     }
 
     for message in color_updates.read() {
-        let color = match Srgba::hex(&message.color) {
-            Ok(c) => c,
-            Err(e) => {
-                net.disconnect(format!(
-                    "Recevied malformed material color '{}', error: {}",
-                    message.color, e
-                ));
-                return;
-            }
-        };
-
         let Some(model_entity) = model_entities.get_entity(&message.model_id) else {
             // TODO: Disconnect
             return;
         };
 
         change_color(
-            color.into(),
+            Srgba::from_vec4(message.color).into(),
             model_entity,
             &material_query,
             &children_query,
