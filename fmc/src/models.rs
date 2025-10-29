@@ -316,11 +316,14 @@ impl ModelColor {
         }
     }
 
-    fn to_hex(&self) -> String {
-        let [r, g, b, a] = [self.red, self.green, self.blue, self.alpha]
-            .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
+    fn to_vec4(&self) -> Vec4 {
+        Vec4::new(self.red, self.green, self.blue, self.alpha)
+    }
+}
 
-        format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+impl Default for ModelColor {
+    fn default() -> Self {
+        Self::WHITE
     }
 }
 
@@ -793,7 +796,7 @@ fn send_models(
                     observers.filter(subs),
                     messages::ModelColor {
                         model_id: entity.index(),
-                        color: color.to_hex(),
+                        color: color.to_vec4(),
                     },
                 );
             }
@@ -958,7 +961,7 @@ fn send_color(
             subs,
             messages::ModelColor {
                 model_id: entity.index(),
-                color: color.to_hex(),
+                color: color.to_vec4(),
             },
         )
     }

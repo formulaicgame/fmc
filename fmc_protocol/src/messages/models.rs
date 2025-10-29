@@ -113,6 +113,6 @@ pub struct ModelPlayAnimation {
 pub struct ModelColor {
     /// Id of the model
     pub model_id: u32,
-    /// Color formated as hex, "RRGGBBAA"
-    pub color: String,
+    /// Color that should be applied
+    pub color: Vec4,
 }
