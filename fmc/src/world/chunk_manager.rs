@@ -34,7 +34,8 @@ impl Plugin for ChunkManagerPlugin {
                     update_movement_trackers,
                     (
                         add_and_remove_subscribers,
-                        subscribe_to_visible_chunks,
+                        // vicinity_subscriber,
+                        traversal_subscriber,
                         manage_subscriptions,
                         handle_chunk_loading_tasks,
                     )
@@ -247,6 +248,12 @@ fn manage_subscriptions(
 #[derive(Component)]
 struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 
+// fn vicinity_subscriber(
+//     player_query: Query<(Entity, &MovementTracker), Changed<MovementTracker>
+// ) {
+//
+// }
+
 // TODO: This is too expensive to accommodate many players. I'm thinking chunks can be sorted into
 // columns. If it is a chunk that contains blocks, it would be considered a column base. All chunks
 // of air in succession above a base would be part of the column. More generally perhaps, all
@@ -266,7 +273,7 @@ struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 //
 // Search for chunks by fanning out from the player's chunk position to find chunks that are
 // visible to it.
-fn subscribe_to_visible_chunks(
+fn traversal_subscriber(
     world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut player_query: Query<
@@ -493,7 +500,7 @@ fn handle_chunk_loading_tasks(
                 }
             }
 
-            // Triggers 'subscribe_to_visible_chunks' to run again so it can continue from
+            // Triggers 'traversal_subscriber' to run again so it can continue from
             // where it last stopped.
             let mut iter = chunk_tracker_query.iter_many_mut(subscribers.iter());
             while let Some(mut tracker) = iter.fetch_next() {

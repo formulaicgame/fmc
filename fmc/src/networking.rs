@@ -127,9 +127,10 @@ impl Server {
         connection_entities: impl IntoIterator<Item = &'a Entity>,
         message: T,
     ) {
-        if self.safe.load(Ordering::Relaxed) != true {
-            panic!();
-        }
+        assert!(
+            self.safe.load(Ordering::Relaxed) == true,
+            "Messages can only be sent between 'First' and 'Last'"
+        );
 
         for connection_entity in connection_entities.into_iter().cloned() {
             let Some(connection) = self.connections.get(&connection_entity) else {

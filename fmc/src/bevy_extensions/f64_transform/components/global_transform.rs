@@ -7,7 +7,7 @@ use bevy::ecs::{
 use bevy::math::{
     DAffine3 as Affine3A, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3, DVec3 as Vec3A,
 };
-use bevy::reflect::{std_traits::ReflectDefault, Reflect};
+use bevy::reflect::{Reflect, std_traits::ReflectDefault};
 
 /// Describe the position of an entity relative to the reference frame.
 ///

@@ -247,8 +247,7 @@ fn find_target(
             let block_position = raycast.position();
             let rotation = world_map
                 .get_block_state(block_position)
-                .map(BlockState::rotation)
-                .flatten()
+                .map(BlockRotation::from)
                 .map(BlockRotation::as_quat)
                 .unwrap_or_default();
 

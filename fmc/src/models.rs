@@ -18,7 +18,9 @@ use crate::{
 
 pub const MODEL_PATH: &str = "./assets/client/textures/models/";
 
-// Used to identify the asset of a model.
+// Unique identifier for each model instance. Derived from the model's entity
+pub type ModelId = u32;
+// Shared identifier for each unique model. Each model in MODEL_PATH gets a unique id.
 pub type ModelAssetId = u32;
 
 pub struct ModelPlugin;
@@ -183,14 +185,14 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
         model_configs.insert(name, config);
     }
 
-    let model_ids = database.load_model_ids();
+    let model_asset_ids = database.load_model_asset_ids();
 
     let mut models = Models {
-        configs: Vec::with_capacity(model_ids.len()),
-        ids: HashMap::with_capacity(model_ids.len()),
+        configs: Vec::with_capacity(model_asset_ids.len()),
+        ids: HashMap::with_capacity(model_asset_ids.len()),
     };
 
-    for (model_id, model_name) in model_ids.into_iter().enumerate() {
+    for (model_asset_id, model_name) in model_asset_ids.into_iter().enumerate() {
         let Some(mut config) = model_configs.remove(&model_name) else {
             panic!(
                 "Missing model '{}', make sure it exists at '{}' as a gltf/glb/json file",
@@ -198,7 +200,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
             );
         };
 
-        let id = model_id as ModelAssetId;
+        let id = model_asset_id as ModelAssetId;
         config.id = id;
         models.configs.push(config);
 

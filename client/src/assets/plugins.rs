@@ -9,7 +9,10 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use fmc_protocol::messages;
-use wasmtime::{Engine, Store, component::Linker};
+use wasmtime::{
+    Engine, Store,
+    component::{HasSelf, Linker},
+};
 
 use crate::{
     assets::models::{Model, Models},
@@ -25,7 +28,8 @@ impl Plugin for WasmPlugin {
         let engine = Engine::default();
         let store = Store::new(&engine, WasmState::default());
         let mut linker = wasmtime::component::Linker::new(&engine);
-        wit::Plugin::add_to_linker(&mut linker, |state: &mut WasmState| state).unwrap();
+        wit::Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut WasmState| state)
+            .unwrap();
 
         let keyboard_events = SystemState::new(app.world_mut());
         app.insert_resource(WasmHost {

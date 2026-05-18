@@ -214,10 +214,9 @@ fn handle_block_updates(
                 let chunk_position = ChunkPosition::from(position);
                 let block_index = position.as_chunk_index();
 
-                let chunk = if let Some(c) = world_map.get_chunk_mut(&chunk_position) {
-                    c
-                } else {
-                    panic!("Tried to change block in non-existent chunk");
+                let Some(chunk) = world_map.get_chunk_mut(&chunk_position) else {
+                    warn!("Tried to change block in non-existent chunk");
+                    continue;
                 };
 
                 let prev_block = chunk.set_block(block_index, block_id);

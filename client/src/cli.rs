@@ -102,7 +102,7 @@ fn parse_server_build_config(path: &str) -> Result<ServerBuildConfig, String> {
                         .to_owned(),
                 ),
                 _ => Err(format!("Error while trying to read server.conf: {e}")),
-            }
+            };
         }
     };
 
@@ -137,7 +137,9 @@ fn parse_server_build_config(path: &str) -> Result<ServerBuildConfig, String> {
             } else if value.starts_with("https://") {
                 format!("{{ git = \"{value}\" }}")
             } else {
-                return Err(format!("line {n}: invalid spec {value}, must be either a version e.g. '1.0.0' or a git url e.g. 'https://github.com/..."));
+                return Err(format!(
+                    "line {n}: invalid spec {value}, must be either a version e.g. '1.0.0' or a git url e.g. 'https://github.com/..."
+                ));
             };
 
             mods.push(Mod::new(key.to_owned(), spec));
@@ -146,7 +148,9 @@ fn parse_server_build_config(path: &str) -> Result<ServerBuildConfig, String> {
                 "game" => game_name = Some(value.to_owned()),
                 "version" => {
                     if !validate_version(value) {
-                        return Err(format!("line {n}: Versions must be given in the format 'x.y.z' cannot be '{value}', e.g. 'version = 1.0.0'"));
+                        return Err(format!(
+                            "line {n}: Versions must be given in the format 'x.y.z' cannot be '{value}', e.g. 'version = 1.0.0'"
+                        ));
                     }
                     game_version = Some(value.to_owned())
                 }

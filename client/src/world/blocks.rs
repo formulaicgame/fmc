@@ -589,10 +589,10 @@ impl Block {
         Vec3::splat(friction)
     }
 
-    pub fn drag(&self) -> Vec3 {
+    pub fn drag(&self) -> Option<Vec3> {
         match self.friction {
-            Friction::Drag(drag) => drag,
-            Friction::Surface { .. } => Vec3::ZERO,
+            Friction::Drag(drag) => Some(drag),
+            Friction::Surface { .. } => None,
         }
     }
 
@@ -683,13 +683,20 @@ impl BlockRotation {
         vertex[2] = new_z;
     }
 
-    pub fn as_quat(&self) -> Quat {
+    pub fn as_quat(self) -> Quat {
         match self {
             Self::None => Quat::from_rotation_y(0.0),
             Self::Once => Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
             Self::Twice => Quat::from_rotation_y(std::f32::consts::PI),
             Self::Thrice => Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
         }
+    }
+}
+
+impl From<BlockState> for BlockRotation {
+    #[track_caller]
+    fn from(value: BlockState) -> Self {
+        return unsafe { std::mem::transmute(value.0 & 0b11) };
     }
 }
 

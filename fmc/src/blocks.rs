@@ -12,7 +12,7 @@ use bevy::{
     ecs::system::EntityCommands,
     math::{DQuat, DVec3},
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     assets::AssetSet,
@@ -678,21 +678,17 @@ impl BlockConfig {
         }
     }
 
-    pub fn particle_color(&self) -> Option<String> {
+    pub fn particle_color(&self) -> Option<Vec4> {
         let Some(material) = &self.material else {
             return None;
         };
 
-        let Some(color) = &material.base_color else {
-            return None;
-        };
-
-        let r = (color.red.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let g = (color.green.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let b = (color.blue.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let a = (color.alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
-
-        return Some(format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a));
+        return Some(Vec4::new(
+            material.base_color.red,
+            material.base_color.green,
+            material.base_color.blue,
+            material.base_color.alpha,
+        ));
     }
 }
 
@@ -808,12 +804,12 @@ impl BlockState {
         self
     }
 
-    pub fn rotation(self) -> Option<BlockRotation> {
+    pub fn rotation(&self) -> Option<BlockRotation> {
         if self.is_centered() {
             return None;
         }
 
-        return Some(BlockRotation::from(self.0));
+        return Some(BlockRotation::from(*self));
     }
 }
 
@@ -935,6 +931,13 @@ pub enum BlockRotation {
     Left,
 }
 
+impl From<BlockState> for BlockRotation {
+    #[track_caller]
+    fn from(value: BlockState) -> Self {
+        return unsafe { std::mem::transmute(value.0 & 0b11) };
+    }
+}
+
 impl From<u16> for BlockRotation {
     #[track_caller]
     fn from(value: u16) -> Self {
@@ -964,14 +967,19 @@ struct Color {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 struct BlockMaterial {
-    base_color: Option<Color>,
+    base_color: Color,
     transparency: String,
 }
 
 impl Default for BlockMaterial {
     fn default() -> Self {
         Self {
-            base_color: None,
+            base_color: Color {
+                red: 1.0,
+                green: 1.0,
+                blue: 1.0,
+                alpha: 1.0,
+            },
             transparency: "opaque".to_owned(),
         }
     }

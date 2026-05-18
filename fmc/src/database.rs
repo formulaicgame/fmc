@@ -645,7 +645,7 @@ impl Database {
     }
 
     // Load model names sorted by their model ids
-    pub fn load_model_ids(&self) -> Vec<String> {
+    pub fn load_model_asset_ids(&self) -> Vec<String> {
         let conn = self.get_read_connection();
         let mut stmt = conn.prepare("SELECT name FROM model_ids").unwrap();
         let mut rows = stmt.query([]).unwrap();

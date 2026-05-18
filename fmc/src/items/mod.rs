@@ -350,24 +350,23 @@ impl DropTable {
     }
 
     pub fn new(
+        // probability to hit the drop table
         probability: f32,
-        weights: &Vec<f32>,
-        drops: &Vec<(ItemId, u32, u32)>,
+        // Item, weight, min amount, max amount
+        drops: &[(ItemId, f32, u32, u32)],
     ) -> Result<Self, String> {
         if drops.is_empty() {
             return Err("'drops' cannot be empty".to_owned());
-        } else if weights.len() != drops.len() {
-            return Err("'drops' and 'weights' must be of the same length".to_owned());
         }
 
-        let weights = match WeightedIndex::new(weights) {
+        let weights = match WeightedIndex::new(drops.iter().map(|d| &d.1)) {
             Ok(w) => w,
             Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
         };
 
         let drops = drops
             .iter()
-            .map(|(item_id, min, max)| (*item_id, UniformDistribution::new(*min, *max)))
+            .map(|(item_id, _weight, min, max)| (*item_id, UniformDistribution::new(*min, *max)))
             .collect();
 
         Ok(Self {

@@ -254,8 +254,8 @@ mod parallel {
     use core::sync::atomic::{AtomicI32, Ordering};
     use std::sync::Arc;
     use std::sync::{
-        mpsc::{Receiver, Sender},
         Mutex,
+        mpsc::{Receiver, Sender},
     };
 
     /// Update [`GlobalTransform`] component of entities based on entity hierarchy and [`Transform`]

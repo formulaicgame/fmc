@@ -13,7 +13,7 @@ pub mod shapes;
 
 use self::shapes::{Aabb, AabbJson};
 
-const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
+pub const GRAVITY: DVec3 = DVec3::new(0.0, -28.0, 0.0);
 
 pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
@@ -169,8 +169,9 @@ pub struct Physics {
     pub acceleration: DVec3,
     /// The current velocity of the entity.
     pub velocity: DVec3,
-    /// If the entity is currently blocked from moving along an axis.
-    pub grounded: BVec3,
+    /// Marks which wall faces the entity is up against. -1.0 for negative direction, 0.0 for none,
+    /// 1.0 for positive direction.
+    pub grounded: DVec3,
     /// Set this if the entity should be buoyant
     pub buoyancy: Option<Buoyancy>,
     /// Can other objects collide with this object
@@ -187,12 +188,30 @@ impl Default for Physics {
             enabled: true,
             acceleration: DVec3::default(),
             velocity: DVec3::default(),
-            grounded: BVec3::FALSE,
+            grounded: DVec3::default(),
             buoyancy: None,
             collidable: true,
             friction: Friction::Drag(DVec3::ZERO),
             mass: 1.0,
         }
+    }
+}
+
+impl Physics {
+    pub fn is_grounded(&self) -> bool {
+        self.grounded.y == -1.0
+    }
+
+    pub fn is_against_wall(&self) -> bool {
+        self.grounded.x != 0.0 || self.grounded.z != 0.0
+    }
+
+    pub fn against_north_south(&self) -> bool {
+        self.grounded.z != 0.0
+    }
+
+    pub fn against_east_west(&self) -> bool {
+        self.grounded.x != 0.0
     }
 }
 
@@ -317,13 +336,13 @@ fn simulate_physics(
         }
 
         if physics.velocity.x != 0.0 {
-            physics.grounded.x = false;
+            physics.grounded.x = 0.0;
         }
         if physics.velocity.y != 0.0 {
-            physics.grounded.y = false;
+            physics.grounded.y = 0.0;
         }
         if physics.velocity.z != 0.0 {
-            physics.grounded.z = false;
+            physics.grounded.z = 0.0;
         }
 
         let blocks = Blocks::get();
@@ -352,8 +371,7 @@ fn simulate_physics(
 
                 let rotation = world_map
                     .get_block_state(block_position)
-                    .map(BlockState::rotation)
-                    .flatten()
+                    .map(BlockRotation::from)
                     .map(BlockRotation::as_quat)
                     .unwrap_or_default();
 
@@ -423,10 +441,10 @@ fn resolve_conflict(
         backwards_time.cmplt(delta_time + delta_time / 100.0) & backwards_time.cmpgt(DVec3::ZERO);
     let resolution_axis = DVec3::select(valid_axes, backwards_time, DVec3::MIN).max_element();
 
-    if physics.grounded.y && overlap.y > 0.0 && overlap.y < 0.51 {
+    if physics.is_grounded() && overlap.y > 0.0 && overlap.y < 0.51 {
         // This let's the player step up short distances when moving horizontally
         move_back.y = move_back.y.max(0.05_f64.min(overlap.y + overlap.y / 100.0));
-        physics.grounded.y = true;
+        physics.grounded.y = -1.0;
         physics.velocity.y = 0.0;
 
         if velocity.y.is_sign_positive() {
@@ -442,8 +460,8 @@ fn resolve_conflict(
         }
 
         move_back.y = overlap.y + overlap.y / 100.0;
+        physics.grounded.y = physics.velocity.y.signum();
         physics.velocity.y = 0.0;
-        physics.grounded.y = true;
     } else if resolution_axis == backwards_time.x {
         if physics.velocity.x.is_sign_positive() {
             *friction = friction.max(collider_friction.surface_friction(BlockFace::Left));
@@ -452,8 +470,8 @@ fn resolve_conflict(
         }
 
         move_back.x = overlap.x + overlap.x / 100.0;
+        physics.grounded.x = physics.velocity.x.signum();
         physics.velocity.x = 0.0;
-        physics.grounded.x = true;
     } else if resolution_axis == backwards_time.z {
         if physics.velocity.z.is_sign_positive() {
             *friction = friction.max(collider_friction.surface_friction(BlockFace::Back));
@@ -462,25 +480,25 @@ fn resolve_conflict(
         }
 
         move_back.z = overlap.z + overlap.z / 100.0;
+        physics.grounded.z = physics.velocity.z.signum();
         physics.velocity.z = 0.0;
-        physics.grounded.z = true;
     } else {
         // When physics.velocity is really small there's numerical precision problems. Since a
         // resolution is guaranteed. Move it back by whatever the smallest resolution
         // direction is.
-        let valid_axes = DVec3::select(
-            backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 10.0),
-            backwards_time,
-            DVec3::NAN,
-        );
-        if valid_axes.x.is_finite() || valid_axes.y.is_finite() || valid_axes.z.is_finite() {
-            let valid_axes = DVec3::select(
-                valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
-                valid_axes,
-                DVec3::ZERO,
-            );
-            *move_back += (valid_axes + valid_axes / 100.0) * -velocity;
-        }
+        // let valid_axes = DVec3::select(
+        //     backwards_time.cmpgt(DVec3::ZERO) & backwards_time.cmplt(delta_time * 10.0),
+        //     backwards_time,
+        //     DVec3::NAN,
+        // );
+        // if valid_axes.x.is_finite() || valid_axes.y.is_finite() || valid_axes.z.is_finite() {
+        //     let valid_axes = DVec3::select(
+        //         valid_axes.cmpeq(DVec3::splat(valid_axes.min_element())),
+        //         valid_axes,
+        //         DVec3::ZERO,
+        //     );
+        //     *move_back += (valid_axes + valid_axes / 100.0) * -velocity;
+        // }
     }
 }
 

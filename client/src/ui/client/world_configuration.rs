@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    tasks::{futures_lite::future, AsyncComputeTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,8 +11,8 @@ use std::{
 use crate::{settings::Settings, singleplayer::SinglePlayerServer, ui::text_input::TextBox};
 
 use super::{
-    widgets::{colors, ButtonSelection, ButtonStyle, SettingsWidget, Switch, Widgets},
-    GuiState, Interface, Interfaces, BACKGROUND, BASE_SIZE,
+    BACKGROUND, BASE_SIZE, GuiState, Interface, Interfaces,
+    widgets::{ButtonSelection, ButtonStyle, SettingsWidget, Switch, Widgets, colors},
 };
 
 pub struct WorldConfigurationPlugin;

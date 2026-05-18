@@ -38,21 +38,20 @@ impl<T: Material + Asset> Default for Materials<T> {
 #[derive(Deserialize)]
 #[serde(default)]
 struct ModelMaterialConfig {
-    // One of "block" or "standard"
-    pub base_color: Srgba,
-    pub base_color_texture: Option<String>,
-    pub emissive: Srgba,
-    pub emissive_texture: Option<String>,
-    pub perceptual_roughness: f32,
-    pub metallic: f32,
-    pub metallic_roughness_texture: Option<String>,
-    pub reflectance: f32,
-    pub normal_map_texture: Option<String>,
-    pub occlusion_texture: Option<String>,
-    pub double_sided: bool,
-    pub unlit: bool,
-    pub fog_enabled: bool,
-    pub transparency: Transparency,
+    base_color: Srgba,
+    base_color_texture: Option<String>,
+    emissive: Srgba,
+    emissive_texture: Option<String>,
+    perceptual_roughness: f32,
+    metallic: f32,
+    metallic_roughness_texture: Option<String>,
+    reflectance: f32,
+    normal_map_texture: Option<String>,
+    occlusion_texture: Option<String>,
+    double_sided: bool,
+    unlit: bool,
+    fog_enabled: bool,
+    transparency: Transparency,
 }
 
 impl Default for ModelMaterialConfig {
@@ -80,11 +79,10 @@ impl Default for ModelMaterialConfig {
 #[derive(Deserialize)]
 #[serde(default)]
 struct BlockMaterialConfig {
-    // One of "block" or "standard"
-    pub base_color: Srgba,
-    pub double_sided: bool,
-    pub transparency: Transparency,
-    pub animation_frames: u32,
+    base_color: Srgba,
+    double_sided: bool,
+    transparency: Transparency,
+    animation_frames: u32,
 }
 
 impl Default for BlockMaterialConfig {
