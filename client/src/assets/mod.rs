@@ -32,6 +32,7 @@ impl Plugin for AssetPlugin {
         app.add_systems(
             OnEnter(AssetState::Loading),
             (
+                crate::particles::load_particle_textures,
                 block_textures::load_block_textures,
                 crate::ui::server::key_bindings::load_key_bindings,
                 plugins::load_plugins,
