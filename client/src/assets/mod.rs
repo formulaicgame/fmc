@@ -3,6 +3,7 @@ use bevy::prelude::*;
 mod block_textures;
 mod materials;
 pub mod models;
+pub mod particles;
 mod plugins;
 
 pub use block_textures::BlockTextures;
@@ -27,12 +28,13 @@ impl Plugin for AssetPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<AssetState>()
             .add_plugins(plugins::WasmPlugin)
-            .add_plugins(models::ModelPlugin);
+            .add_plugins(models::ModelPlugin)
+            .add_plugins(particles::ParticleEffectPlugin);
 
         app.add_systems(
             OnEnter(AssetState::Loading),
             (
-                crate::particles::load_particle_textures,
+                particles::load_particle_effects,
                 block_textures::load_block_textures,
                 crate::ui::server::key_bindings::load_key_bindings,
                 plugins::load_plugins,

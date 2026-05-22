@@ -237,7 +237,7 @@ pub(super) fn load_models(
     for (name, id) in server_config.model_ids.iter() {
         if !model_configs.id2config.contains_key(id) {
             net.disconnect(&format!(
-                "Misconfigured assets: Missing model, no model with the name '{}', make sure it is part of the assets",
+                "Misconfigured assets: Missing model, no model with the name '{}', make sure it is included in the assets",
                 name
             ));
         }

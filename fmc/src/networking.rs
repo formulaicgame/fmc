@@ -18,6 +18,7 @@ use crate::{
     blocks::Blocks,
     items::Items,
     models::Models,
+    particle_effects::ParticleEffects,
     players::{DefaultPlayerBundle, Player},
     prelude::*,
     world::RenderDistance,
@@ -439,6 +440,7 @@ struct ServerConfig<'w> {
     assets: Res<'w, Assets>,
     models: Res<'w, Models>,
     items: Res<'w, Items>,
+    particle_effects: Res<'w, ParticleEffects>,
 }
 
 impl ServerConfig<'_> {
@@ -448,6 +450,7 @@ impl ServerConfig<'_> {
             block_ids: Blocks::get().ids().clone(),
             model_ids: self.models.ids().clone(),
             item_ids: self.items.ids().clone(),
+            particle_effect_ids: self.particle_effects.ids().clone(),
             render_distance: self.render_distance.chunks,
         };
 

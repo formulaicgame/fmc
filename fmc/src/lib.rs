@@ -11,6 +11,7 @@ pub mod items;
 /// The game's models.
 pub mod models;
 pub mod networking;
+pub mod particle_effects;
 pub mod physics;
 /// Basic player functionality
 pub mod players;
@@ -115,6 +116,7 @@ impl PluginGroup for DefaultPlugins {
             .add(blocks::BlockPlugin)
             .add(items::ItemPlugin)
             .add(models::ModelPlugin)
+            .add(particle_effects::ParticleEffectPlugin)
             .add(physics::PhysicsPlugin)
             .add(players::PlayersPlugin)
             .add(interfaces::InterfacePlugin)

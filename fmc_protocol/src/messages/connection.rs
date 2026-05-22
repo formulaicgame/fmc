@@ -20,6 +20,8 @@ pub struct ServerConfig {
     pub model_ids: HashMap<String, u32>,
     /// Map from item name to id on the server.
     pub item_ids: HashMap<String, u32>,
+    /// Map from particle effect name to id on the server.
+    pub particle_effect_ids: HashMap<String, u32>,
     /// Maximum render distance allowed by server, measured in chunks.
     pub render_distance: u32,
 }

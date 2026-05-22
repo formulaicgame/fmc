@@ -1,28 +1,17 @@
-use std::{collections::HashMap, io::prelude::*, time::Duration};
+use std::time::Duration;
 
-use bevy::{
-    asset::RenderAssetUsages,
-    camera::primitives::Aabb,
-    image::{CompressedImageFormats, ImageSampler, ImageType},
-    math::Vec3A,
-    mesh::{MeshTag, VertexAttributeValues},
-    prelude::*,
-    render::render_resource::{
-        Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension,
-    },
-};
+use bevy::{camera::primitives::Aabb, math::Vec3A, mesh::MeshTag, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
-    assets::Materials,
+    assets::particles::{ParticleEffects, ParticleTextures},
     game_state::GameState,
-    networking::NetworkClient,
     player::{Head, Player},
     rendering::materials::ParticleMaterial,
     utils,
     world::{
         MovesWithOrigin, Origin,
-        blocks::{BlockFace, BlockRotation, BlockState, Blocks},
+        blocks::{BlockRotation, Blocks},
         world_map::WorldMap,
     },
 };
@@ -49,16 +38,16 @@ impl Plugin for ParticlePlugin {
 #[derive(Component)]
 struct Particle {
     lifetime: Timer,
-    gravity: Vec3,
+    acceleration: Vec3,
     collision: bool,
     friction: Vec3,
 }
 
 impl Particle {
-    fn new(lifetime: f32, gravity: Vec3, collision: bool, friction: Vec3) -> Self {
+    fn new(lifetime: f32, acceleration: Vec3, collision: bool, friction: Vec3) -> Self {
         Self {
             lifetime: Timer::new(Duration::from_secs_f32(lifetime), TimerMode::Once),
-            gravity,
+            acceleration,
             collision,
             friction,
         }
@@ -68,84 +57,69 @@ impl Particle {
 fn handle_particles_from_server(
     mut commands: Commands,
     time: Res<Time>,
-    net: Res<NetworkClient>,
     origin: Res<Origin>,
     asset_server: Res<AssetServer>,
+    particle_effects: Res<ParticleEffects>,
     particle_textures: Res<ParticleTextures>,
     mut new_effects: MessageReader<messages::ParticleEffect>,
     mut rng: Local<utils::Rng>,
 ) {
-    for particle_effect in new_effects.read() {
-        let messages::ParticleEffect {
-            position,
-            spawn_offset,
-            size_range,
-            velocity,
-            texture,
-            color,
-            lifetime,
-            random_uv,
-            count,
-            collision,
-            friction,
-            gravity,
-        } = particle_effect;
+    for event in new_effects.read() {
+        let Some(effect) = particle_effects.get(&event.id) else {
+            warn!("Received invalid particle effect id: {}", event.id);
+            continue;
+        };
 
-        let Some(texture_handle) = particle_textures.get(texture).cloned() else {
+        let Some(texture) = particle_textures.get(&event.texture).cloned() else {
             warn!(
                 "Received invalid particle texture, no texture at: {}",
-                texture
+                event.texture
             );
             continue;
         };
 
         let material = asset_server.add(ParticleMaterial {
-            texture: texture_handle,
-            base_color: Srgba::from_vec4(*color),
-            lifetime: *lifetime,
-            random_uv: random_uv.unwrap_or_default(),
+            texture,
+            base_color: Srgba::from_vec4(event.color),
+            lifetime: Vec2::from_array(effect.lifetime),
+            random_uv: effect.random_uv.unwrap_or_default(),
             spawn_time: time.elapsed_secs(),
         });
 
-        let mut mesh = asset_server.add(Rectangle::from_length(0.5).mesh().build());
+        let mesh = asset_server.add(Rectangle::from_length(0.5).mesh().build());
 
-        for _ in 0..*count as usize {
-            let x = (rng.next_f32() * std::f32::consts::TAU).sin();
-            let y = (rng.next_f32() * std::f32::consts::TAU).sin();
-            let z = (rng.next_f32() * std::f32::consts::TAU).sin();
-            let sphere_position = Vec3::new(x, y, z).normalize();
-            let offset = *spawn_offset * rng.next_f32() * sphere_position;
-            let translation = origin.to_local(*position) + offset;
+        let position = origin.to_local(event.position);
+        for _ in 0..effect.count {
+            let local_position = effect.position(&mut rng);
+            let local_velocity = effect.velocity(&mut rng, local_position);
+            let translation = position + event.rotation * local_position;
+            let velocity = event.rotation * local_velocity;
 
-            // If the particle has an offset, its velocity follows the direction of the offset.
-            // Othewise we choose some random direction to move in
-            let direction = if offset == Vec3::ZERO {
-                Vec3::new(rng.next_f32(), rng.next_f32(), rng.next_f32()).normalize()
-            } else {
-                offset.normalize()
-            };
-
-            let velocity = direction * (velocity.x + (velocity.y - velocity.x) * rng.next_f32());
-
-            let (min, max) = (size_range.x, size_range.y);
+            let (min, max) = (effect.size_range[0], effect.size_range[1]);
             let scale = Vec3::splat(min + (max - min) * rng.next_f32());
 
             // Same as from bevy_pbr::utils
+            // The lifetime needs to match in the shader in order to have the correct
+            // animation length.
             fn rand(mut seed: u32) -> f32 {
                 seed = seed.wrapping_mul(747796405).wrapping_add(2891336453);
                 let word = ((seed >> ((seed >> 28) + 4)) ^ seed).wrapping_mul(277803737);
                 return ((word >> 22) ^ word) as f32 * f32::from_bits(0x2f800004);
             }
-            // The lifetime needs to match in the shader in order to have the correct
-            // animation length.
             let seed = rng.next_u32() >> 16;
-            let particle_lifetime = lifetime.x + (lifetime.y - lifetime.x) * rand(seed);
+            let particle_lifetime =
+                effect.lifetime[0] + (effect.lifetime[1] - effect.lifetime[0]) * rand(seed);
 
             // 8 bits reserved for light
             let mesh_tag = MeshTag(seed << 8);
 
             commands.spawn((
-                Particle::new(particle_lifetime, *gravity, *collision, *friction),
+                Particle::new(
+                    particle_lifetime,
+                    effect.acceleration,
+                    effect.collision,
+                    effect.friction,
+                ),
                 Velocity(velocity),
                 Transform {
                     translation,
@@ -254,7 +228,7 @@ impl AabbExt for Aabb {
     }
 
     fn intersection(&self, other: &Aabb) -> Option<Vec3A> {
-        let distance = other.center - self.center;
+        let distance = self.center - other.center;
         let overlap = self.half_extents + other.half_extents - distance.abs();
 
         if overlap.cmpgt(Vec3A::ZERO).all() {
@@ -275,8 +249,8 @@ impl AabbExt for Aabb {
 
     /// Iterator over the block positions inside the collider
     fn iter_block_positions(&self) -> impl IntoIterator<Item = IVec3> {
-        let min = self.min().as_ivec3();
-        let max = self.max().as_ivec3();
+        let min = self.min().floor().as_ivec3();
+        let max = self.max().floor().as_ivec3();
         (min.x..=max.x).flat_map(move |x| {
             (min.z..=max.z).flat_map(move |z| (min.y..=max.y).map(move |y| IVec3::new(x, y, z)))
         })
@@ -285,7 +259,7 @@ impl AabbExt for Aabb {
 
 // BUG: Wanted to use Vec3A end to end, but the Vec3A::max_element function considers NaN to be
 // greater than any number, where Vec3::max_element is opposite.
-pub fn simulate_particle_physics(
+fn simulate_particle_physics(
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
     time: Res<Time>,
@@ -293,16 +267,20 @@ pub fn simulate_particle_physics(
     mut entities: Query<(&mut Transform, &mut Velocity, &Particle)>,
 ) {
     for (mut transform, mut velocity, particle) in entities.iter_mut() {
-        velocity.0 += particle.gravity * time.delta_secs();
+        velocity.0 += particle.acceleration * time.delta_secs();
 
         let delta_time = Vec3A::splat(time.delta_secs());
         let new_position = Vec3A::from(transform.translation + velocity.0 * time.delta_secs());
-        let mut move_back = Vec3A::ZERO;
 
+        let mut move_back = Vec3A::ZERO;
         for directional_velocity in [
             Vec3A::new(0.0, velocity.y, 0.0),
             Vec3A::new(velocity.x, 0.0, velocity.z),
         ] {
+            if !particle.collision {
+                continue;
+            }
+
             let mut particle_aabb = Aabb::new_particle(&transform);
             particle_aabb.center += directional_velocity * time.delta_secs();
 
@@ -332,15 +310,11 @@ pub fn simulate_particle_physics(
                     continue;
                 };
 
-                if let Some(drag) = block_config.drag() {
+                if !block_config.is_solid() {
                     continue;
                 }
 
-                if !particle.collision {
-                    continue;
-                }
-
-                let backwards_time = overlap / directional_velocity;
+                let backwards_time = overlap / -directional_velocity;
                 // Small epsilon to delta time because of precision.
                 let valid_axes = backwards_time.cmplt(delta_time + delta_time / 100.0)
                     & backwards_time.cmpgt(Vec3A::ZERO);
@@ -365,105 +339,4 @@ pub fn simulate_particle_physics(
         let mass = 1.0;
         velocity.0 *= Vec3::from((-particle.friction / mass * time.delta_secs()).exp());
     }
-}
-
-// TODO: https://github.com/bevyengine/bevy/pull/21628 will be available in 0.18 making all this
-// redundant.
-#[derive(Resource, Deref)]
-pub struct ParticleTextures(HashMap<String, Handle<Image>>);
-
-pub fn load_particle_textures(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    net: Res<NetworkClient>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    // size of 16*16 png 8 bit indexed png
-    let mut image_buffer = Vec::with_capacity(256);
-
-    let path = "server_assets/active/textures/particles";
-    let particle_directory = match std::fs::read_dir(path) {
-        Ok(dir) => dir,
-        Err(e) => {
-            net.disconnect(format!(
-                "Misconfigured assets: Failed to read from the particle texture directory at '{}'\n\
-                Error: {}",
-                path, e
-            ));
-            return;
-        }
-    };
-
-    let path = "server_assets/active/textures/blocks";
-    let block_directory = match std::fs::read_dir(path) {
-        Ok(dir) => dir,
-        Err(e) => {
-            net.disconnect(format!(
-                "Misconfigured assets: Failed to read from the block texture directory at '{}'\n\
-                Error: {}",
-                path, e
-            ));
-            return;
-        }
-    };
-
-    let mut textures = HashMap::new();
-
-    for dir_entry in particle_directory.chain(block_directory) {
-        let path = match dir_entry {
-            Ok(d) => d.path(),
-            Err(e) => {
-                net.disconnect(format!("Failed to read directory entry\nError: {}", e));
-                return;
-            }
-        };
-
-        let mut file = match std::fs::File::open(&path) {
-            Ok(f) => f,
-            Err(e) => {
-                net.disconnect(format!(
-                    "Failed to open texture at {}\nError: {}",
-                    path.display(),
-                    e,
-                ));
-                return;
-            }
-        };
-
-        image_buffer.clear();
-        file.read_to_end(&mut image_buffer).ok();
-
-        let mut image = Image::from_buffer(
-            &image_buffer,
-            ImageType::MimeType("image/png"),
-            CompressedImageFormats::NONE,
-            true,
-            ImageSampler::Default,
-            RenderAssetUsages::default(),
-        )
-        .unwrap();
-
-        let rows = image.height() / image.width();
-        image.reinterpret_stacked_2d_as_array(rows);
-
-        // NOTE: Bevy automatically infers this based on the dimensions, so if they image is square
-        // it will infer TextureViewDimension::D2, which crashes because the shader expects an
-        // array.
-        image.texture_view_descriptor = Some(TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::D2Array),
-            ..default()
-        });
-
-        let name = path.file_name().unwrap().to_string_lossy();
-        let parent = path
-            .parent()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        textures.insert(parent.to_owned() + "/" + &name, images.add(image));
-    }
-
-    commands.insert_resource(ParticleTextures(textures));
 }

@@ -656,7 +656,7 @@ impl BlockConfig {
                 block_state.set_rotation(rotation);
             }
         } else {
-            block_state.set_rotation(against_block_face.to_rotation());
+            block_state.set_rotation(against_block_face.to_block_rotation());
         }
 
         return Some(block_state);
@@ -747,13 +747,24 @@ impl BlockFace {
         }
     }
 
-    pub fn to_rotation(&self) -> BlockRotation {
+    pub fn to_block_rotation(&self) -> BlockRotation {
         match self {
             Self::Front => BlockRotation::Front,
             Self::Right => BlockRotation::Right,
             Self::Back => BlockRotation::Back,
             Self::Left => BlockRotation::Left,
             _ => unreachable!(),
+        }
+    }
+
+    pub fn to_quat(&self) -> DQuat {
+        match self {
+            Self::Front => DQuat::from_rotation_y(0.0),
+            Self::Right => DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2),
+            Self::Back => DQuat::from_rotation_y(std::f64::consts::PI),
+            Self::Left => DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_2),
+            Self::Top => DQuat::IDENTITY,
+            Self::Bottom => DQuat::from_rotation_x(std::f64::consts::PI),
         }
     }
 }

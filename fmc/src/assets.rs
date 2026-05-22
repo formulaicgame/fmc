@@ -10,7 +10,13 @@ impl Plugin for AssetPlugin {
         app.add_systems(PreStartup, compress_assets);
         app.configure_sets(
             PreStartup,
-            (AssetSet::Models, AssetSet::Items, AssetSet::Blocks).chain(),
+            (
+                AssetSet::Models,
+                AssetSet::Items,
+                AssetSet::Blocks,
+                AssetSet::ParticleEffects,
+            )
+                .chain(),
         );
     }
 }
@@ -21,6 +27,7 @@ pub enum AssetSet {
     Models,
     Items,
     Blocks,
+    ParticleEffects,
 }
 
 /// A [MessageType::AssetResponse] of the client assets, compressed and ready to be sent to the
