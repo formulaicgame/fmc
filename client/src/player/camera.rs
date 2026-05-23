@@ -9,15 +9,12 @@ use bevy::{
 use fmc_protocol::messages;
 
 use crate::{
+    blocks::Blocks,
     game_state::GameState,
     networking::NetworkClient,
     player::Head,
     settings::Settings,
-    world::{
-        Origin,
-        blocks::Blocks,
-        world_map::{WorldMap, chunk::Chunk},
-    },
+    world::{Chunk, Origin, WorldMap},
 };
 
 pub(super) struct CameraPlugin;

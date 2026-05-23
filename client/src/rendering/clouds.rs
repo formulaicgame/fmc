@@ -69,7 +69,7 @@ use crate::{
     assets::AssetState,
     game_state::GameState,
     player::{Player, camera::MainCamera},
-    world::{Origin, world_map::chunk::Chunk},
+    world::{Chunk, Origin},
 };
 
 pub const CLOUD_PREPASS_SHADER: Handle<Shader> =

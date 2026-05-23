@@ -3,8 +3,8 @@ use std::ops::{Index, IndexMut};
 
 use bevy::prelude::*;
 
+use crate::blocks::{BlockId, BlockState};
 use crate::utils;
-use crate::world::blocks::{BlockId, BlockState};
 
 #[derive(Component)]
 pub struct ChunkMarker;

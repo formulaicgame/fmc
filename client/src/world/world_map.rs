@@ -3,24 +3,26 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::{
-    rendering::chunk::ExpandedChunk,
+    blocks::{BlockFace, BlockId, BlockState, Blocks, Friction},
+    game_state::GameState,
+    rendering::world::ExpandedChunk,
     utils,
-    world::{
-        blocks::{BlockFace, BlockId, BlockState, Blocks, Friction},
-        world_map::chunk::Chunk,
-    },
+    world::chunk::Chunk,
 };
-
-pub mod chunk;
-mod chunk_manager;
-
-pub use chunk_manager::NewChunkEvent;
 
 pub struct WorldMapPlugin;
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(chunk_manager::ChunkManagerPlugin)
-            .init_resource::<WorldMap>();
+        app.init_resource::<WorldMap>()
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
+    }
+}
+
+fn cleanup(mut commands: Commands, mut world_map: ResMut<WorldMap>) {
+    for (_, chunk) in world_map.chunks.drain() {
+        if let Some(entity) = chunk.entity() {
+            commands.entity(entity).despawn();
+        }
     }
 }
 

@@ -7,21 +7,15 @@ use bevy::prelude::*;
 use fmc_protocol::messages;
 
 use crate::{
+    blocks::Blocks,
     game_state::GameState,
     utils,
-    world::{
-        Origin,
-        blocks::Blocks,
-        world_map::{
-            NewChunkEvent, WorldMap,
-            chunk::{Chunk, ChunkFace},
-        },
-    },
+    world::{Chunk, ChunkFace, NewChunkEvent, Origin, WorldMap},
 };
 
 use super::{
     RenderSet,
-    chunk::{ChunkMeshEvent, ExpandedLightChunk},
+    world::{ChunkMeshEvent, ExpandedLightChunk},
 };
 
 pub struct LightingPlugin;

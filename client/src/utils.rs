@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::world::world_map::chunk::Chunk;
+use crate::world::Chunk;
 
 // TODO: Move all three to world_map I believe
 // Translates a block position into the chunk position of the chunk the block is in.

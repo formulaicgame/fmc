@@ -5,15 +5,12 @@ use fmc_protocol::messages;
 
 use crate::{
     assets::particles::{ParticleEffects, ParticleTextures},
+    blocks::{BlockRotation, Blocks},
     game_state::GameState,
     player::{Head, Player},
     rendering::materials::ParticleMaterial,
     utils,
-    world::{
-        MovesWithOrigin, Origin,
-        blocks::{BlockRotation, Blocks},
-        world_map::WorldMap,
-    },
+    world::{MovesWithOrigin, Origin, WorldMap},
 };
 
 pub struct ParticlePlugin;

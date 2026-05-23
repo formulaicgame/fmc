@@ -7,9 +7,11 @@ use bevy::{
 
 mod assets;
 mod audio;
+mod blocks;
 mod cli;
 mod game_state;
 mod modding;
+mod models;
 mod networking;
 mod particles;
 mod player;
@@ -60,6 +62,7 @@ fn main() {
         .add_plugins(game_state::GameStatePlugin)
         .add_plugins(rendering::RenderingPlugin)
         .add_plugins(player::PlayerPlugin)
+        .add_plugins(models::ModelPlugin)
         .add_plugins(world::WorldPlugin)
         .add_plugins(ui::UiPlugin)
         .add_plugins(singleplayer::SinglePlayerPlugin)

@@ -5,17 +5,14 @@ use std::collections::HashSet;
 use fmc_protocol::messages;
 
 use crate::{
+    blocks::{BlockState, Blocks},
     game_state::GameState,
     networking::NetworkClient,
     rendering::RenderSet,
     settings::Settings,
     world::{
-        MovesWithOrigin, Origin,
-        blocks::{Block, BlockState, Blocks},
-        world_map::{
-            WorldMap,
-            chunk::{Chunk, ChunkFace, ChunkMarker},
-        },
+        MovesWithOrigin, Origin, WorldMap,
+        chunk::{Chunk, ChunkFace, ChunkMarker},
     },
 };
 

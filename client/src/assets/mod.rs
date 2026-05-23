@@ -42,7 +42,7 @@ impl Plugin for AssetPlugin {
                 materials::load_materials,
                 ApplyDeferred,
                 models::load_models,
-                crate::world::blocks::load_blocks,
+                crate::blocks::load_blocks,
                 ApplyDeferred,
                 crate::ui::server::items::load_items,
                 crate::ui::server::load_interfaces,

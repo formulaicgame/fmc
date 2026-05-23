@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     assets::models::{ModelAssetId, Models},
+    blocks::{BlockId, Blocks},
     networking::NetworkClient,
     ui::{CursorVisibility, UiState},
-    world::blocks::{BlockId, Blocks},
 };
 
 use super::{InterfaceConfig, InterfaceNode, InterfacePaths};

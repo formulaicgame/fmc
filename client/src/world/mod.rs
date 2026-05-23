@@ -2,37 +2,24 @@ use bevy::{math::DVec3, prelude::*};
 
 use crate::{game_state::GameState, player::Head};
 
-pub mod blocks;
-pub mod models;
-pub mod world_map;
+mod chunk;
+mod chunk_manager;
+mod world_map;
+
+pub use chunk::{Chunk, ChunkFace};
+pub use chunk_manager::NewChunkEvent;
+pub use world_map::WorldMap;
 
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(world_map::WorldMapPlugin)
-            .add_plugins(models::ModelPlugin)
+            .add_plugins(chunk_manager::ChunkManagerPlugin)
             .insert_resource(Origin(IVec3::ZERO))
             .add_systems(
                 PostUpdate,
                 update_origin.run_if(in_state(GameState::Playing)),
-            )
-            .add_systems(OnEnter(GameState::Launcher), cleanup);
-    }
-}
-
-fn cleanup(
-    mut commands: Commands,
-    mut world_map: ResMut<world_map::WorldMap>,
-    mut models: ResMut<models::ModelEntities>,
-) {
-    for (_, chunk) in world_map.chunks.drain() {
-        if let Some(entity) = chunk.entity() {
-            commands.entity(entity).despawn();
-        }
-    }
-
-    for entity in models.drain() {
-        commands.entity(entity).despawn();
+            );
     }
 }
 

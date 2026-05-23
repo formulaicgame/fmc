@@ -2,10 +2,11 @@ use bevy::{audio::Volume, camera::primitives::Aabb, math::DVec3, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
+    blocks::Blocks,
     game_state::GameState,
     player::Player,
     settings::Settings,
-    world::{Origin, blocks::Blocks, world_map::WorldMap},
+    world::{Origin, WorldMap},
 };
 
 const AUDIO_PATH: &str = "server_assets/active/audio/";

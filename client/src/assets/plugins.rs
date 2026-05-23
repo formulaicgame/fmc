@@ -17,9 +17,10 @@ use wasmtime::{
 use crate::{
     assets::models::{Model, Models},
     game_state::GameState,
+    models::ModelEntities,
     networking::NetworkClient,
     player::{Head, Player},
-    world::{Origin, models::ModelEntities, world_map::WorldMap},
+    world::{Origin, WorldMap},
 };
 
 pub struct WasmPlugin;

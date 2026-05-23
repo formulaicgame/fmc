@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 // TODO: This pub is needed for ExpandedChunk, move the struct to the chunk file and close this off.
-pub mod chunk;
+pub mod world;
 
 mod clouds;
 mod lighting;
@@ -12,7 +12,7 @@ pub struct RenderingPlugin;
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(materials::MaterialsPlugin)
-            .add_plugins(chunk::ChunkMeshPlugin)
+            .add_plugins(world::ChunkMeshPlugin)
             .add_plugins(lighting::LightingPlugin)
             .add_plugins(clouds::CloudPlugin)
             .add_plugins(sky::SkyPlugin);

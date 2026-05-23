@@ -9,13 +9,10 @@ use bevy::{
 };
 
 use crate::{
+    blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
     game_state::GameState,
     rendering::materials::BlockMaterial,
-    world::{
-        Origin,
-        blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
-        world_map::{WorldMap, chunk::Chunk},
-    },
+    world::{Chunk, Origin, WorldMap},
 };
 
 use super::{
@@ -25,7 +22,7 @@ use super::{
 
 const TRIANGLES: [u32; 6] = [0, 1, 2, 2, 1, 3];
 
-pub struct ChunkMeshPlugin;
+pub(super) struct ChunkMeshPlugin;
 
 impl Plugin for ChunkMeshPlugin {
     fn build(&self, app: &mut App) {
@@ -48,7 +45,7 @@ pub struct ChunkMeshEvent {
 }
 
 #[derive(Component)]
-pub struct ChunkMeshTask {
+struct ChunkMeshTask {
     position: IVec3,
     task: Task<Vec<(Handle<BlockMaterial>, Mesh)>>,
 }

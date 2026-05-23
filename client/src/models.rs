@@ -47,7 +47,14 @@ impl Plugin for ModelPlugin {
                     play_animations.after(handle_model_add_delete),
                 )
                     .run_if(in_state(GameState::Playing)),
-            );
+            )
+            .add_systems(OnEnter(GameState::Launcher), cleanup);
+    }
+}
+
+fn cleanup(mut commands: Commands, mut models: ResMut<ModelEntities>) {
+    for entity in models.drain() {
+        commands.entity(entity).despawn();
     }
 }
 
