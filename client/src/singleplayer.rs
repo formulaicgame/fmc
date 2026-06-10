@@ -10,6 +10,7 @@ use fmc_protocol::messages;
 use crate::{
     game_state::GameState,
     networking::{ConnectionEvent, NetworkClient},
+    settings::Settings,
 };
 
 pub struct SinglePlayerPlugin;
@@ -68,16 +69,17 @@ fn start_server(
     mut connection_events: MessageWriter<ConnectionEvent>,
 ) {
     if let Some(world_path) = server.path.take() {
-        let exe_path = String::from("fmc_server/server") + std::env::consts::EXE_SUFFIX;
+        let server_folder = Settings::data_dir().join("fmc_server");
+        let exe_path = server_folder.join(String::from("server") + std::env::consts::EXE_SUFFIX);
 
-        if !Path::new(&exe_path).exists() {
+        if !exe_path.exists() {
             info!("Still downloading server executable");
             return;
         }
 
         info!("Starting singleplayer server");
         match std::process::Command::new(&std::fs::canonicalize(exe_path).unwrap())
-            .current_dir("fmc_server")
+            .current_dir(&server_folder)
             .arg(&world_path)
             // The server listens for this in order to organize its files differently when running
             // as a cargo project. We don't want that when running it through the client.

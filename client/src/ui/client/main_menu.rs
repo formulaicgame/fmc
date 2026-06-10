@@ -176,7 +176,7 @@ fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut
                     Tabs::Singleplayer,
                 ))
                 .with_children(|parent| {
-                    WorldList::build(parent, &settings);
+                    WorldList::build(parent);
                 });
 
             // Server search bar / connect button
@@ -208,7 +208,7 @@ fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut
                 });
 
             // Server list
-            let server_list = ServerList::load(&settings);
+            let server_list = ServerList::load();
             parent
                 .spawn((
                     Node {
@@ -238,7 +238,6 @@ fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut
 
 fn update_lists(
     mut commands: Commands,
-    settings: Res<Settings>,
     world_list: Query<Entity, With<WorldList>>,
     server_list: Query<(Entity, &ServerList)>,
 ) {
@@ -248,7 +247,7 @@ fn update_lists(
             .entity(entity)
             .despawn_related::<Children>()
             .with_children(|parent| {
-                WorldList::build(parent, &settings);
+                WorldList::build(parent);
             });
     }
 
@@ -482,16 +481,16 @@ struct WorldSearchTextBox;
 struct WorldList;
 
 impl WorldList {
-    fn build(parent: &mut ChildSpawnerCommands, settings: &Settings) {
-        for path in Self::read_worlds(settings) {
+    fn build(parent: &mut ChildSpawnerCommands) {
+        for path in Self::read_worlds() {
             parent
                 .spawn_list_item(path.file_stem().unwrap().to_str().unwrap())
                 .insert(ListItem::World(path));
         }
     }
 
-    fn read_worlds(settings: &Settings) -> Vec<PathBuf> {
-        let path = settings.data_dir().join("worlds");
+    fn read_worlds() -> Vec<PathBuf> {
+        let path = Settings::data_dir().join("worlds");
 
         if let Err(e) = std::fs::create_dir_all(&path) {
             error!("Could not create directory for worlds: {e}");
@@ -545,12 +544,12 @@ struct ServerList {
 }
 
 impl ServerList {
-    fn load(settings: &Settings) -> Self {
+    fn load() -> Self {
         let default = Self {
             servers: Vec::new(),
         };
 
-        let path = settings.config_dir().join("servers.json");
+        let path = Settings::config_dir().join("servers.json");
         let file = match std::fs::File::open(path) {
             Ok(f) => f,
             Err(e) if e.kind() != ErrorKind::NotFound => {
@@ -569,8 +568,8 @@ impl ServerList {
         };
     }
 
-    fn save(&self, settings: &Settings) {
-        let path = settings.config_dir().join("servers.json");
+    fn save(&self) {
+        let path = Settings::config_dir().join("servers.json");
         let file = match std::fs::File::create(path) {
             Ok(f) => f,
             Err(e) => {
@@ -645,7 +644,6 @@ fn scroll(
 
 fn clear_search(
     mut commands: Commands,
-    settings: Res<Settings>,
     asset_server: Res<AssetServer>,
     mut world_search_bar: Query<&mut TextBox, (With<WorldSearchTextBox>, Without<ServerTextBox>)>,
     mut server_search_bar: Query<(&mut TextBox, &ChildOf), With<ServerTextBox>>,
@@ -675,7 +673,7 @@ fn clear_search(
                 favourite: false,
             },
         );
-        server_list.save(&settings);
+        server_list.save();
     }
     text_box.text.clear();
 }
@@ -767,7 +765,6 @@ fn search(
 
 fn handle_list_item_interactions(
     mut commands: Commands,
-    settings: Res<Settings>,
     mut singleplayer_server: ResMut<SinglePlayerServer>,
     mut gui_state: ResMut<NextState<GuiState>>,
     mut configured_world: ResMut<super::world_configuration::ConfiguredWorld>,
@@ -864,7 +861,7 @@ fn handle_list_item_interactions(
                     ListItem::Server(index) => {
                         let (entity, mut server_list) = server_list.single_mut().unwrap();
                         server_list.servers.remove(*index);
-                        server_list.save(&settings);
+                        server_list.save();
                         commands
                             .entity(entity)
                             .despawn_related::<Children>()
@@ -893,7 +890,8 @@ fn handle_main_button_clicks(
 
         match button {
             MainButton::NewWorld => {
-                if Path::new("fmc_server/server")
+                if Settings::data_dir()
+                    .join("fmc_server/server")
                     .with_extension(std::env::consts::EXE_EXTENSION)
                     .exists()
                 {
@@ -1034,7 +1032,7 @@ fn report_game_download_progress(
 }
 
 fn download_default_game(mut commands: Commands) {
-    let server_folder = PathBuf::from("fmc_server");
+    let server_folder = Settings::data_dir().join("fmc_server");
     let server_path = server_folder.join("server".to_owned() + std::env::consts::EXE_SUFFIX);
     if server_path.exists() {
         return;

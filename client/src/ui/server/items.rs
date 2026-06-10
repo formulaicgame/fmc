@@ -9,6 +9,7 @@ use crate::{
     assets::models::{ModelAssetId, Models},
     blocks::{BlockId, Blocks},
     networking::NetworkClient,
+    settings::Settings,
     ui::{CursorVisibility, UiState},
 };
 
@@ -96,14 +97,16 @@ pub fn load_items(
     let mut configs = HashMap::new();
 
     for (filename, id) in server_config.item_ids.iter() {
-        let file_path =
-            "server_assets/active/items/configurations/".to_owned() + filename + ".json";
+        let file_path = Settings::data_dir()
+            .join("server_assets/active/items/configurations")
+            .join(filename.to_owned() + ".json");
 
         let file = match std::fs::File::open(&file_path) {
             Ok(f) => f,
             Err(e) => panic!(
                 "Failed to open item configuration at path: {}\nError: {}",
-                &file_path, e
+                &file_path.display(),
+                e
             ),
         };
 
@@ -113,7 +116,8 @@ pub fn load_items(
                 net.disconnect(&format!(
                     "Misconfigured assets: Failed to read item configuration at: {}.\n\
                         Error: {}",
-                    &file_path, e
+                    &file_path.display(),
+                    e
                 ));
                 return;
             }
@@ -127,7 +131,7 @@ pub fn load_items(
                 net.disconnect(&format!(
                     "Misconfigured assets: mismatch between model name and ids. \
                         Could not find id for model at path: {}",
-                    &file_path
+                    &file_path.display()
                 ));
                 return;
             }
@@ -140,7 +144,8 @@ pub fn load_items(
                     net.disconnect(&format!(
                         "Misconfigured assets: Failed to read item configuration at: '{}'. \
                             No block with the name '{}'.",
-                        &file_path, &name
+                        &file_path.display(),
+                        &name
                     ));
                     return;
                 }
@@ -157,11 +162,13 @@ pub fn load_items(
             block: block_id,
         };
 
-        if !std::path::Path::new(&config.image_path).exists() {
+        if !Settings::data_dir().join(&config.image_path).exists() {
             net.disconnect(&format!(
                 "Misconfigured assets: Failed to read item configuration at: '{}', \
                     no item image by the name '{}' at '{}', make sure it is present.",
-                &file_path, json_config.image, ITEM_IMAGE_PATH,
+                &file_path.display(),
+                json_config.image,
+                ITEM_IMAGE_PATH,
             ));
             return;
         }

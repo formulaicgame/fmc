@@ -12,6 +12,7 @@ use serde::Deserialize;
 use crate::{
     game_state::GameState,
     networking::NetworkClient,
+    settings::Settings,
     ui::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, text_input::TextBox},
 };
 
@@ -80,7 +81,7 @@ pub fn load_interfaces(
     let mut interfaces = Interfaces::default();
     let mut interface_paths = InterfacePaths::default();
 
-    let directory = match std::fs::read_dir(INTERFACE_CONFIG_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(INTERFACE_CONFIG_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(format!(
@@ -140,7 +141,9 @@ pub fn load_interfaces(
         // inferred, but if it has children they're discarded and it uses the size of the children
         // instead. Images must therefore be spawned with defined width/height to display correctly.
         fn read_image_dimensions(image_path: &str) -> Vec2 {
-            let image_data = match std::fs::read(INTERFACE_TEXTURE_PATH.to_owned() + image_path) {
+            let image_data = match std::fs::read(
+                Settings::data_dir().join(INTERFACE_TEXTURE_PATH.to_owned() + image_path),
+            ) {
                 Ok(i) => i,
                 Err(_) => {
                     return Vec2::ZERO;

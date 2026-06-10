@@ -7,6 +7,7 @@ use crate::{
     assets::BlockTextures,
     networking::NetworkClient,
     rendering::materials::{BlockMaterial, ModelMaterial, ModelMaterialExtension},
+    settings::Settings,
 };
 
 const MODEL_MATERIAL_PATH: &str = "server_assets/active/materials/model";
@@ -155,7 +156,7 @@ fn load_model_materials(
 ) -> Result<Materials<ModelMaterial>, String> {
     let mut materials = Materials::default();
 
-    let directory = match std::fs::read_dir(MODEL_MATERIAL_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(MODEL_MATERIAL_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             return Err(format!(
@@ -268,7 +269,7 @@ fn load_block_materials(
 ) -> Result<Materials<BlockMaterial>, String> {
     let mut materials = Materials::default();
 
-    let directory = match std::fs::read_dir(BLOCK_MATERIAL_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(BLOCK_MATERIAL_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             return Err(format!(

@@ -3,7 +3,6 @@ use bevy::prelude::*;
 use super::{GuiState, Interface, Interfaces};
 use crate::{
     networking::Identity,
-    settings::Settings,
     ui::{client::widgets::*, text_input::TextBox},
 };
 
@@ -74,7 +73,6 @@ fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
 
 fn press_login_button(
     mut ui_state: ResMut<NextState<GuiState>>,
-    settings: Res<Settings>,
     mut identity: ResMut<Identity>,
     keys: Res<ButtonInput<KeyCode>>,
     username: Query<&TextBox, With<Username>>,
@@ -92,7 +90,7 @@ fn press_login_button(
         }
 
         identity.username = username.clone();
-        identity.save(&settings);
+        identity.save();
 
         ui_state.set(GuiState::MainMenu);
     }

@@ -7,7 +7,7 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
-use crate::networking::NetworkClient;
+use crate::{networking::NetworkClient, settings::Settings};
 
 const TEXTURE_PATH: &str = "server_assets/active/textures/blocks";
 
@@ -41,7 +41,7 @@ pub fn load_block_textures(
     let mut final_image_data: Vec<u8> = Vec::new();
     let mut id = 0;
 
-    let directory = match std::fs::read_dir(TEXTURE_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(TEXTURE_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(format!(

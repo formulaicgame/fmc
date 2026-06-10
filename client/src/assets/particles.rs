@@ -9,7 +9,7 @@ use bevy::{
 
 use fmc_protocol::messages;
 
-use crate::{game_state::GameState, networking::NetworkClient, utils};
+use crate::{game_state::GameState, networking::NetworkClient, settings::Settings, utils};
 
 const PARTICLE_EFFECT_PATH: &str = "server_assets/active/particle_effects/";
 
@@ -170,27 +170,29 @@ pub(super) fn load_particle_effects(
     // size of 16*16 png 8 bit indexed png
     let mut image_buffer = Vec::with_capacity(256);
 
-    let path = "server_assets/active/textures/particles";
-    let particle_directory = match std::fs::read_dir(path) {
+    let path = Settings::data_dir().join("server_assets/active/textures/particles");
+    let particle_directory = match std::fs::read_dir(&path) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(format!(
                 "Misconfigured assets: Failed to read from the particle texture directory at '{}'\n\
                 Error: {}",
-                path, e
+                path.display(),
+                e
             ));
             return;
         }
     };
 
-    let path = "server_assets/active/textures/blocks";
-    let block_directory = match std::fs::read_dir(path) {
+    let path = Settings::data_dir().join("server_assets/active/textures/blocks");
+    let block_directory = match std::fs::read_dir(&path) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(format!(
                 "Misconfigured assets: Failed to read from the block texture directory at '{}'\n\
                 Error: {}",
-                path, e
+                path.display(),
+                e
             ));
             return;
         }
@@ -254,7 +256,7 @@ pub(super) fn load_particle_effects(
         textures.insert(parent.to_owned() + "/" + &name, images.add(image));
     }
 
-    let directory = match std::fs::read_dir(PARTICLE_EFFECT_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(PARTICLE_EFFECT_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(

@@ -23,8 +23,7 @@ pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
-        let settings = app.world().get_resource::<Settings>().unwrap();
-        let identity = Identity::load(&settings);
+        let identity = Identity::load();
 
         app.insert_resource(identity)
             .insert_resource(NetworkClient::new())
@@ -395,26 +394,27 @@ fn initialize_connection(
             let server_config = server_config.unwrap();
 
             let asset_hash_hex = format!("{:x}", server_config.assets_hash);
-            let path = PathBuf::from("./server_assets").join(&asset_hash_hex);
+            let server_assets = Settings::data_dir().join("server_assets");
+            let path = server_assets.join(&asset_hash_hex);
 
             // Create directories, silently fails if they already exist
-            std::fs::create_dir("./server_assets").ok();
+            std::fs::create_dir(&server_assets).ok();
             std::fs::create_dir(&path).ok();
 
             // We symlink the wanted asset path to "server_assets/active" so that all other parts
             // of the program can assume the assets are located at a static location, even though
             // they are switched out for each server we connect to. As opposed to registering the
             // path as a variable and having to pass it around.
-            const LINK_PATH: &str = "./server_assets/active";
-            std::fs::remove_dir_all(LINK_PATH).ok();
+            let link_path = server_assets.join("active");
+            std::fs::remove_dir_all(&link_path).ok();
 
             #[cfg(target_family = "windows")]
             {
-                std::os::windows::fs::symlink_dir(&asset_hash_hex, LINK_PATH);
+                std::os::windows::fs::symlink_dir(&asset_hash_hex, &link_path);
             }
             #[cfg(target_family = "unix")]
             {
-                std::os::unix::fs::symlink(&asset_hash_hex, LINK_PATH).unwrap();
+                std::os::unix::fs::symlink(&asset_hash_hex, &link_path).unwrap();
             }
             #[cfg(target_family = "wasm")]
             {
@@ -424,7 +424,7 @@ fn initialize_connection(
 
             let mut archive = tar::Archive::new(asset_response.file.as_slice());
 
-            if let Err(e) = archive.unpack(LINK_PATH) {
+            if let Err(e) = archive.unpack(&link_path) {
                 net.disconnect(e.to_string());
                 return;
             }
@@ -444,7 +444,9 @@ fn initialize_connection(
 
             // convert u64 hash to hex so it's more manageable as a file path
             let asset_hash_hex = format!("{:x}", server_config.assets_hash);
-            let path = PathBuf::from("./server_assets").join(&asset_hash_hex);
+            let path = Settings::data_dir()
+                .join("server_assets")
+                .join(&asset_hash_hex);
 
             if path.exists() {
                 asset_state.set(AssetState::Loading);
@@ -492,8 +494,8 @@ pub struct Identity {
 }
 
 impl Identity {
-    fn load(settings: &Settings) -> Self {
-        if let Ok(username) = std::fs::read_to_string(Self::path(settings)) {
+    fn load() -> Self {
+        if let Ok(username) = std::fs::read_to_string(Self::path()) {
             Identity {
                 username: username.trim().to_owned(),
             }
@@ -504,8 +506,8 @@ impl Identity {
         }
     }
 
-    pub fn save(&self, settings: &Settings) {
-        if let Err(e) = std::fs::write(Self::path(settings), &self.username) {
+    pub fn save(&self) {
+        if let Err(e) = std::fs::write(Self::path(), &self.username) {
             error!("Failed to write user identity to file: {e}");
         }
     }
@@ -514,8 +516,8 @@ impl Identity {
         !self.username.is_empty()
     }
 
-    fn path(settings: &Settings) -> PathBuf {
-        settings.data_dir().join("identity.txt")
+    fn path() -> PathBuf {
+        Settings::config_dir().join("identity.txt")
     }
 }
 

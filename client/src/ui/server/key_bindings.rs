@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use crate::{
     networking::NetworkClient,
+    settings::Settings,
     ui::{
         UiState,
         client::GuiState,
@@ -41,13 +42,14 @@ struct KeyBindingJson {
 //       Commands that open/close interfaces should not have to parse the string AND check that it
 //       is a valid command.
 pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
-    let path = "./server_assets/active/commands.json";
-    let file = match std::fs::File::open(path) {
+    let path = Settings::data_dir().join("server_assets/active/commands.json");
+    let file = match std::fs::File::open(&path) {
         Ok(f) => f,
         Err(e) => {
             net.disconnect(format!(
                 "Misconfigured assets: Failed to read from commands file at '{}'\nError: {}",
-                path, e
+                path.display(),
+                e
             ));
             return;
         }
@@ -57,7 +59,8 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
         Err(e) => {
             net.disconnect(format!(
                 "Misconfigured assets: Failed to read from commands file at '{}'\nError: {}",
-                path, e
+                path.display(),
+                e
             ));
             return;
         }

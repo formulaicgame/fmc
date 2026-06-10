@@ -1,6 +1,7 @@
 use std::{
     io::{BufReader, prelude::*},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::LazyLock,
 };
 
 use bevy::prelude::*;
@@ -19,18 +20,6 @@ impl Plugin for SettingsPlugin {
                 set_render_distance.run_if(in_state(GameState::Playing)),
             ),
         );
-    }
-}
-
-pub fn initialize() {
-    let settings = Settings::load();
-
-    if !settings.config_dir().exists() {
-        std::fs::create_dir(settings.config_dir()).unwrap();
-    }
-
-    if !settings.data_dir().exists() {
-        std::fs::create_dir(settings.data_dir()).unwrap();
     }
 }
 
@@ -66,21 +55,47 @@ impl Default for Settings {
 }
 
 impl Settings {
-    // TODO: This one should be definable in the settings file.
-    pub fn data_dir(&self) -> PathBuf {
-        dirs::data_dir()
-            .expect("Missing data directory")
-            .join("fmc")
+    // TODO: Definable in the settings file?
+    pub fn data_dir() -> &'static Path {
+        static DATA_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+            let dir = if let Some(manifest_dir) = std::env::var_os("CARGO_MANIFEST_DIR") {
+                PathBuf::from(manifest_dir).join("data")
+            } else {
+                dirs::data_dir()
+                    .expect("Missing data directory")
+                    .join("fmc")
+            };
+
+            if !dir.exists() {
+                std::fs::create_dir(&dir).unwrap();
+            }
+
+            dir
+        });
+        &DATA_DIR
     }
 
-    pub fn config_dir(&self) -> PathBuf {
-        dirs::config_dir()
-            .expect("Missing configuration directory")
-            .join("fmc")
+    pub fn config_dir() -> &'static Path {
+        static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+            let dir = if let Some(manifest_dir) = std::env::var_os("CARGO_MANIFEST_DIR") {
+                PathBuf::from(manifest_dir).join("config")
+            } else {
+                dirs::config_dir()
+                    .expect("Missing configuration directory")
+                    .join("fmc")
+            };
+
+            if !dir.exists() {
+                std::fs::create_dir(&dir).unwrap();
+            }
+
+            dir
+        });
+        &CONFIG_DIR
     }
 
     fn config_file(&self) -> PathBuf {
-        self.config_dir().join("settings.ini")
+        Self::config_dir().join("settings.ini")
     }
 
     fn load() -> Self {

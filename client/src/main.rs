@@ -23,8 +23,6 @@ mod utils;
 mod world;
 
 fn main() {
-    settings::initialize();
-
     if cli::parse() {
         return;
     }
@@ -42,8 +40,12 @@ fn main() {
                 //     }),
                 //     ..default()
                 // })
+                // Joining an absolute path onto Bevy's default base path replaces it, so this
+                // makes the game root double as the asset root.
                 .set(AssetPlugin {
-                    file_path: "".to_owned(),
+                    file_path: settings::Settings::data_dir()
+                        .to_string_lossy()
+                        .into_owned(),
                     ..default()
                 })
                 .set(ImagePlugin::default_nearest())

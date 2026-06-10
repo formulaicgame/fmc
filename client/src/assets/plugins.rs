@@ -20,6 +20,7 @@ use crate::{
     models::ModelEntities,
     networking::NetworkClient,
     player::{Head, Player},
+    settings::Settings,
     world::{Origin, WorldMap},
 };
 
@@ -52,7 +53,7 @@ impl Plugin for WasmPlugin {
 const PLUGIN_PATH: &str = "server_assets/active/plugins/";
 
 pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
-    let directory = match std::fs::read_dir(PLUGIN_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(PLUGIN_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(

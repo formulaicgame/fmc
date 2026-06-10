@@ -8,6 +8,7 @@ use crate::{
     assets,
     networking::NetworkClient,
     rendering::materials::{self, BlockMaterial},
+    settings::Settings,
 };
 
 pub type BlockId = u16;
@@ -135,7 +136,7 @@ pub fn load_blocks(
         Ok(files)
     }
 
-    let files = match walk_dir(BLOCK_CONFIG_PATH) {
+    let files = match walk_dir(Settings::data_dir().join(BLOCK_CONFIG_PATH)) {
         Ok(f) => f,
         Err(e) => {
             net.disconnect(&format!(
@@ -770,7 +771,7 @@ impl BlockJson {
 
         // recursively read parent configs
         if let Some(parent) = config["parent"].as_str() {
-            let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
+            let parent_path = Settings::data_dir().join(BLOCK_CONFIG_PATH).join(parent);
             let mut parent: serde_json::Value = match Self::read_as_json(&parent_path) {
                 Ok(c) => c,
                 Err(e) => {

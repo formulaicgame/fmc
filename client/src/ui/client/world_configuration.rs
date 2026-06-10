@@ -103,9 +103,11 @@ impl ConfiguredWorld {
 
     fn read_layout(&self) -> Option<WorldConfigurationUiLayout> {
         let path = if let Some(_path) = &self.path {
-            Path::new("fmc_server/assets/client/interfaces/configuration/edit_world.json")
+            Settings::data_dir()
+                .join("fmc_server/assets/client/interfaces/configuration/edit_world.json")
         } else {
-            Path::new("fmc_server/assets/client/interfaces/configuration/create_world.json")
+            Settings::data_dir()
+                .join("fmc_server/assets/client/interfaces/configuration/create_world.json")
         };
 
         let file = match std::fs::File::open(&path) {
@@ -469,7 +471,7 @@ fn build_interface(
     mut configured_world: ResMut<ConfiguredWorld>,
     interfaces: Res<Interfaces>,
 ) {
-    if Path::new("fmc_server/assets/").exists() {
+    if Settings::data_dir().join("fmc_server/assets").exists() {
         let Some(layout) = configured_world.read_layout() else {
             return;
         };
@@ -483,8 +485,9 @@ fn build_interface(
     } else {
         // TODO: This should be done where the game is downloaded and placed along all the other
         // server assets so that they do not need to be downloaded from the server on connection.
-        let server_path =
-            Path::new("fmc_server/server").with_extension(std::env::consts::EXE_EXTENSION);
+        let server_path = Settings::data_dir()
+            .join("fmc_server/server")
+            .with_extension(std::env::consts::EXE_EXTENSION);
         if !server_path.exists() {
             error!("Server executable missing");
             // The main menu should block entering the interface when there is no server, but we check
@@ -495,7 +498,7 @@ fn build_interface(
         let task_pool = AsyncComputeTaskPool::get();
         configured_world.ui_task = Some(task_pool.spawn(async move {
             std::process::Command::new(&std::fs::canonicalize(server_path).unwrap())
-                .current_dir("fmc_server")
+                .current_dir(Settings::data_dir().join("fmc_server"))
                 // The server listens for this in order to organize its files differently when running
                 // as a cargo project. We don't want that when running it through the client.
                 .env_remove("CARGO")
@@ -530,7 +533,6 @@ fn handle_asset_extraction_task(
 }
 
 fn main_buttons(
-    settings: Res<Settings>,
     configured_world: Res<ConfiguredWorld>,
     mut singleplayer_server: ResMut<SinglePlayerServer>,
     mut gui_state: ResMut<NextState<GuiState>>,
@@ -549,7 +551,7 @@ fn main_buttons(
                     world_name += "World";
                 }
 
-                let mut path = settings.data_dir().join("worlds");
+                let mut path = Settings::data_dir().join("worlds");
                 path.push(&world_name);
                 path.set_extension("sqlite");
 
@@ -631,7 +633,7 @@ fn main_buttons(
 
                     let world_name_input = &world_name_input.single().unwrap().text;
                     if !world_name_input.is_empty() {
-                        let mut new_path = settings.data_dir().join("worlds");
+                        let mut new_path = Settings::data_dir().join("worlds");
                         new_path.push(&world_name_input);
                         new_path.set_extension("sqlite");
 

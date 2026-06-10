@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use bevy::{
     animation::{AnimationTarget, AnimationTargetId, animated_field},
     asset::RenderAssetUsages,
@@ -17,6 +19,7 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     rendering::materials::{ModelMaterial, ModelMaterialExtension},
+    settings::Settings,
 };
 
 const MODEL_PATH: &str = "server_assets/active/textures/models/";
@@ -91,7 +94,7 @@ pub(super) fn load_models(
     block_textures: Res<BlockTextures>,
     model_materials: Res<Materials<ModelMaterial>>,
 ) {
-    let directory = match std::fs::read_dir(MODEL_PATH) {
+    let directory = match std::fs::read_dir(Settings::data_dir().join(MODEL_PATH)) {
         Ok(dir) => dir,
         Err(e) => {
             net.disconnect(&format!(
@@ -212,7 +215,9 @@ pub(super) fn load_models(
                 aabb: Aabb::from_min_max(Vec3::new(-0.5, 0.0, -0.5), Vec3::new(0.5, 1.0, 0.5)),
             }
         } else if extension == "glb" || extension == "gltf" {
-            let gltf_handle = asset_server.load(path);
+            // The asset server only handles relative paths
+            let gltf_handle =
+                asset_server.load(Path::new(MODEL_PATH).join(path.file_name().unwrap()));
 
             loading_models.models.insert(gltf_handle.id(), *model_id);
 

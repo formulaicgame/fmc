@@ -72,11 +72,12 @@ impl Tabs {
             settings: Vec<SettingsWidget>,
         }
 
-        let path = "server_assets/active/interfaces/configuration/edit_world.json";
-        let file = match std::fs::File::open(path) {
+        let path = Settings::data_dir()
+            .join("server_assets/active/interfaces/configuration/edit_world.json");
+        let file = match std::fs::File::open(&path) {
             Ok(f) => f,
             Err(e) => {
-                error!("Failed to open {path}: {e}");
+                error!("Failed to open {}: {e}", path.display());
                 return Vec::new();
             }
         };
