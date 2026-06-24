@@ -48,12 +48,11 @@ pub struct ParticleMaterial {
 
 impl Material for ParticleMaterial {
     fn vertex_shader() -> ShaderRef {
-        "src/rendering/shaders/particles.wgsl".into()
+        PARTICLE_SHADER.into()
     }
 
     fn fragment_shader() -> ShaderRef {
-        //PARTICLE_SHADER.into()
-        "src/rendering/shaders/particles.wgsl".into()
+        PARTICLE_SHADER.into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {

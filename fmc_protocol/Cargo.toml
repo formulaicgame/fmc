@@ -8,5 +8,5 @@ description = "The fmc protocol"
 
 [dependencies]
 bevy = { version = "0.17.2", features = [], default-features = false }
-serde = { version = "1.0.188", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
 fmc_protocol_derive = { path = "./fmc_protocol_derive", version = "0.1.0" }
