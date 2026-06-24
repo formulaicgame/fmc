@@ -141,7 +141,7 @@ impl NetworkClient {
         bincode::serialize_into(&mut serialized[5..], &message).unwrap();
 
         let mut connection = self.connection.as_ref().unwrap();
-        match connection.write(&serialized) {
+        match connection.write_all(&serialized) {
             Ok(_) => (),
             Err(_e) => {
                 self.disconnect("connection lost");
@@ -205,7 +205,7 @@ impl NetworkClient {
             ) as usize;
 
             // There is already a message available
-            if message_size < self.message_buffer.len() - self.message_cursor + MESSAGE_HEADER_SIZE
+            if message_size <= self.message_buffer.len() - self.message_cursor - MESSAGE_HEADER_SIZE
             {
                 return true;
             }
@@ -222,7 +222,7 @@ impl NetworkClient {
         ) as usize;
 
         // Return if the packet hasn't arrived yet
-        if packet_length > self.read_buffer.len() - self.read_cursor + COMPRESSION_HEADER_SIZE {
+        if packet_length > self.read_buffer.len() - self.read_cursor - COMPRESSION_HEADER_SIZE {
             return false;
         }
 
@@ -265,7 +265,7 @@ impl NetworkClient {
                 .unwrap(),
         ) as usize;
 
-        if message_length > self.message_buffer.len() - self.message_cursor + MESSAGE_HEADER_SIZE {
+        if message_length > self.message_buffer.len() - self.message_cursor - MESSAGE_HEADER_SIZE {
             self.message_buffer.copy_within(self.message_cursor.., 0);
             self.message_buffer
                 .truncate(self.message_buffer.len() - self.message_cursor);

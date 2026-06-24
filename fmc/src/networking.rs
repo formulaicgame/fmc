@@ -521,7 +521,7 @@ fn handle_new_connections(
 
             if connection
                 .socket
-                .write(&server_config.to_message())
+                .write_all(&server_config.to_message())
                 .is_err()
             {
                 return false;
