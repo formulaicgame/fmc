@@ -39,5 +39,5 @@ cd fmc/client && cargo run --release
 ```
 
 # Licensing
-[client](./client/) - All rights reserved (Will be made AGPL3 once the project is established)  
+[client](./client/) - AGPL-3.0
 [fmc](./fmc/)    - MIT or Apache-2.0
