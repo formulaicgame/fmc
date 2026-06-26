@@ -32,16 +32,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
 
       - name: Cache rust dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -49,7 +49,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             **/target/
-          key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install dependencies
         if: ${{ matrix.target == 'x86_64-unknown-linux-gnu'}}
@@ -58,38 +58,120 @@ jobs:
       - name: Build
         run: cd client && cargo build --release --target ${{ matrix.target }}
 
-      - name: Zip Artifact
-        run: |
-          cd client
-          cp target/${{ matrix.target }}/release/client${{ matrix.file_extension }} fmc${{ matrix.file_extension }}
-          7z a -tzip ${{ matrix.name }}.zip fmc${{ matrix.file_extension }}
+      - name: Rename Artifact
+        run: cp ./client/target/${{ matrix.target }}/release/client${{ matrix.file_extension }} ${{ matrix.name }}${{ matrix.file_extension }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
-          path: ./client/${{ matrix.name }}.zip
+          path: ${{ matrix.name }}${{ matrix.file_extension }}
+          retention-days: 1
+
+  package-macos:
+    needs: build
+    runs-on: macos-latest
+    name: Package macOS
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: fmc-macos-intel
+          path: macos
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: fmc-macos-arm
+          path: macos
+
+      - name: Create app bundle
+        run: |
+          APP=dmg/fmc.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          lipo -create -output "$APP/Contents/MacOS/fmc" macos/fmc-macos-intel macos/fmc-macos-arm
+          chmod +x "$APP/Contents/MacOS/fmc"
+          cat > "$APP/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>fmc</string>
+            <key>CFBundleDisplayName</key>
+            <string>fmc</string>
+            <key>CFBundleIdentifier</key>
+            <string>gg.fmc.client</string>
+            <key>CFBundleVersion</key>
+            <string>0.1.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>0.1.0</string>
+            <key>CFBundleExecutable</key>
+            <string>fmc</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.13</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname fmc \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 128 \
+            --icon fmc.app 180 170 \
+            --hide-extension fmc.app \
+            --app-drop-link 480 170 \
+            fmc-macos.dmg \
+            dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fmc-macos
+          path: fmc-macos.dmg
           retention-days: 1
 
   publish:
-    needs: [build]
+    needs: [build, package-macos]
     runs-on: ubuntu-latest
     name: Create Release
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - run: mkdir artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
-      - name: Create Release
-        uses: ncipollo/release-action@v1
-        with:
-          artifacts: "artifacts/*/*"
-          allowUpdates: true
-          removeArtifacts: true
-          tag: ${{ github.event.inputs.tag_name }}
+      - name: Drop per-arch macOS builds
+        run: rm -rf artifacts/fmc-macos-intel artifacts/fmc-macos-arm
+
+      - name: Compress Linux and Windows builds
+        run: |
+          (cd artifacts/fmc-linux && tar -czf fmc-linux.tar.gz fmc-linux && rm fmc-linux)
+          (cd artifacts/fmc-windows && zip fmc-windows.zip fmc-windows.exe && rm fmc-windows.exe)
+
+      - if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+
+      - if: github.event_name == 'push'
+        run: |
+          echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Create new release
+        run: |
+          gh release delete $TAG_NAME --yes --cleanup-tag || true
+          gh release create $TAG_NAME --latest ./artifacts/*/*
