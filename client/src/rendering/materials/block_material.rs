@@ -14,11 +14,7 @@ const BLOCK_SHADER: Handle<Shader> = uuid_handle!("ec7e9459-fc8b-4c8c-8c07-d1290
 pub struct BlockMaterialPlugin;
 impl Plugin for BlockMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<BlockMaterial> {
-            shadows_enabled: false,
-            prepass_enabled: true,
-            ..default()
-        });
+        app.add_plugins(MaterialPlugin::<BlockMaterial>::default());
 
         load_internal_asset!(
             app,
@@ -150,6 +146,10 @@ impl Material for BlockMaterial {
         }
 
         return Ok(());
+    }
+
+    fn enable_shadows() -> bool {
+        false
     }
 
     fn vertex_shader() -> ShaderRef {

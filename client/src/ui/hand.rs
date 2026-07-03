@@ -1,5 +1,4 @@
 use bevy::{
-    animation::AnimationTarget,
     camera::visibility::RenderLayers,
     gltf::Gltf,
     prelude::*,

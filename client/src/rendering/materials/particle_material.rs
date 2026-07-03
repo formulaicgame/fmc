@@ -15,12 +15,8 @@ const PARTICLE_SHADER: Handle<Shader> = uuid_handle!("d0c4577a-75e0-4794-9355-eb
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<ParticleMaterial> {
-            shadows_enabled: false,
-            prepass_enabled: false,
-            ..default()
-        })
-        .add_systems(Update, update_lighting);
+        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default())
+            .add_systems(Update, update_lighting);
 
         load_internal_asset!(
             app,
@@ -47,6 +43,14 @@ pub struct ParticleMaterial {
 }
 
 impl Material for ParticleMaterial {
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
     fn vertex_shader() -> ShaderRef {
         PARTICLE_SHADER.into()
     }

@@ -26,11 +26,7 @@ pub struct ModelMaterialPlugin;
 impl Plugin for ModelMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ModelMaterials::default())
-            .add_plugins(MaterialPlugin::<ModelMaterial> {
-                shadows_enabled: false,
-                prepass_enabled: true,
-                ..default()
-            })
+            .add_plugins(MaterialPlugin::<ModelMaterial>::default())
             // Some weird schedule ordering here to avoid flickering. Chosen at random until it
             // worked.
             .add_systems(
@@ -162,6 +158,10 @@ impl ModelMaterialExtension {
 }
 
 impl MaterialExtension for ModelMaterialExtension {
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn vertex_shader() -> ShaderRef {
         MODEL_SHADER.into()
     }

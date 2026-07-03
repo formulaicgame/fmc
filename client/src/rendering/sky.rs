@@ -95,7 +95,7 @@ fn setup(
                 });
         });
 
-    commands.insert_resource(AmbientLight {
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
         brightness: 1.0,
         affects_lightmapped_meshes: false,
@@ -105,7 +105,7 @@ fn setup(
 fn pass_time(
     time: Res<Time>,
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
-    mut ambient_light: ResMut<AmbientLight>,
+    mut ambient_light: ResMut<GlobalAmbientLight>,
     mut sky_box_query: Query<&mut Transform, With<SkyBox>>,
     mut sun_query: Query<&mut Transform, (With<Sun>, Without<SkyBox>, Without<Moon>)>,
     mut moon_query: Query<&mut Transform, (With<Moon>, Without<SkyBox>, Without<Sun>)>,

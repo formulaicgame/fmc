@@ -577,7 +577,7 @@ fn remove_models(
             net.send_many(
                 subs,
                 messages::DeleteModel {
-                    model_id: entity.index(),
+                    model_id: entity.index_u32(),
                 },
             );
         }
@@ -608,7 +608,7 @@ fn send_model_transform(
         net.send_many(
             subs,
             messages::ModelUpdateTransform {
-                model_id: entity.index(),
+                model_id: entity.index_u32(),
                 bone: None,
                 position: transform.translation,
                 rotation: transform.rotation.as_quat(),
@@ -701,7 +701,7 @@ fn update_model_assets(
         net.send_many(
             observers.filter(subs),
             messages::ModelUpdateAsset {
-                model_id: entity.index(),
+                model_id: entity.index_u32(),
                 asset: model_id,
             },
         );
@@ -751,8 +751,8 @@ fn send_models(
                     net.send_many(
                         observers.filter(subs),
                         messages::NewModel {
-                            model_id: entity.index(),
-                            parent_id: maybe_parent.map(|p| p.parent().index()),
+                            model_id: entity.index_u32(),
+                            parent_id: maybe_parent.map(|p| p.parent().index_u32()),
                             parent_bone: maybe_bone.map(|b| b.bone_id),
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
@@ -774,8 +774,8 @@ fn send_models(
                 } => net.send_many(
                     observers.filter(subs),
                     messages::SpawnCustomModel {
-                        model_id: entity.index(),
-                        parent_id: maybe_parent.map(|p| p.parent().index()),
+                        model_id: entity.index_u32(),
+                        parent_id: maybe_parent.map(|p| p.parent().index_u32()),
                         parent_bone: maybe_bone.map(|b| b.bone_id),
                         position: transform.translation,
                         rotation: transform.rotation.as_quat(),
@@ -797,7 +797,7 @@ fn send_models(
                 net.send_many(
                     observers.filter(subs),
                     messages::ModelColor {
-                        model_id: entity.index(),
+                        model_id: entity.index_u32(),
                         color: color.to_vec4(),
                     },
                 );
@@ -806,7 +806,7 @@ fn send_models(
             net.send_many(
                 observers.filter(subs),
                 messages::DeleteModel {
-                    model_id: entity.index(),
+                    model_id: entity.index_u32(),
                 },
             );
         }
@@ -851,9 +851,9 @@ fn send_models_on_chunk_subscription(
                     net.send_one(
                         chunk_sub.player_entity,
                         messages::NewModel {
-                            parent_id: maybe_parent.map(|p| p.parent().index()),
+                            parent_id: maybe_parent.map(|p| p.parent().index_u32()),
                             parent_bone: maybe_bone.map(|b| b.bone_id),
-                            model_id: entity.index(),
+                            model_id: entity.index_u32(),
                             asset: *model_id,
                             position: transform.translation,
                             rotation: transform.rotation.as_quat(),
@@ -874,8 +874,8 @@ fn send_models_on_chunk_subscription(
                 } => net.send_one(
                     chunk_sub.player_entity,
                     messages::SpawnCustomModel {
-                        model_id: entity.index(),
-                        parent_id: maybe_parent.map(|p| p.parent().index()),
+                        model_id: entity.index_u32(),
+                        parent_id: maybe_parent.map(|p| p.parent().index_u32()),
                         parent_bone: maybe_bone.map(|b| b.bone_id),
                         position: transform.translation,
                         rotation: transform.rotation.as_quat(),
@@ -897,7 +897,7 @@ fn send_models_on_chunk_subscription(
                 net.send_one(
                     chunk_sub.player_entity,
                     messages::ModelPlayAnimation {
-                        model_id: animation_player.target.unwrap_or(entity).index(),
+                        model_id: animation_player.target.unwrap_or(entity).index_u32(),
                         animation_index: animation.animation_index,
                         restart: animation.restart,
                         repeat: animation.repeat,
@@ -934,7 +934,7 @@ fn send_animations(
             net.send_many(
                 subs,
                 messages::ModelPlayAnimation {
-                    model_id: animation_player.target.unwrap_or(entity).index(),
+                    model_id: animation_player.target.unwrap_or(entity).index_u32(),
                     animation_index: animation.animation_index,
                     restart: animation.restart,
                     repeat: animation.repeat,
@@ -962,7 +962,7 @@ fn send_color(
         net.send_many(
             subs,
             messages::ModelColor {
-                model_id: entity.index(),
+                model_id: entity.index_u32(),
                 color: color.to_vec4(),
             },
         )

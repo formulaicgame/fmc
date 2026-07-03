@@ -370,10 +370,8 @@ impl Widgets for ChildSpawnerCommands<'_> {
                                 image: BUTTON_TEXTURE,
                                 image_mode: NodeImageMode::Sliced(TextureSlicer {
                                     border: BorderRect {
-                                        left: 7.0,
-                                        right: 9.0,
-                                        top: 2.0,
-                                        bottom: 3.0,
+                                        min_inset: Vec2::new(7.0, 2.0),
+                                        max_inset: Vec2::new(9.0, 3.0),
                                     },
                                     // Removes some extra pixels that are displayed when stretched,
                                     // idk why. Probably has something to do with top and bottom
@@ -954,10 +952,8 @@ impl Widgets for ChildSpawnerCommands<'_> {
                                     image: BUTTON_TEXTURE,
                                     image_mode: NodeImageMode::Sliced(TextureSlicer {
                                         border: BorderRect {
-                                            left: 7.0,
-                                            right: 9.0,
-                                            top: 2.0,
-                                            bottom: 3.0,
+                                            min_inset: Vec2::new(7.0, 2.0),
+                                            max_inset: Vec2::new(9.0, 3.0),
                                         },
                                         // Removes some extra pixels that are displayed when stretched,
                                         // idk why. Probably has something to do with top and bottom
@@ -1102,10 +1098,8 @@ impl Widgets for ChildSpawnerCommands<'_> {
                                                     image_mode: NodeImageMode::Sliced(
                                                         TextureSlicer {
                                                             border: BorderRect {
-                                                                left: 7.0,
-                                                                right: 9.0,
-                                                                top: 2.0,
-                                                                bottom: 3.0,
+                                                                min_inset: Vec2::new(7.0, 2.0),
+                                                                max_inset: Vec2::new(9.0, 3.0),
                                                             },
                                                             // Removes some extra pixels that are
                                                             // displayed when stretched, idk why.
@@ -1184,10 +1178,8 @@ impl Widgets for ChildSpawnerCommands<'_> {
                     color: colors::TAB_ACTIVE.mix(&Color::WHITE, 0.07),
                     image_mode: NodeImageMode::Sliced(TextureSlicer {
                         border: BorderRect {
-                            left: 4.0,
-                            right: 3.0,
-                            top: 3.0,
-                            bottom: 3.0,
+                            min_inset: Vec2::new(4.0, 3.0),
+                            max_inset: Vec2::new(3.0, 3.0),
                         },
                         // Removes some extra pixels that are displayed when stretched,
                         // idk why. Probably has something to do with top and bottom
@@ -1218,10 +1210,8 @@ impl Widgets for ChildSpawnerCommands<'_> {
                     color: colors::TAB_ACTIVE.mix(&Color::WHITE, 0.07),
                     image_mode: NodeImageMode::Sliced(TextureSlicer {
                         border: BorderRect {
-                            left: 4.0,
-                            right: 3.0,
-                            top: 3.0,
-                            bottom: 3.0,
+                            min_inset: Vec2::new(4.0, 3.0),
+                            max_inset: Vec2::new(3.0, 3.0),
                         },
                         // Removes some extra pixels that are displayed when stretched,
                         // idk why. Probably has something to do with top and bottom

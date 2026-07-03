@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use bevy::{
-    animation::{AnimationTarget, AnimationTargetId, animated_field},
+    animation::{AnimatedBy, AnimationTargetId, animated_field},
     asset::RenderAssetUsages,
     camera::primitives::{Aabb, MeshAabb},
     gltf::{Gltf, GltfMesh, GltfNode},
@@ -416,10 +416,8 @@ impl JsonModel {
             Transform::default(),
             Visibility::default(),
             AnimationPlayer::default(),
-            AnimationTarget {
-                id: AnimationTargetId::from_name(&name),
-                player: entity,
-            },
+            AnimatedBy(entity),
+            AnimationTargetId::from_name(&name),
             name,
             Mesh3d(asset_server.add(mesh)),
             MeshMaterial3d(material_handle.clone()),

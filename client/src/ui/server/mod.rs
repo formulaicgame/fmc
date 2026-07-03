@@ -548,6 +548,7 @@ impl From<NodeStyle> for Node {
             margin: value.margin.into(),
             padding: value.padding.into(),
             border: value.border.into(),
+            border_radius: BorderRadius::default(),
             flex_direction: value.flex_direction,
             flex_wrap: value.flex_wrap,
             flex_grow: value.flex_grow,

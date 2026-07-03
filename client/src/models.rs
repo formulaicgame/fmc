@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    animation::{ActiveAnimation, AnimationTarget, RepeatAnimation},
+    animation::{ActiveAnimation, AnimatedBy, RepeatAnimation},
     asset::RenderAssetUsages,
     camera::primitives::{Aabb, MeshAabb},
     gltf::{Gltf, GltfNode},
@@ -68,7 +68,7 @@ fn on_model_spawn(
     gltf_nodes: Res<Assets<GltfNode>>,
     gltfs: Res<Assets<Gltf>>,
     children: Query<&Children>,
-    mut animation_targets: Query<(&Name, Option<&mut AnimationTarget>)>,
+    mut animation_targets: Query<(&Name, Option<&mut AnimatedBy>)>,
     mut added_scenes: Query<
         (Entity, &Model),
         (With<AnimationPlayer>, With<SceneRoot>, Added<Children>),
@@ -81,11 +81,11 @@ fn on_model_spawn(
         gltf: &Gltf,
         gltf_nodes: &Assets<GltfNode>,
         children: &Query<&Children>,
-        animation_targets: &mut Query<(&Name, Option<&mut AnimationTarget>)>,
+        animation_targets: &mut Query<(&Name, Option<&mut AnimatedBy>)>,
     ) {
-        if let Ok((name, mut maybe_animation_target)) = animation_targets.get_mut(child) {
-            if let Some(animation_target) = &mut maybe_animation_target {
-                animation_target.player = root;
+        if let Ok((name, mut maybe_animation_player)) = animation_targets.get_mut(child) {
+            if let Some(animation_player) = &mut maybe_animation_player {
+                animation_player.0 = root;
             }
 
             if let Some(node_handle) = gltf.named_nodes.get(name.as_str()) {

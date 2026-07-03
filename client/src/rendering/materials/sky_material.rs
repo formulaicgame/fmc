@@ -12,11 +12,7 @@ const SKY_SHADER: Handle<Shader> = uuid_handle!("996ffae4-c429-4924-bf5d-ce18f3f
 pub struct SkyMaterialPlugin;
 impl Plugin for SkyMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<SkyMaterial> {
-            shadows_enabled: false,
-            prepass_enabled: false,
-            ..default()
-        });
+        app.add_plugins(MaterialPlugin::<SkyMaterial>::default());
 
         load_internal_asset!(app, SKY_SHADER, "../shaders/sky.wgsl", Shader::from_wgsl);
     }
@@ -100,5 +96,13 @@ impl Material for SkyMaterial {
 
     fn fragment_shader() -> ShaderRef {
         SKY_SHADER.into()
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
     }
 }

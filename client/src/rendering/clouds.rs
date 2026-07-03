@@ -10,7 +10,7 @@ use bevy::{
         prepass::ViewPrepassTextures,
     },
     ecs::{
-        component::Tick,
+        change_detection::Tick,
         query::QueryItem,
         system::{SystemParamItem, lifetimeless::SRes},
     },
@@ -953,7 +953,7 @@ impl ViewNode for PostProcessNode {
         // is to make sure you get it during the node execution.
         let bind_group = render_context.render_device().create_bind_group(
             "post_process_bind_group",
-            &post_process_pipeline.layout,
+            &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
             // It's important for this to match the BindGroupLayout defined in the PostProcessPipeline
             &BindGroupEntries::sequential((
                 view_uniforms.uniforms.binding().unwrap().clone(),
@@ -1002,7 +1002,7 @@ impl ViewNode for PostProcessNode {
 
 #[derive(Resource)]
 struct PostProcessPipeline {
-    layout: BindGroupLayout,
+    layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
     pipeline_id: CachedRenderPipelineId,
 }
@@ -1012,7 +1012,8 @@ impl FromWorld for PostProcessPipeline {
         let fullscreen_shader = FullscreenShader::from_world(world);
         let render_device = world.resource::<RenderDevice>();
 
-        let layout = render_device.create_bind_group_layout(
+        let layout = BindGroupLayoutDescriptor::new(
+            // let layout = render_device.create_bind_group_layout(
             "post_process_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
