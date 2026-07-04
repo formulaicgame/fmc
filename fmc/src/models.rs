@@ -8,7 +8,7 @@ use fmc_protocol::messages;
 
 use crate::{
     assets::AssetSet,
-    bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystem},
+    bevy_extensions::f64_transform::{GlobalTransform, Transform, TransformSystems},
     database::Database,
     networking::Server,
     physics::Collider,
@@ -34,14 +34,14 @@ impl Plugin for ModelPlugin {
                     //update_model_assets,
                     apply_movement_animations
                         .before(send_animations)
-                        .after(TransformSystem::TransformPropagate),
+                        .after(TransformSystems::Propagate),
                     send_animations,
                     send_color,
                     remove_models.after(send_model_transform),
-                    send_model_transform.after(TransformSystem::TransformPropagate),
+                    send_model_transform.after(TransformSystems::Propagate),
                     (send_models, send_models_on_chunk_subscription)
                         .before(send_animations)
-                        .after(TransformSystem::TransformPropagate),
+                        .after(TransformSystems::Propagate),
                 )
                     .in_set(ModelSystems),
             );

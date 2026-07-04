@@ -18,7 +18,8 @@ pub mod server;
 pub mod text_input;
 
 pub const DEFAULT_FONT_HANDLE: Handle<Font> = uuid_handle!("2b53f27a-6c3b-4e46-b83c-048d60c035a7");
-pub const DEFAULT_FONT_SIZE: f32 = 7.0;
+pub const DEFAULT_FONT_SIZE_PX: f32 = 7.0;
+pub const DEFAULT_FONT_SIZE: FontSize = FontSize::Px(DEFAULT_FONT_SIZE_PX);
 const DOUBLE_CLICK_DELAY: f32 = 0.4;
 
 pub struct UiPlugin;
@@ -34,7 +35,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                scale_ui.run_if(on_message::<WindowResized>.or(resource_changed::<Scale>)),
+                scale_ui.run_if(on_message::<WindowResized>.or_else(resource_changed::<Scale>)),
                 change_ui_state.run_if(state_changed::<client::GuiState>),
                 cursor_visibiltiy.run_if(resource_changed::<CursorVisibility>),
             ),
@@ -50,7 +51,7 @@ impl Plugin for UiPlugin {
             app,
             DEFAULT_FONT_HANDLE,
             "../../assets/ui/font.otf",
-            |bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
+            |bytes: &[u8], _path: String| { Font::from_bytes(bytes.to_vec()) }
         );
     }
 }

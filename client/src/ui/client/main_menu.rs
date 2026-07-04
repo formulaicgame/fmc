@@ -109,7 +109,7 @@ fn setup(mut commands: Commands, settings: Res<Settings>, mut interfaces: ResMut
                 row_gap: BASE_SIZE * 15.0,
                 ..default()
             },
-            ImageNode::new(BACKGROUND),
+            ImageNode::new(BACKGROUND).with_mode(NodeImageMode::Stretch),
         ))
         .with_children(|parent| {
             parent.spawn_header();

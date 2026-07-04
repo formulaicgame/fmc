@@ -3,15 +3,17 @@
 mod components;
 mod systems;
 
+use bevy::app::ValidateParentHasComponentPlugin;
 use bevy::prelude::*;
-pub use components::{GlobalTransform, Transform, TransformTreeChanged};
+pub use components::{GlobalTransform, Transform};
+pub use systems::StaticTransformOptimizations;
 use systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms};
 
-/// Label enum for the systems relating to transform propagation
+/// Set enum for the systems relating to transform propagation
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
-pub enum TransformSystem {
+pub enum TransformSystems {
     /// Propagates changes in transform to children's [`GlobalTransform`](crate::components::GlobalTransform)
-    TransformPropagate,
+    Propagate,
 }
 
 /// The base plugin for handling [`Transform`] components
@@ -24,7 +26,8 @@ impl Plugin for TransformPlugin {
             .register_type::<components::TransformTreeChanged>()
             .register_type::<components::GlobalTransform>();
 
-        app
+        app.add_plugins(ValidateParentHasComponentPlugin::<GlobalTransform>::default())
+            .init_resource::<StaticTransformOptimizations>()
             // add transform systems to startup so the first update is "correct"
             .add_systems(
                 PostStartup,
@@ -34,7 +37,7 @@ impl Plugin for TransformPlugin {
                     sync_simple_transforms,
                 )
                     .chain()
-                    .in_set(TransformSystem::TransformPropagate),
+                    .in_set(TransformSystems::Propagate),
             )
             .add_systems(
                 PostUpdate,
@@ -45,7 +48,7 @@ impl Plugin for TransformPlugin {
                     sync_simple_transforms,
                 )
                     .chain()
-                    .in_set(TransformSystem::TransformPropagate),
+                    .in_set(TransformSystems::Propagate),
             );
     }
 }

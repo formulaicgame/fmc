@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::ui::{
-    DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE,
+    DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE_PX,
     client::{BASE_SIZE, GuiState},
     text_input::TextBox,
 };
@@ -393,9 +393,11 @@ impl Widgets for ChildSpawnerCommands<'_> {
                                             // TODO: It's important for scaling that this is a
                                             // multiple of 2 for good image scaling. Linking it
                                             // like this to the font scale is no good.
-                                            FlexDirection::Row => Val::Px(DEFAULT_FONT_SIZE + 1.0),
+                                            FlexDirection::Row => {
+                                                Val::Px(DEFAULT_FONT_SIZE_PX + 1.0)
+                                            }
                                             FlexDirection::RowReverse => {
-                                                Val::Px(DEFAULT_FONT_SIZE + 1.0)
+                                                Val::Px(DEFAULT_FONT_SIZE_PX + 1.0)
                                             }
                                             FlexDirection::Column => Val::Auto,
                                             FlexDirection::ColumnReverse => Val::Auto,
@@ -1145,14 +1147,14 @@ impl Widgets for ChildSpawnerCommands<'_> {
         self.spawn((
             Text::new(text),
             TextFont {
+                font: DEFAULT_FONT_HANDLE.into(),
                 font_size: DEFAULT_FONT_SIZE,
-                font: DEFAULT_FONT_HANDLE,
                 ..default()
             },
-            TextLayout::new_with_no_wrap(),
+            TextLayout::no_wrap(),
             TextColor(Color::WHITE),
             TextShadow {
-                offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                offset: Vec2::splat(DEFAULT_FONT_SIZE_PX / 12.0),
                 ..default()
             },
         ))

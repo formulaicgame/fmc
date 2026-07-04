@@ -1,9 +1,7 @@
 use std::ops::Mul;
 
 use super::Transform;
-use bevy::ecs::{
-    component::Component, hierarchy::validate_parent_has_component, reflect::ReflectComponent,
-};
+use bevy::ecs::{component::Component, reflect::ReflectComponent};
 use bevy::math::{
     DAffine3 as Affine3A, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3, DVec3 as Vec3A,
 };
@@ -36,7 +34,6 @@ use bevy::reflect::{Reflect, std_traits::ReflectDefault};
 ///
 /// [`global_vs_local_translation`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/global_vs_local_translation.rs
 #[derive(Debug, PartialEq, Clone, Copy, Reflect, Component)]
-#[component(on_insert = validate_parent_has_component::<GlobalTransform>)]
 #[reflect(Component, Default, PartialEq)]
 pub struct GlobalTransform(Affine3A);
 
@@ -86,7 +83,7 @@ impl GlobalTransform {
 
     /// Returns the 3d affine transformation matrix as a [`Mat4`].
     #[inline]
-    pub fn compute_matrix(&self) -> Mat4 {
+    pub fn to_matrix(&self) -> Mat4 {
         Mat4::from(self.0)
     }
 
@@ -103,6 +100,27 @@ impl GlobalTransform {
     #[inline]
     pub fn compute_transform(&self) -> Transform {
         let (scale, rotation, translation) = self.0.to_scale_rotation_translation();
+        Transform {
+            translation,
+            rotation,
+            scale,
+        }
+    }
+
+    /// Returns the [`Transform`] `self` would have if it was a child of an entity
+    /// with the `parent` [`GlobalTransform`].
+    ///
+    /// This is useful if you want to "reparent" an [`Entity`](bevy::ecs::entity::Entity).
+    /// Say you have an entity `e1` that you want to turn into a child of `e2`,
+    /// but you want `e1` to keep the same global transform, even after re-parenting. You would
+    /// use:
+    ///
+    /// The transform is expected to be non-degenerate and without shearing, or the output
+    /// will be invalid.
+    #[inline]
+    pub fn reparented_to(&self, parent: &GlobalTransform) -> Transform {
+        let relative_affine = parent.affine().inverse() * self.affine();
+        let (scale, rotation, translation) = relative_affine.to_scale_rotation_translation();
         Transform {
             translation,
             rotation,
@@ -139,6 +157,37 @@ impl GlobalTransform {
     #[inline]
     pub fn translation_vec3a(&self) -> Vec3A {
         self.0.translation
+    }
+
+    /// Get the rotation as a [`Quat`].
+    ///
+    /// The transform is expected to be non-degenerate and without shearing, or the output
+    /// will be invalid.
+    ///
+    /// # Warning
+    ///
+    /// This is calculated using `to_scale_rotation_translation`, meaning that you
+    /// should probably use it directly if you also need translation or scale.
+    #[inline]
+    pub fn rotation(&self) -> Quat {
+        self.to_scale_rotation_translation().1
+    }
+
+    /// Get the scale as a [`Vec3`].
+    ///
+    /// The transform is expected to be non-degenerate and without shearing, or the output will be invalid.
+    ///
+    /// Some of the computations overlap with `to_scale_rotation_translation`, which means you should use
+    /// it instead if you also need rotation.
+    #[inline]
+    pub fn scale(&self) -> Vec3 {
+        //Formula based on glam's implementation https://github.com/bitshifter/glam-rs/blob/2e4443e70c709710dfb25958d866d29b11ed3e2b/src/f32/affine3a.rs#L290
+        let det = self.0.matrix3.determinant();
+        Vec3::new(
+            self.0.matrix3.x_axis.length() * 1.0f64.copysign(det),
+            self.0.matrix3.y_axis.length(),
+            self.0.matrix3.z_axis.length(),
+        )
     }
 
     /// Get an upper bound of the radius from the given `extents`.

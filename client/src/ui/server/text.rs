@@ -5,7 +5,7 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     ui::{
-        DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE,
+        DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE_PX,
         text_input::{TextBox, TextBoxFocus},
     },
 };
@@ -120,8 +120,8 @@ fn handle_text_updates(
                 Text::new(&text_update.text),
                 TextColor::from(color),
                 TextFont {
-                    font: DEFAULT_FONT_HANDLE,
-                    font_size: text_update.font_size,
+                    font: DEFAULT_FONT_HANDLE.into(),
+                    font_size: FontSize::Px(text_update.font_size),
                     ..default()
                 },
                 TextLayout {
@@ -129,7 +129,7 @@ fn handle_text_updates(
                     justify: Justify::Left,
                 },
                 TextShadow {
-                    offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                    offset: Vec2::splat(DEFAULT_FONT_SIZE_PX / 12.0),
                     ..default()
                 },
             ));

@@ -2,8 +2,8 @@ use bevy::{
     camera::visibility::RenderLayers,
     gltf::Gltf,
     prelude::*,
-    scene::SceneInstanceReady,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
+    world_serialization::WorldInstanceReady,
 };
 use fmc_protocol::messages;
 
@@ -45,12 +45,12 @@ impl Plugin for HandPlugin {
 }
 
 /// Currently [`RenderLayers`] are not applied to children of a scene.
-/// This [`SceneInstanceReady`] observer applies the [`RenderLayers`]
+/// This [`WorldInstanceReady`] observer applies the [`RenderLayers`]
 /// of a [`SceneRoot`] to all children with a [`Transform`] and without a [`RenderLayers`].
 ///
 /// See [#12461](https://github.com/bevyengine/bevy/issues/12461) for current status.
 pub fn apply_render_layers(
-    scene: On<SceneInstanceReady>,
+    scene: On<WorldInstanceReady>,
     mut commands: Commands,
     children: Query<&Children>,
     transforms: Query<&Transform, Without<RenderLayers>>,
@@ -73,7 +73,7 @@ fn setup(mut commands: Commands, player_camera: Query<Entity, Added<Head>>) {
             .spawn((
                 Hand::default(),
                 Model::Asset(0),
-                SceneRoot::default(),
+                WorldAssetRoot::default(),
                 // This is linked to animation targets by the same system that does it for server models. The
                 // animation graph must be added manually.
                 AnimationPlayer::default(),
@@ -206,7 +206,7 @@ fn play_equip_animation(
     mut hand_query: Query<(
         &mut Model,
         &mut AnimationPlayer,
-        &mut SceneRoot,
+        &mut WorldAssetRoot,
         &mut Hand,
         &mut AnimationGraphHandle,
         &mut Visibility,
@@ -232,7 +232,7 @@ fn play_equip_animation(
             } else {
                 // If there is no new model, we set it to nothing here so that the model is
                 // despawned.
-                *scene_handle = SceneRoot::default();
+                *scene_handle = WorldAssetRoot::default();
             }
         }
     }
@@ -260,7 +260,7 @@ fn play_equip_animation(
             // think it's a spawn order bug. Spawning the bottom of the hierarchy before the top or
             // something.
             info!("The following warning (if any) is a bevy bug");
-            *scene_handle = SceneRoot(gltf.scenes[0].clone());
+            *scene_handle = WorldAssetRoot(gltf.scenes[0].clone());
             *animation_graph = AnimationGraphHandle(model.animation_graph.clone().unwrap());
         } else {
             // TODO: This is a hack. If you let the model stay visible while it spawns it will show a single frame

@@ -494,7 +494,7 @@ pub struct Block {
     name: String,
     // The model used to render the block. This is unused, block models are spawned as regular
     // models on the server. If a block that uses a model is in a chunk, it will just be ignored.
-    model: Option<Handle<Scene>>,
+    model: Option<Handle<WorldAsset>>,
     // Material used to render this block.
     pub material_handle: Handle<materials::BlockMaterial>,
     // List of squares meshes that make up the block.

@@ -8,6 +8,8 @@ use bevy::{
     prelude::*,
 };
 
+use crate::ui::DEFAULT_FONT_SIZE_PX;
+
 use super::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE};
 
 pub(super) struct TextInputPlugin;
@@ -126,8 +128,8 @@ fn add_text(
                 .spawn((
                     Text::new(&text_box.text),
                     TextFont {
+                        font: DEFAULT_FONT_HANDLE.into(),
                         font_size: DEFAULT_FONT_SIZE,
-                        font: DEFAULT_FONT_HANDLE,
                         ..default()
                     },
                     TextColor(Color::WHITE),
@@ -136,7 +138,7 @@ fn add_text(
                         ..default()
                     },
                     TextShadow {
-                        offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                        offset: Vec2::splat(DEFAULT_FONT_SIZE_PX / 12.0),
                         ..default()
                     },
                 ))

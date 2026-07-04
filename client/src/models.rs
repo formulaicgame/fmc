@@ -71,7 +71,7 @@ fn on_model_spawn(
     mut animation_targets: Query<(&Name, Option<&mut AnimatedBy>)>,
     mut added_scenes: Query<
         (Entity, &Model),
-        (With<AnimationPlayer>, With<SceneRoot>, Added<Children>),
+        (With<AnimationPlayer>, With<WorldAssetRoot>, Added<Children>),
     >,
 ) {
     fn traverse_bones(
@@ -355,7 +355,7 @@ fn handle_model_add_delete(
 
         let entity = commands
             .spawn((
-                SceneRoot(gltf.scenes[0].clone()),
+                WorldAssetRoot(gltf.scenes[0].clone()),
                 Transform {
                     translation: origin.to_local(new_model.position),
                     rotation: new_model.rotation,
@@ -413,7 +413,7 @@ fn handle_model_add_delete(
         commands.entity(parent_entity).with_children(|parent| {
             let entity = parent
                 .spawn((
-                    SceneRoot(gltf.scenes[0].clone()),
+                    WorldAssetRoot(gltf.scenes[0].clone()),
                     Transform {
                         translation: new_model.position.as_vec3(),
                         rotation: new_model.rotation,
@@ -525,7 +525,7 @@ fn update_model_asset(
     model_entities: Res<ModelEntities>,
     models: Res<Models>,
     gltf_assets: Res<Assets<Gltf>>,
-    mut model_query: Query<(&mut SceneRoot, &mut AnimationGraphHandle, &mut Model)>,
+    mut model_query: Query<(&mut WorldAssetRoot, &mut AnimationGraphHandle, &mut Model)>,
     mut asset_updates: MessageReader<messages::ModelUpdateAsset>,
 ) {
     for asset_update in asset_updates.read() {
@@ -540,8 +540,9 @@ fn update_model_asset(
                 return;
             };
 
-            *scene =
-                SceneRoot(gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone());
+            *scene = WorldAssetRoot(
+                gltf_assets.get(&model_config.gltf_handle).unwrap().scenes[0].clone(),
+            );
             *model = Model::Asset(asset_update.asset);
             *animation_graph = AnimationGraphHandle(model_config.animation_graph.clone().unwrap());
         }
@@ -753,7 +754,7 @@ fn handle_model_color(
         materials: &mut Assets<ModelMaterial>,
     ) {
         if let Ok(material_handle) = material_query.get(entity) {
-            let material = materials.get_mut(material_handle).unwrap();
+            let mut material = materials.get_mut(material_handle).unwrap();
             material.base.base_color = color;
         };
 

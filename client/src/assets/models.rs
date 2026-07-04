@@ -423,7 +423,7 @@ impl JsonModel {
             MeshMaterial3d(material_handle.clone()),
         ));
 
-        let scene_handle = asset_server.add(Scene { world });
+        let scene_handle = asset_server.add(WorldAsset { world });
 
         // TODO: Fill out the gltf properly. I've just included the values I need since the gltf is
         // only used for reference, not spawning.

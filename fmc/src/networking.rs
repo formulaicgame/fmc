@@ -21,7 +21,7 @@ use crate::{
     particle_effects::ParticleEffects,
     players::{DefaultPlayerBundle, Player},
     prelude::*,
-    world::RenderDistance,
+    world::MaxRenderDistance,
 };
 
 // Size of each connection's read/write buffer
@@ -436,7 +436,7 @@ pub enum NetworkEvent {
 // Separate out the server config so the connection code can be clearer
 #[derive(SystemParam)]
 struct ServerConfig<'w> {
-    render_distance: Res<'w, RenderDistance>,
+    render_distance: Res<'w, MaxRenderDistance>,
     assets: Res<'w, Assets>,
     models: Res<'w, Models>,
     items: Res<'w, Items>,

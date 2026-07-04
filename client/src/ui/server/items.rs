@@ -477,8 +477,8 @@ fn handle_item_box_updates(
                                 Color::NONE
                             }),
                             TextFont {
-                                font: asset_server.load("server_assets/active/font.otf"),
-                                font_size: 8.0,
+                                font: asset_server.load("server_assets/active/font.otf").into(),
+                                font_size: FontSize::Px(8.0),
                                 ..default()
                             },
                         ));
@@ -766,8 +766,8 @@ fn update_cursor_image(
             let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
             *text = Text(cursor_box.item_stack.size.to_string());
             *font = TextFont {
-                font: asset_server.load("server_assets/active/font.otf"),
-                font_size: 8.0,
+                font: asset_server.load("server_assets/active/font.otf").into(),
+                font_size: FontSize::Px(8.0),
                 ..default()
             };
             *color = TextColor(if cursor_box.item_stack.size > 1 {
@@ -782,8 +782,8 @@ fn update_cursor_image(
             let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
             *text = Text(cursor_box.item_stack.size.to_string());
             *font = TextFont {
-                font: asset_server.load("server_assets/active/font.otf"),
-                font_size: 6.0,
+                font: asset_server.load("server_assets/active/font.otf").into(),
+                font_size: FontSize::Px(6.0),
                 ..default()
             };
             *color = TextColor(Color::NONE);

@@ -1,58 +1,48 @@
 use bevy::{
     asset::{RenderAssetUsages, UntypedAssetId, load_internal_asset, uuid_handle},
+    camera::{MainPassResolutionOverride, Viewport},
     core_pipeline::{
-        FullscreenShader,
-        core_3d::{
-            CORE_3D_DEPTH_FORMAT,
-            graph::{Core3d, Node3d},
+        Core3d, Core3dSystems, FullscreenShader,
+        core_3d::{CORE_3D_DEPTH_FORMAT, main_opaque_pass_3d, main_transparent_pass_3d},
+        oit::{
+            OitBuffers, OrderIndependentTransparencySettings,
+            resolve::{OitResolvePipelineId, node::oit_resolve},
         },
-        oit::{OitBuffers, OrderIndependentTransparencySettings, resolve::node::OitResolvePass},
-        prepass::ViewPrepassTextures,
     },
-    ecs::{
-        change_detection::Tick,
-        query::QueryItem,
-        system::{SystemParamItem, lifetimeless::SRes},
-    },
-    math::{
-        FloatOrd,
-        primitives::{Cuboid, Sphere},
-    },
+    ecs::system::{SystemParamItem, lifetimeless::SRes},
+    math::primitives::Cuboid,
     mesh::MeshVertexBufferLayoutRef,
     pbr::{
         DrawMesh, FogMeta, GpuFog, GpuLights, LightMeta, MeshInputUniform, MeshPipeline,
-        MeshPipelineKey, MeshPipelineViewLayoutKey, MeshUniform, RenderMeshInstances,
-        SetMeshBindGroup, SetMeshViewBindGroup, SetMeshViewEmptyBindGroup, ViewFogUniformOffset,
-        ViewLightsUniformOffset,
+        MeshPipelineKey, MeshPipelineSystems, MeshPipelineViewLayoutKey, MeshUniform,
+        RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup, SetMeshViewEmptyBindGroup,
+        ViewFogUniformOffset, ViewKeyCache, ViewLightsUniformOffset,
     },
     platform::collections::HashSet,
     prelude::*,
     render::{
-        Extract, Render, RenderApp, RenderDebugFlags, RenderSystems,
+        Extract, Render, RenderApp, RenderDebugFlags, RenderStartup, RenderSystems,
         batching::{
             GetBatchData, GetFullBatchData,
             gpu_preprocessing::{
                 GpuPreprocessingMode, GpuPreprocessingSupport, IndirectParametersCpuMetadata,
-                UntypedPhaseIndirectParametersBuffers, batch_and_prepare_sorted_render_phase,
+                UntypedPhaseIndirectParametersBuffers,
             },
         },
-        camera::ExtractedCamera,
+        camera::{DirtySpecializations, ExtractedCamera, PendingQueues},
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{
             RenderMesh,
-            allocator::{MeshAllocator, SlabId},
+            allocator::{MeshAllocator, MeshSlabs},
         },
         render_asset::RenderAssets,
-        render_graph::{
-            NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
-        },
         render_phase::{
             AddRenderCommand, BinnedPhaseItem, BinnedRenderPhasePlugin, BinnedRenderPhaseType,
             CachedRenderPipelinePhaseItem, DrawFunctionId, DrawFunctions, PhaseItem,
             PhaseItemBatchSetKey, PhaseItemExtraIndex, SetItemPipeline, ViewBinnedRenderPhases,
         },
         render_resource::*,
-        renderer::{RenderContext, RenderDevice},
+        renderer::{RenderContext, RenderDevice, ViewQuery},
         sync_world::MainEntity,
         texture::{CachedTexture, TextureCache},
         view::{
@@ -239,6 +229,11 @@ impl Plugin for CloudPhasePlugin {
             .init_resource::<DrawFunctions<Cloud3d>>()
             .add_render_command::<Cloud3d, DrawCloud3d>()
             .init_resource::<ViewBinnedRenderPhases<Cloud3d>>()
+            .init_resource::<PendingCloudQueues>()
+            .add_systems(
+                RenderStartup,
+                init_cloud_pipeline.after(MeshPipelineSystems),
+            )
             .add_systems(ExtractSchedule, extract_camera_phases)
             .add_systems(
                 Render,
@@ -248,17 +243,12 @@ impl Plugin for CloudPhasePlugin {
                 ),
             );
 
-        render_app
-            .add_render_graph_node::<ViewNodeRunner<CustomDrawNode>>(Core3d, CustomDrawPassLabel)
-            // Tell the node to run after the main pass
-            .add_render_graph_edges(
-                Core3d,
-                (
-                    Node3d::MainOpaquePass,
-                    CustomDrawPassLabel,
-                    PostProcessLabel,
-                ),
-            );
+        render_app.add_systems(
+            Core3d,
+            cloud_render_pass
+                .after(main_opaque_pass_3d)
+                .before(post_process_pass),
+        );
 
         load_internal_asset!(
             app,
@@ -269,16 +259,6 @@ impl Plugin for CloudPhasePlugin {
 
         load_internal_asset!(app, CLOUD_SHADER, "shaders/clouds.wgsl", Shader::from_wgsl);
     }
-
-    fn finish(&self, app: &mut App) {
-        // We need to get the render app from the main app
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-        // The pipeline needs the RenderDevice to be created and it's only available once plugins
-        // are initialized
-        render_app.init_resource::<CloudPipeline>();
-    }
 }
 
 #[derive(Resource)]
@@ -286,12 +266,10 @@ struct CloudPipeline {
     mesh_pipeline: MeshPipeline,
 }
 
-impl FromWorld for CloudPipeline {
-    fn from_world(world: &mut World) -> Self {
-        Self {
-            mesh_pipeline: MeshPipeline::from_world(world),
-        }
-    }
+fn init_cloud_pipeline(mut commands: Commands, mesh_pipeline: Res<MeshPipeline>) {
+    commands.insert_resource(CloudPipeline {
+        mesh_pipeline: mesh_pipeline.clone(),
+    });
 }
 
 // For more information on how SpecializedMeshPipeline work, please look at the
@@ -328,7 +306,6 @@ impl SpecializedMeshPipeline for CloudPipeline {
                 // Bind group 1 is the mesh uniform
                 self.mesh_pipeline.mesh_layouts.model_only.clone(),
             ],
-            push_constant_ranges: vec![],
             vertex: VertexState {
                 shader: CLOUD_PREPASS_SHADER.clone(),
                 shader_defs: vec![],
@@ -378,15 +355,15 @@ impl SpecializedMeshPipeline for CloudPipeline {
             },
             depth_stencil: Some(DepthStencilState {
                 format: CORE_3D_DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: CompareFunction::Greater,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(CompareFunction::Greater),
                 stencil: StencilState::default(),
                 bias: DepthBiasState::default(),
             }),
             // It's generally recommended to specialize your pipeline for MSAA,
             // but it's not always possible
             multisample: MultisampleState::default(),
-            zero_initialize_workgroup_memory: false,
+            ..default()
         })
     }
 }
@@ -430,21 +407,14 @@ pub struct Cloud3dBatchSetKey {
     /// The function used to draw.
     pub draw_function: DrawFunctionId,
 
-    /// The ID of the slab of GPU memory that contains vertex data.
-    ///
-    /// For non-mesh items, you can fill this with 0 if your items can be
-    /// multi-drawn, or with a unique value if they can't.
-    pub vertex_slab: SlabId,
-
-    /// The ID of the slab of GPU memory that contains index data, if present.
-    ///
-    /// For non-mesh items, you can safely fill this with `None`.
-    pub index_slab: Option<SlabId>,
+    /// The IDs of the slabs of GPU memory in the mesh allocator that contain
+    /// the mesh data.
+    pub slabs: MeshSlabs,
 }
 
 impl PhaseItemBatchSetKey for Cloud3dBatchSetKey {
     fn indexed(&self) -> bool {
-        self.index_slab.is_some()
+        self.slabs.index_slab_id.is_some()
     }
 }
 
@@ -530,13 +500,18 @@ impl GetBatchData for CloudPipeline {
         SRes<RenderAssets<RenderMesh>>,
         SRes<MeshAllocator>,
     );
-    type CompareData = AssetId<Mesh>;
+    type BatchSetCompareData = MeshSlabs;
+    type BatchCompareData = AssetId<Mesh>;
+
     type BufferData = MeshUniform;
 
     fn get_batch_data(
         (mesh_instances, _render_assets, mesh_allocator): &SystemParamItem<Self::Param>,
         (_entity, main_entity): (Entity, MainEntity),
-    ) -> Option<(Self::BufferData, Option<Self::CompareData>)> {
+    ) -> Option<(
+        Self::BufferData,
+        Option<(Self::BatchSetCompareData, Self::BatchCompareData)>,
+    )> {
         let RenderMeshInstances::CpuBuilding(ref mesh_instances) = **mesh_instances else {
             error!(
                 "`get_batch_data` should never be called in GPU mesh uniform \
@@ -545,30 +520,27 @@ impl GetBatchData for CloudPipeline {
             return None;
         };
         let mesh_instance = mesh_instances.get(&main_entity)?;
-        let first_vertex_index =
-            match mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id) {
-                Some(mesh_vertex_slice) => mesh_vertex_slice.range.start,
-                None => 0,
-            };
-        let mesh_uniform = {
-            let mesh_transforms = &mesh_instance.transforms;
-            let (local_from_world_transpose_a, local_from_world_transpose_b) =
-                mesh_transforms.world_from_local.inverse_transpose_3x3();
-            MeshUniform {
-                world_from_local: mesh_transforms.world_from_local.to_transpose(),
-                previous_world_from_local: mesh_transforms.previous_world_from_local.to_transpose(),
-                lightmap_uv_rect: UVec2::ZERO,
-                local_from_world_transpose_a,
-                local_from_world_transpose_b,
-                flags: mesh_transforms.flags,
-                first_vertex_index,
-                current_skin_index: u32::MAX,
-                material_and_lightmap_bind_group_slot: 0,
-                tag: 0,
-                pad: 0,
-            }
+        let mesh_asset_id = mesh_instance.mesh_asset_id();
+        let first_vertex_index = match mesh_allocator.mesh_vertex_slice(&mesh_asset_id) {
+            Some(mesh_vertex_slice) => mesh_vertex_slice.range.start,
+            None => 0,
         };
-        Some((mesh_uniform, None))
+        let mesh_slabs = mesh_allocator.mesh_slabs(&mesh_asset_id)?;
+
+        Some((
+            MeshUniform::new(
+                &mesh_instance.transforms,
+                first_vertex_index,
+                mesh_instance.material_bindings_index().slot,
+                None,
+                None,
+                None,
+                None,
+            ),
+            mesh_instance
+                .should_batch()
+                .then_some((mesh_slabs, mesh_asset_id)),
+        ))
     }
 }
 
@@ -576,9 +548,12 @@ impl GetFullBatchData for CloudPipeline {
     type BufferInputData = MeshInputUniform;
 
     fn get_index_and_compare_data(
-        (mesh_instances, _, _): &SystemParamItem<Self::Param>,
+        (mesh_instances, _, mesh_allocator): &SystemParamItem<Self::Param>,
         main_entity: MainEntity,
-    ) -> Option<(NonMaxU32, Option<Self::CompareData>)> {
+    ) -> Option<(
+        NonMaxU32,
+        Option<(Self::BatchSetCompareData, Self::BatchCompareData)>,
+    )> {
         // This should only be called during GPU building.
         let RenderMeshInstances::GpuBuilding(ref mesh_instances) = **mesh_instances else {
             error!(
@@ -588,11 +563,13 @@ impl GetFullBatchData for CloudPipeline {
             return None;
         };
         let mesh_instance = mesh_instances.get(&main_entity)?;
+        let mesh_asset_id = mesh_instance.mesh_asset_id();
+        let mesh_slabs = mesh_allocator.mesh_slabs(&mesh_asset_id)?;
         Some((
-            mesh_instance.current_uniform_index,
+            NonMaxU32::new(mesh_instance.gpu_specific.current_uniform_index())?,
             mesh_instance
                 .should_batch()
-                .then_some(mesh_instance.mesh_asset_id),
+                .then_some((mesh_slabs, mesh_asset_id)),
         ))
     }
 
@@ -607,16 +584,17 @@ impl GetFullBatchData for CloudPipeline {
             return None;
         };
         let mesh_instance = mesh_instances.get(&main_entity)?;
-        let first_vertex_index =
-            match mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id) {
-                Some(mesh_vertex_slice) => mesh_vertex_slice.range.start,
-                None => 0,
-            };
+        let mesh_asset_id = mesh_instance.mesh_asset_id();
+        let first_vertex_index = match mesh_allocator.mesh_vertex_slice(&mesh_asset_id) {
+            Some(mesh_vertex_slice) => mesh_vertex_slice.range.start,
+            None => 0,
+        };
 
         Some(MeshUniform::new(
             &mesh_instance.transforms,
             first_vertex_index,
-            mesh_instance.material_bindings_index.slot,
+            mesh_instance.material_bindings_index().slot,
+            None,
             None,
             None,
             None,
@@ -653,10 +631,21 @@ impl GetFullBatchData for CloudPipeline {
     }
 
     fn get_binned_index(
-        _param: &SystemParamItem<Self::Param>,
-        _query_item: MainEntity,
+        (mesh_instances, _, _): &SystemParamItem<Self::Param>,
+        main_entity: MainEntity,
     ) -> Option<NonMaxU32> {
-        None
+        // This should only be called during GPU building.
+        let RenderMeshInstances::GpuBuilding(ref mesh_instances) = **mesh_instances else {
+            error!(
+                "`get_binned_index` should never be called in CPU mesh uniform \
+                building mode"
+            );
+            return None;
+        };
+
+        mesh_instances
+            .get(&main_entity)
+            .and_then(|entity| NonMaxU32::new(entity.gpu_specific.current_uniform_index()))
     }
 }
 
@@ -693,6 +682,9 @@ fn extract_camera_phases(
     cloud_phases.retain(|camera_entity, _| live_entities.contains(camera_entity));
 }
 
+#[derive(Default, Deref, DerefMut, Resource)]
+struct PendingCloudQueues(PendingQueues);
+
 // This is a very important step when writing a custom phase.
 //
 // This system determines which meshes will be added to the phase.
@@ -705,42 +697,56 @@ fn queue_custom_meshes(
     render_mesh_instances: Res<RenderMeshInstances>,
     mesh_allocator: Res<MeshAllocator>,
     gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
+    view_key_cache: Res<ViewKeyCache>,
+    dirty_specializations: Res<DirtySpecializations>,
+    mut pending_cloud_queues: ResMut<PendingCloudQueues>,
     mut custom_render_phases: ResMut<ViewBinnedRenderPhases<Cloud3d>>,
-    mut views: Query<(
-        &ExtractedView,
-        &RenderVisibleEntities,
-        &Msaa,
-        Has<OrderIndependentTransparencySettings>,
-    )>,
+    mut views: Query<(&ExtractedView, &RenderVisibleEntities)>,
     has_marker: Query<(), With<Cloud>>,
-    mut change_tick: Local<Tick>,
 ) {
-    for (view, visible_entities, msaa, has_oit) in &mut views {
+    for (view, visible_entities) in &mut views {
         let Some(custom_phase) = custom_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
         let draw_function = custom_draw_functions.read().id::<DrawCloud3d>();
 
-        // Create the key based on the view.
-        // In this case we only care about MSAA and HDR
-        let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
-            | MeshPipelineKey::from_hdr(view.hdr);
+        let Some(&view_key) = view_key_cache.get(&view.retained_view_entity) else {
+            continue;
+        };
 
-        if has_oit {
-            view_key |= MeshPipelineKey::OIT_ENABLED;
+        let Some(visible_mesh_entities) = visible_entities.get::<Mesh3d>() else {
+            continue;
+        };
+
+        let view_pending_queues =
+            pending_cloud_queues.prepare_for_new_frame(view.retained_view_entity);
+
+        for &main_entity in
+            dirty_specializations.iter_to_dequeue(view.retained_view_entity, visible_mesh_entities)
+        {
+            custom_phase.remove(main_entity);
         }
 
-        // Since our phase can work on any 3d mesh we can reuse the default mesh 3d filter
-        for (render_entity, visible_entity) in visible_entities.iter::<Mesh3d>() {
+        for (render_entity, visible_entity) in dirty_specializations.iter_to_queue(
+            view.retained_view_entity,
+            visible_mesh_entities,
+            &view_pending_queues.prev_frame,
+        ) {
             // We only want meshes with the marker component to be queued to our phase.
             if has_marker.get(*render_entity).is_err() {
                 continue;
             }
             let Some(mesh_instance) = render_mesh_instances.render_mesh_queue_data(*visible_entity)
             else {
+                view_pending_queues
+                    .current_frame
+                    .insert((*render_entity, *visible_entity));
                 continue;
             };
-            let Some(mesh) = render_meshes.get(mesh_instance.mesh_asset_id) else {
+            let Some(mesh) = render_meshes.get(mesh_instance.mesh_asset_id()) else {
+                view_pending_queues
+                    .current_frame
+                    .insert((*render_entity, *visible_entity));
                 continue;
             };
 
@@ -748,7 +754,10 @@ fn queue_custom_meshes(
             // For this example we only specialize based on the mesh topology
             // but you could have more complex keys and that's where you'd need to create those keys
             let mut mesh_key = view_key;
-            mesh_key |= MeshPipelineKey::from_primitive_topology(mesh.primitive_topology());
+            mesh_key |= MeshPipelineKey::from_primitive_topology_and_strip_index(
+                mesh.primitive_topology(),
+                None,
+            );
 
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
@@ -763,20 +772,21 @@ fn queue_custom_meshes(
                     continue;
                 }
             };
-            let (vertex_slab, index_slab) = mesh_allocator.mesh_slabs(&mesh_instance.mesh_asset_id);
+            let Some(slabs) = mesh_allocator.mesh_slabs(&mesh_instance.mesh_asset_id()) else {
+                view_pending_queues
+                    .current_frame
+                    .insert((*render_entity, *visible_entity));
+                continue;
+            };
 
             let batch_set_key = Cloud3dBatchSetKey {
                 pipeline: pipeline_id,
                 draw_function,
-                vertex_slab: vertex_slab.unwrap_or_default(),
-                index_slab,
+                slabs,
             };
             let bin_key = Cloud3dBinKey {
-                asset_id: mesh_instance.mesh_asset_id.into(),
+                asset_id: mesh_instance.mesh_asset_id().into(),
             };
-
-            let next_change_tick = change_tick.get() + 1;
-            change_tick.set(next_change_tick);
 
             custom_phase.add(
                 batch_set_key,
@@ -787,79 +797,62 @@ fn queue_custom_meshes(
                     mesh_instance.should_batch(),
                     &gpu_preprocessing_support,
                 ),
-                *change_tick,
             );
         }
     }
 }
 
-// Render label used to order our render graph node that will render our phase
-#[derive(RenderLabel, Debug, Clone, Hash, PartialEq, Eq)]
-struct CustomDrawPassLabel;
+fn cloud_render_pass(
+    world: &World,
+    view: ViewQuery<(
+        &MainCamera,
+        &ExtractedCamera,
+        &ExtractedView,
+        &ViewDepthTexture,
+        &CloudTextures,
+        Option<&MainPassResolutionOverride>,
+    )>,
+    cloud_phases: Res<ViewBinnedRenderPhases<Cloud3d>>,
+    mut ctx: RenderContext,
+) {
+    let view_entity = view.entity();
+    let (_main_camera, camera, extracted_view, depth_texture, cloud_textures, resolution_override) =
+        view.into_inner();
 
-#[derive(Default)]
-struct CustomDrawNode;
-impl ViewNode for CustomDrawNode {
-    type ViewQuery = (
-        &'static MainCamera,
-        &'static ExtractedCamera,
-        &'static ExtractedView,
-        &'static ViewDepthTexture,
-        &'static CloudTextures,
-    );
+    let Some(cloud_phase) = cloud_phases.get(&extracted_view.retained_view_entity) else {
+        return;
+    };
 
-    fn run<'w>(
-        &self,
-        graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        (_main_camera, camera, view, depth, cloud_textures): QueryItem<'w, '_, Self::ViewQuery>,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
-        // First, we need to get our phases resource
-        let Some(cloud_phases) = world.get_resource::<ViewBinnedRenderPhases<Cloud3d>>() else {
-            return Ok(());
-        };
+    let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some("cloud prepass"),
+        color_attachments: &[
+            Some(RenderPassColorAttachment {
+                view: &cloud_textures.coverage.default_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: Operations::default(),
+            }),
+            Some(RenderPassColorAttachment {
+                view: &cloud_textures.depth.default_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: Operations::default(),
+            }),
+        ],
+        depth_stencil_attachment: Some(depth_texture.get_attachment(StoreOp::Store)),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
 
-        // Get the view entity from the graph
-        let view_entity = graph.view_entity();
+    if let Some(viewport) =
+        Viewport::from_viewport_and_override(camera.viewport.as_ref(), resolution_override)
+    {
+        render_pass.set_camera_viewport(&viewport);
+    }
 
-        // Get the phase for the current view running our node
-        let Some(cloud_phase) = cloud_phases.get(&view.retained_view_entity) else {
-            return Ok(());
-        };
-
-        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("cloud prepass"),
-            color_attachments: &[
-                Some(RenderPassColorAttachment {
-                    view: &cloud_textures.coverage.default_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: Operations::default(),
-                }),
-                Some(RenderPassColorAttachment {
-                    view: &cloud_textures.depth.default_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: Operations::default(),
-                }),
-            ],
-            depth_stencil_attachment: Some(depth.get_attachment(StoreOp::Store)),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        if let Some(viewport) = camera.viewport.as_ref() {
-            render_pass.set_camera_viewport(viewport);
-        }
-
-        // Render the phase
-        // This will execute each draw functions of each phase items queued in this phase
-        if let Err(err) = cloud_phase.render(&mut render_pass, world, view_entity) {
-            error!("Error encountered while rendering the stencil phase {err:?}");
-        }
-
-        Ok(())
+    if let Err(err) = cloud_phase.render(&mut render_pass, world, view_entity) {
+        error!("Error encountered while rendering the stencil phase {err:?}");
     }
 }
 
@@ -870,19 +863,12 @@ impl Plugin for PostProcessPlugin {
             return;
         };
 
-        render_app
-            .add_render_graph_node::<ViewNodeRunner<PostProcessNode>>(
-                // Specify the label of the graph, in this case we want the graph for 3d
-                Core3d,
-                // It also needs the label of the node
-                PostProcessLabel,
-            )
-            .add_render_graph_edges(
-                Core3d,
-                // Specify the node ordering.
-                // This will automatically create all required node edges to enforce the given ordering.
-                (PostProcessLabel, OitResolvePass),
-            );
+        render_app.add_systems(
+            Core3d,
+            post_process_pass
+                .after(main_transparent_pass_3d)
+                .before(oit_resolve),
+        );
     }
 
     fn finish(&self, app: &mut App) {
@@ -897,107 +883,120 @@ impl Plugin for PostProcessPlugin {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct PostProcessLabel;
+fn post_process_pass(
+    view: ViewQuery<(
+        &MainCamera,
+        &ViewTarget,
+        &CloudTextures,
+        &ViewUniformOffset,
+        &ViewLightsUniformOffset,
+        &ViewFogUniformOffset,
+        Option<&OitResolvePipelineId>,
+    )>,
+    oit_buffers: Res<OitBuffers>,
+    view_uniforms: Res<ViewUniforms>,
+    light_meta: Res<LightMeta>,
+    fog_meta: Res<FogMeta>,
+    pipeline_cache: Res<PipelineCache>,
+    post_process_pipeline: Res<PostProcessPipeline>,
+    mut ctx: RenderContext,
+) {
+    let Some(pipeline) = pipeline_cache.get_render_pipeline(post_process_pipeline.pipeline_id)
+    else {
+        return;
+    };
+    let (
+        _main_camera,
+        view_target,
+        cloud_textures,
+        view_uniform_offset,
+        view_lights_uniform_offset,
+        view_fog_uniform_offset,
+        oit_resolve_pipeline_id,
+    ) = view.into_inner();
 
-// The post process node used for the render graph
-#[derive(Default)]
-struct PostProcessNode;
+    let Some(oit_resolve_pipeline_id) = oit_resolve_pipeline_id else {
+        return;
+    };
 
-impl ViewNode for PostProcessNode {
-    type ViewQuery = (
-        &'static MainCamera,
-        &'static ViewTarget,
-        &'static CloudTextures,
-        &'static ViewUniformOffset,
-        &'static ViewLightsUniformOffset,
-        &'static ViewFogUniformOffset,
+    if pipeline_cache
+        .get_render_pipeline(oit_resolve_pipeline_id.0)
+        .is_none()
+    {
+        return;
+    }
+
+    let (
+        Some(oit_settings),
+        Some(oit_nodes_capacity),
+        Some(oit_nodes),
+        Some(oit_heads),
+        Some(oit_atomic_counter),
+    ) = (
+        oit_buffers.settings.binding(),
+        oit_buffers.nodes_capacity.binding(),
+        oit_buffers.nodes.binding(),
+        oit_buffers.heads.binding(),
+        oit_buffers.atomic_counter.binding(),
+    )
+    else {
+        return;
+    };
+
+    let post_process = view_target.post_process_write();
+
+    // The bind_group gets created each frame.
+    //
+    // Normally, you would create a bind_group in the Queue set,
+    // but this doesn't work with the post_process_write().
+    // The reason it doesn't work is because each post_process_write will alternate the source/destination.
+    // The only way to have the correct source/destination for the bind_group
+    // is to make sure you get it during the node execution.
+    let bind_group = ctx.render_device().create_bind_group(
+        "post_process_bind_group",
+        &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
+        // It's important for this to match the BindGroupLayout defined in the PostProcessPipeline
+        &BindGroupEntries::sequential((
+            view_uniforms.uniforms.binding().unwrap().clone(),
+            light_meta.view_gpu_lights.binding().unwrap().clone(),
+            fog_meta.gpu_fogs.binding().unwrap().clone(),
+            &cloud_textures.coverage.default_view,
+            &cloud_textures.depth.default_view,
+            post_process.source,
+            &post_process_pipeline.sampler,
+            oit_settings,
+            oit_nodes_capacity,
+            oit_nodes,
+            oit_heads,
+            oit_atomic_counter,
+        )),
     );
 
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (
-            _main_camera,
-            view_target,
-            cloud_textures,
-            view_uniform_offset,
-            lights_uniform_offset,
-            fog_uniform_offset,
-        ): QueryItem<Self::ViewQuery>,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
-        let post_process_pipeline = world.resource::<PostProcessPipeline>();
+    let mut render_pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some("post_process_pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+            view: post_process.destination,
+            resolve_target: None,
+            depth_slice: None,
+            ops: Operations::default(),
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
 
-        let pipeline_cache = world.resource::<PipelineCache>();
-
-        let Some(pipeline) = pipeline_cache.get_render_pipeline(post_process_pipeline.pipeline_id)
-        else {
-            return Ok(());
-        };
-
-        let post_process = view_target.post_process_write();
-
-        let oit_buffers = world.resource::<OitBuffers>();
-        let view_uniforms = world.resource::<ViewUniforms>();
-        let light_meta = world.resource::<LightMeta>();
-        let fog_meta = world.resource::<FogMeta>();
-
-        // The bind_group gets created each frame.
-        //
-        // Normally, you would create a bind_group in the Queue set,
-        // but this doesn't work with the post_process_write().
-        // The reason it doesn't work is because each post_process_write will alternate the source/destination.
-        // The only way to have the correct source/destination for the bind_group
-        // is to make sure you get it during the node execution.
-        let bind_group = render_context.render_device().create_bind_group(
-            "post_process_bind_group",
-            &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
-            // It's important for this to match the BindGroupLayout defined in the PostProcessPipeline
-            &BindGroupEntries::sequential((
-                view_uniforms.uniforms.binding().unwrap().clone(),
-                light_meta.view_gpu_lights.binding().unwrap().clone(),
-                fog_meta.gpu_fogs.binding().unwrap().clone(),
-                &cloud_textures.coverage.default_view,
-                &cloud_textures.depth.default_view,
-                post_process.source,
-                &post_process_pipeline.sampler,
-                oit_buffers.layers.binding().unwrap().clone(),
-                oit_buffers.layer_ids.binding().unwrap().clone(),
-                oit_buffers.settings.binding().unwrap().clone(),
-            )),
-        );
-
-        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("post_process_pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: post_process.destination,
-                resolve_target: None,
-                depth_slice: None,
-                ops: Operations::default(),
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_render_pipeline(pipeline);
-
-        render_pass.set_bind_group(
-            0,
-            &bind_group,
-            &[
-                view_uniform_offset.offset,
-                lights_uniform_offset.offset,
-                fog_uniform_offset.offset,
-            ],
-        );
-
-        render_pass.draw(0..3, 0..1);
-
-        Ok(())
-    }
+    render_pass.set_render_pipeline(pipeline);
+    render_pass.set_bind_group(
+        0,
+        &bind_group,
+        &[
+            view_uniform_offset.offset,
+            view_lights_uniform_offset.offset,
+            view_fog_uniform_offset.offset,
+        ],
+    );
+    render_pass.draw(0..3, 0..1);
 }
 
 #[derive(Resource)]
@@ -1029,10 +1028,16 @@ impl FromWorld for PostProcessPipeline {
                     binding_types::texture_2d(TextureSampleType::Float { filterable: true }),
                     // Screen texture sampler
                     binding_types::sampler(SamplerBindingType::Filtering),
-                    // OIT
-                    binding_types::storage_buffer_sized(false, None),
-                    binding_types::storage_buffer_sized(false, None),
+                    // OIT settings
                     binding_types::uniform_buffer::<OrderIndependentTransparencySettings>(false),
+                    // OIT nodes capacity
+                    binding_types::uniform_buffer::<u32>(false),
+                    // OIT nodes
+                    binding_types::storage_buffer_sized(false, None),
+                    // OIT heads
+                    binding_types::storage_buffer_sized(false, None),
+                    // OIT atomic counter
+                    binding_types::storage_buffer_sized(false, None),
                 ),
             ),
         );
@@ -1051,7 +1056,7 @@ impl FromWorld for PostProcessPipeline {
                         shader_defs: vec!["OIT_ENABLED".into()],
                         entry_point: Some("fragment".into()),
                         targets: vec![Some(ColorTargetState {
-                            format: TextureFormat::bevy_default(),
+                            format: TextureFormat::Rgba8UnormSrgb,
                             blend: None,
                             write_mask: ColorWrites::ALL,
                         })],
@@ -1059,8 +1064,7 @@ impl FromWorld for PostProcessPipeline {
                     primitive: PrimitiveState::default(),
                     depth_stencil: None,
                     multisample: MultisampleState::default(),
-                    push_constant_ranges: vec![],
-                    zero_initialize_workgroup_memory: false,
+                    ..default()
                 });
 
         Self {

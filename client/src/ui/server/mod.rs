@@ -13,7 +13,7 @@ use crate::{
     game_state::GameState,
     networking::NetworkClient,
     settings::Settings,
-    ui::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, text_input::TextBox},
+    ui::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE_PX, text_input::TextBox},
 };
 
 use self::items::{CursorItemBox, ItemBoxSection};
@@ -217,6 +217,8 @@ pub fn load_interfaces(
             if let Some(path) = &config.image {
                 entity_commands.insert(ImageNode {
                     image: asset_server.load(INTERFACE_TEXTURE_PATH.to_owned() + &path),
+                    image_mode: NodeImageMode::Stretch,
+                    visual_box: VisualBox::BorderBox,
                     ..default()
                 });
             }
@@ -282,13 +284,13 @@ pub fn load_interfaces(
                             },
                             Text::new(text),
                             TextFont {
-                                font_size: *font_size,
-                                font: DEFAULT_FONT_HANDLE,
+                                font: DEFAULT_FONT_HANDLE.into(),
+                                font_size: FontSize::Px(*font_size),
                                 ..default()
                             },
                             TextColor(*color),
                             TextShadow {
-                                offset: Vec2::splat(DEFAULT_FONT_SIZE / 12.0),
+                                offset: Vec2::splat(DEFAULT_FONT_SIZE_PX / 12.0),
                                 ..default()
                             },
                         ));
@@ -453,9 +455,11 @@ struct NodeStyle {
     justify_self: JustifySelf,
     align_content: AlignContent,
     justify_content: JustifyContent,
+    direction: InlineDirection,
     margin: Rect,
     padding: Rect,
     border: Rect,
+    border_radius: BorderRadius,
     flex_direction: FlexDirection,
     flex_wrap: FlexWrap,
     flex_grow: f32,
@@ -490,9 +494,11 @@ impl Default for NodeStyle {
             justify_self: JustifySelf::DEFAULT,
             align_content: AlignContent::DEFAULT,
             justify_content: JustifyContent::DEFAULT,
+            direction: InlineDirection::default(),
             margin: Rect::default(),
             padding: Rect::default(),
             border: Rect::default(),
+            border_radius: BorderRadius::default(),
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: Val::Auto,
@@ -545,10 +551,11 @@ impl From<NodeStyle> for Node {
             justify_self: value.justify_self,
             align_content: value.align_content,
             justify_content: value.justify_content,
+            direction: value.direction,
             margin: value.margin.into(),
             padding: value.padding.into(),
             border: value.border.into(),
-            border_radius: BorderRadius::default(),
+            border_radius: value.border_radius,
             flex_direction: value.flex_direction,
             flex_wrap: value.flex_wrap,
             flex_grow: value.flex_grow,

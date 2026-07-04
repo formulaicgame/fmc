@@ -39,16 +39,17 @@ pub mod bevy {
     // We want f64 transforms so we shadow bevy's transforms
     pub mod transform {
         pub use crate::bevy_extensions::f64_transform::GlobalTransform;
+        pub use crate::bevy_extensions::f64_transform::StaticTransformOptimizations;
         pub use crate::bevy_extensions::f64_transform::Transform;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
-        pub use crate::bevy_extensions::f64_transform::TransformSystem;
+        pub use crate::bevy_extensions::f64_transform::TransformSystems;
     }
 
     pub mod prelude {
         pub use crate::bevy_extensions::f64_transform::GlobalTransform;
         pub use crate::bevy_extensions::f64_transform::Transform;
         pub use crate::bevy_extensions::f64_transform::TransformPlugin;
-        pub use crate::bevy_extensions::f64_transform::TransformSystem;
+        pub use crate::bevy_extensions::f64_transform::TransformSystems;
         // TODO: For some reason when you click this in the docs it doesn't bring you to bevy's
         // prelude, but the prelude of bevy_internal
         #[doc(no_inline)]

@@ -54,6 +54,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             },
             ImageNode {
                 image: BACKGROUND,
+                image_mode: NodeImageMode::Stretch,
                 ..default()
             },
         ))

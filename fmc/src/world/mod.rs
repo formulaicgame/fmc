@@ -10,11 +10,12 @@ use chunk::ChunkPosition;
 use fmc_protocol::messages;
 
 use crate::{
-    bevy_extensions::f64_transform::TransformSystem,
+    bevy_extensions::f64_transform::TransformSystems,
     blocks::{BlockData, BlockFace, BlockId, BlockPosition, BlockState, Blocks},
     database::Database,
     models::Model,
     networking::{NetworkMessage, Server},
+    players::Player,
     prelude::*,
 };
 
@@ -32,7 +33,7 @@ pub use terrain_generation::{Surface, TerrainFeature, TerrainGenerator};
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(RenderDistance { chunks: 16 })
+        app.insert_resource(MaxRenderDistance { chunks: 16 })
             .insert_resource(BlockUpdateCache::default())
             .init_resource::<Messages<BlockUpdate>>()
             .add_message::<ChangedBlockEvent>()
@@ -51,7 +52,7 @@ impl Plugin for WorldPlugin {
                 (handle_block_updates, ApplyDeferred)
                     // We want block models to be sent immediately as they are spawned
                     // spawn -> Update GlobalTransform -> Send Model(uses GlobalTransform)
-                    .before(TransformSystem::TransformPropagate),
+                    .before(TransformSystems::Propagate),
             );
     }
 }
@@ -67,9 +68,12 @@ fn update_chunk_positions(
     }
 }
 
-/// As a resource this is the max render distance the server allows. As a component it is the
-/// render distance for a player (always <= the server's).
-#[derive(Resource, Component)]
+#[derive(Resource)]
+pub struct MaxRenderDistance {
+    pub chunks: u32,
+}
+
+#[derive(Component)]
 pub struct RenderDistance {
     pub chunks: u32,
 }
@@ -78,7 +82,7 @@ pub struct RenderDistance {
 // rendered.
 fn change_player_render_distance(
     net: Res<Server>,
-    max_render_distance: Res<RenderDistance>,
+    max_render_distance: Res<MaxRenderDistance>,
     mut player_render_distance_query: Query<&mut RenderDistance>,
     mut render_distance_events: MessageReader<NetworkMessage<messages::RenderDistance>>,
 ) {

@@ -5,7 +5,7 @@ use bevy::{
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypePath,
-    render::{alpha::AlphaMode, render_asset::RenderAssets, render_resource::*, texture::GpuImage},
+    render::{render_asset::RenderAssets, render_resource::*, texture::GpuImage},
     shader::ShaderRef,
 };
 

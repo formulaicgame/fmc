@@ -278,7 +278,7 @@ impl WasmHost {
     fn cache_keyboard_input(&mut self) {
         let state = self.store.data_mut();
         state.keyboard_events.clear();
-        for key in self.keyboard_events.get_mut(state.world()).read() {
+        for key in self.keyboard_events.get_mut(state.world()).unwrap().read() {
             let wit_key = match key.key_code {
                 KeyCode::KeyW => wit::Key::KeyW,
                 KeyCode::KeyA => wit::Key::KeyA,

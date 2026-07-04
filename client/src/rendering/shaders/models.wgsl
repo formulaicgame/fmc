@@ -268,7 +268,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 #ifdef DISTANCE_FOG
     // fog
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT) != 0u) {
-        output_color = pbr_functions::apply_fog(fog, output_color, in.world_position.xyz, view.world_position.xyz);
+        output_color = pbr_functions::apply_fog(fog, output_color, in.world_position.xyz, view.world_position.xyz, in.position.xy);
     }
 #endif // DISTANCE_FOG
 
