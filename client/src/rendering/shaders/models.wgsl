@@ -144,9 +144,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 #endif
 #endif
 
-    let is_orthographic = view.clip_from_view[3].w == 1.0;
-    let V = pbr_functions::calculate_view(in.world_position, is_orthographic);
-
 #ifdef VERTEX_UVS
     // TODO: Since this blends with the color below it the perspective is ruined at an angle. Hard to explain
     //       in words, but can be seen easily. Some squares appear larger than expected when indented.
@@ -154,9 +151,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     //       the uv position of the color texture to get the accurate color I think.
     //       It's also needed when overlayed on transparent(masked) textures
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_DEPTH_MAP_BIT) != 0u) {
-        // This is taken from https://github.com/DartCat25/resourcepacks/tree/main/3d-breaking
-        // I've annotated some of what I understand
-
         let color = textureSampleBias(pbr_bindings::depth_map_texture, pbr_bindings::depth_map_sampler, in.uv, view.mip_bias);
 
         // Only opaque parts of the texture are used to create the illusion.
@@ -164,31 +158,31 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             discard;
         }
 
+        // Idea taken from https://github.com/DartCat25/resourcepacks/tree/main/3d-breaking
+        //
         // It uses the view direction(camera -> position) to decide what the offset should be.
-        // We transform the view direction so that x and y go along the surface of the face and z is the normal.
-        let view_position = view_transformations::position_world_to_view(in.world_position.xyz);
-        let view_normal = view_transformations::direction_world_to_view(in.world_normal);
-        var x: vec3<f32>;
-        var y: vec3<f32>;
-        if abs(in.world_normal.y) >= 0.9 {
-            // why negative?
-            y = view_transformations::direction_world_to_view(vec3(0.0, 0.0, -1.0));
-            x = view_transformations::direction_world_to_view(vec3(-1.0, 0.0, 0.0));
-        } else {
-            y = view_transformations::direction_world_to_view(vec3(0.0, 1.0, 0.0));
-            x = cross(view_normal, y);
-        }
+        // The view direction must be expressed in the texture's frame: x along the texture's u
+        // axis, y along its v axis, z along the surface normal. The original shader hardcodes
+        // these axes per face. Instead we measure how position and uv each change across the
+        // surface and solve for the world direction in which u and v increases.
+        let dp_dx = dpdx(in.world_position.xyz);
+        let dp_dy = dpdy(in.world_position.xyz);
+        let duv_dx = dpdx(in.uv);
+        let duv_dy = dpdy(in.uv);
 
-        let coordinate_transform = mat3x3(x,y,view_normal);
-        let view_direction = normalize(view_position * coordinate_transform);
+        // Equations:
+        //   dp_dx == u_direction * duv_dx.x + v_direction * duv_dx.y
+        //   dp_dy == u_direction * duv_dy.x + v_direction * duv_dy.y
+        let det = duv_dx.x * duv_dy.y - duv_dy.x * duv_dx.y;
+        let u_direction = (dp_dx * duv_dy.y - dp_dy * duv_dx.y) / det;
+        let v_direction = (dp_dy * duv_dx.x - dp_dx * duv_dy.x) / det;
+
+        let normal = normalize(in.world_normal);
+        let coordinate_transform = mat3x3(normalize(u_direction), normalize(v_direction), normal);
+        let view_direction = normalize((in.world_position.xyz - view.world_position.xyz) * coordinate_transform);
 
         let texture_size = textureDimensions(pbr_bindings::depth_map_texture);
-        var offset: vec2<f32> = view_direction.xy / view_direction.z / f32(texture_size.x) * 0.5;
-
-        // TODO: I must have indexed the bottom mesh the wrong way around.
-        if in.world_normal.y < -0.9 {
-            offset.y *= -1.0;
-        }
+        let offset: vec2<f32> = view_direction.xy / -view_direction.z / f32(texture_size.x) * 0.5;
 
         // TODO: Whenever the offset pushes it off the edge of the texture it doesn't register as alpha == 0 
         //       This causes edges to not be painted correctly.
@@ -205,7 +199,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 #ifdef OIT_ENABLED
                 oit_draw(in.position, color);
                 discard;
-#elseif
+#else
                 output_color = color;
                 return output_color;
 #endif
@@ -250,11 +244,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // result in 1.0 and not 0.0 as their vec2 dot product will always yield zero when x and z = 0.
     let deflection: f32 = 0.5 + (1.0 - abs(dot(vec2(1.0, 0.0), in.world_normal.xz))) * (0.3 + top_deflection);
     output_color = vec4(output_color.rgb * deflection, output_color.a);
-
-
-#ifdef VERTEX_COLORS
-    output_color = output_color * in.color;
-#endif
 
 #ifdef VERTEX_UVS
     if ((pbr_bindings::material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
