@@ -11,7 +11,6 @@ use bevy::{
     light::NotShadowCaster,
     math::DVec3,
     mesh::Indices,
-    pbr::ExtendedMaterial,
     prelude::*,
 };
 use fmc_protocol::messages;
@@ -36,7 +35,7 @@ impl Plugin for ModelPlugin {
                 Update,
                 (
                     on_model_spawn,
-                    handle_model_add_delete,
+                    handle_normal_models,
                     handle_custom_models,
                     update_model_asset,
                     //render_aabb,
@@ -44,7 +43,7 @@ impl Plugin for ModelPlugin {
                     handle_model_color,
                     interpolation,
                     //advance_transitions,
-                    play_animations.after(handle_model_add_delete),
+                    play_animations.after(handle_normal_models),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -303,10 +302,16 @@ impl ModelEntities {
 // Even if they arrive in the correct order, if the child is to be placed relative to a parent
 // bone, the parent needs time to load the gltf, spawn the scene, and then build the [Bones]. The
 // child can only be inserted after all this is done.
-#[derive(Default, Deref, DerefMut)]
-struct ChildModelCache(HashMap<u32, (Timer, messages::NewModel)>);
+#[derive(Deref, DerefMut)]
+struct ChildModelCache<M>(HashMap<u32, (Timer, M)>);
 
-fn handle_model_add_delete(
+impl<M> Default for ChildModelCache<M> {
+    fn default() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+fn handle_normal_models(
     mut commands: Commands,
     net: Res<NetworkClient>,
     time: Res<Time>,
@@ -317,7 +322,7 @@ fn handle_model_add_delete(
     mut model_entities: ResMut<ModelEntities>,
     mut deleted_models: MessageReader<messages::DeleteModel>,
     mut new_models: MessageReader<messages::NewModel>,
-    mut child_cache: Local<ChildModelCache>,
+    mut child_cache: Local<ChildModelCache<messages::NewModel>>,
 ) {
     for deleted_model in deleted_models.read() {
         child_cache.remove(&deleted_model.model_id);
@@ -434,6 +439,9 @@ fn handle_model_add_delete(
     });
 }
 
+// TODO: This should really be unnecessary, more robust way needed. Maybe just load all textures at
+// startup idk.
+//
 // The asset server will unload unused assets so we keep them here after first load to minimize
 // flickering from loading time.
 #[derive(Default, Deref, DerefMut)]
@@ -444,67 +452,49 @@ fn handle_custom_models(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut commands: Commands,
+    time: Res<Time>,
     origin: Res<Origin>,
+    bones_query: Query<&Bones>,
     mut model_entities: ResMut<ModelEntities>,
     mut new_models: MessageReader<messages::SpawnCustomModel>,
-    mut cache: Local<TextureCache>,
+    mut deleted_models: MessageReader<messages::DeleteModel>,
+    mut child_cache: Local<ChildModelCache<messages::SpawnCustomModel>>,
+    mut texture_cache: Local<TextureCache>,
 ) {
+    for deleted_model in deleted_models.read() {
+        child_cache.remove(&deleted_model.model_id);
+    }
+
     for custom_model in new_models.read() {
         // Server may send same id with intent to replace, in which case we delete and add anew
         if let Some(old_entity) = model_entities.remove(custom_model.model_id) {
             commands.entity(old_entity).despawn();
         }
 
-        let mut mesh = Mesh::new(
-            bevy::mesh::PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        );
-
-        mesh.insert_indices(Indices::U32(custom_model.mesh_indices.clone()));
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, custom_model.mesh_vertices.clone());
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, custom_model.mesh_normals.clone());
-
-        if let Some(texture_uvs) = &custom_model.mesh_uvs {
-            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs.clone());
+        if custom_model.parent_id.is_some() {
+            child_cache.insert(
+                custom_model.model_id,
+                (
+                    Timer::from_seconds(5.0, TimerMode::Once),
+                    custom_model.clone(),
+                ),
+            );
+            continue;
         }
 
-        const TEXTURE_PATH: &str = "server_assets/active/textures/";
-
-        let base_color_texture = custom_model.material_color_texture.as_ref().map(|path| {
-            let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
-            cache.insert(handle.clone());
-            handle
-        });
-
-        let depth_map = custom_model.material_parallax_texture.as_ref().map(|path| {
-            let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
-            cache.insert(handle.clone());
-            handle
-        });
-
-        let material = StandardMaterial {
-            base_color_texture,
-            depth_map,
-            alpha_mode: match custom_model.material_alpha_mode {
-                0 => AlphaMode::Opaque,
-                1 => AlphaMode::Mask(custom_model.material_alpha_cutoff),
-                2 => AlphaMode::Blend,
-                // TODO: Disconnect
-                _ => AlphaMode::Opaque,
-            },
-            double_sided: custom_model.material_double_sided,
-            ..default()
-        };
+        let (model, mesh, material) = build_custom_model(
+            custom_model,
+            &asset_server,
+            &mut materials,
+            &mut meshes,
+            &mut texture_cache,
+        );
 
         let entity = commands
             .spawn((
-                Model::Custom {
-                    aabb: mesh
-                        .compute_aabb()
-                        .expect("mesh to have ATTRIBUTE_POSITION"),
-                },
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(material)),
+                model,
+                mesh,
+                material,
                 Transform {
                     translation: origin.to_local(custom_model.position),
                     rotation: custom_model.rotation,
@@ -518,6 +508,119 @@ fn handle_custom_models(
 
         model_entities.insert(custom_model.model_id, entity);
     }
+
+    child_cache.retain(|_key, (timer, custom_model)| {
+        if timer.tick(time.delta()).just_finished() {
+            warn!("Failed to spawn child model");
+            return false;
+        }
+
+        let parent_id = custom_model.parent_id.unwrap();
+        let Some(parent_entity) = model_entities.get_entity(&parent_id) else {
+            return true;
+        };
+
+        let parent_entity = if let Some(bone_id) = custom_model.parent_bone {
+            let Ok(bones) = bones_query.get(parent_entity) else {
+                return true;
+            };
+            let Some(bone_entity) = bones.get(&bone_id) else {
+                warn!("Received invalid model bone");
+                return false;
+            };
+            *bone_entity
+        } else {
+            parent_entity
+        };
+
+        let (model, mesh, material) = build_custom_model(
+            custom_model,
+            &asset_server,
+            &mut materials,
+            &mut meshes,
+            &mut texture_cache,
+        );
+
+        commands.entity(parent_entity).with_children(|parent| {
+            let entity = parent
+                .spawn((
+                    model,
+                    mesh,
+                    material,
+                    Transform {
+                        translation: custom_model.position.as_vec3(),
+                        rotation: custom_model.rotation,
+                        scale: custom_model.scale,
+                    },
+                    AnimationPlayer::default(),
+                    TransformInterpolator::default(),
+                ))
+                .id();
+
+            model_entities.insert(custom_model.model_id, entity);
+        });
+
+        false
+    });
+}
+
+fn build_custom_model(
+    custom_model: &messages::SpawnCustomModel,
+    asset_server: &AssetServer,
+    materials: &mut Assets<StandardMaterial>,
+    meshes: &mut Assets<Mesh>,
+    texture_cache: &mut TextureCache,
+) -> (Model, Mesh3d, MeshMaterial3d<StandardMaterial>) {
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
+
+    mesh.insert_indices(Indices::U32(custom_model.mesh_indices.clone()));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, custom_model.mesh_vertices.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, custom_model.mesh_normals.clone());
+
+    if let Some(texture_uvs) = &custom_model.mesh_uvs {
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs.clone());
+    }
+
+    const TEXTURE_PATH: &str = "server_assets/active/textures/";
+
+    let base_color_texture = custom_model.material_color_texture.as_ref().map(|path| {
+        let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
+        texture_cache.insert(handle.clone());
+        handle
+    });
+
+    let depth_map = custom_model.material_parallax_texture.as_ref().map(|path| {
+        let handle = asset_server.load(TEXTURE_PATH.to_owned() + &path);
+        texture_cache.insert(handle.clone());
+        handle
+    });
+
+    let material = StandardMaterial {
+        base_color_texture,
+        depth_map,
+        alpha_mode: match custom_model.material_alpha_mode {
+            0 => AlphaMode::Opaque,
+            1 => AlphaMode::Mask(custom_model.material_alpha_cutoff),
+            2 => AlphaMode::Blend,
+            // TODO: Disconnect
+            _ => AlphaMode::Opaque,
+        },
+        double_sided: custom_model.material_double_sided,
+        ..default()
+    };
+
+    (
+        Model::Custom {
+            aabb: mesh
+                .compute_aabb()
+                .expect("mesh to have ATTRIBUTE_POSITION"),
+        },
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(materials.add(material)),
+    )
 }
 
 fn update_model_asset(
