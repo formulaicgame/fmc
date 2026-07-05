@@ -25,12 +25,18 @@ impl Plugin for ItemPlugin {
         app.add_systems(
             Update,
             (
-                handle_item_box_updates,
+                (
+                    handle_item_box_updates,
+                    // TODO: Reacting to cursor visibility isn't proper.
+                    left_click_item_box
+                        .run_if(|visibiltiy: Res<CursorVisibility>| visibiltiy.server),
+                    right_click_item_box
+                        .run_if(|visibiltiy: Res<CursorVisibility>| visibiltiy.server),
+                    update_item_box_images,
+                )
+                    .chain(),
                 initial_select_item_box,
                 discard_items.after(super::handle_visibility_events),
-                // TODO: Reacting to cursor visibility isn't proper.
-                (left_click_item_box, right_click_item_box)
-                    .run_if(|visibiltiy: Res<CursorVisibility>| visibiltiy.server),
                 update_cursor_image.after(left_click_item_box),
                 update_cursor_item_stack_position,
                 keyboard_select_item_box,
@@ -343,6 +349,7 @@ fn handle_item_box_updates(
     interface_paths: Res<InterfacePaths>,
     items: Res<Items>,
     interface_item_box_query: Query<Option<&Children>, With<ItemBoxSection>>,
+    mut item_box_query: Query<&mut ItemBox>,
     mut item_box_update_events: MessageReader<messages::InterfaceItemBoxUpdate>,
 ) {
     for item_box_update in item_box_update_events.read() {
@@ -370,14 +377,6 @@ fn handle_item_box_updates(
                     }
                 };
 
-                // TODO: This breaks the interface. Item images dissapear. I think it is a bug in the
-                // AssetServer, when all handles to an image are dropped, the image is unloaded. If a
-                // new handle is then created it will not load the image again.
-                if item_box_update.replace {
-                    todo!()
-                    //commands.entity(*entity).despawn_descendants();
-                }
-
                 for item_box in new_item_boxes.iter() {
                     let item_stack = if let Some(item_id) = &item_box.item_stack.item_id {
                         let item_config = match items.configs.get(item_id) {
@@ -400,101 +399,103 @@ fn handle_item_box_updates(
                         ItemStack::default()
                     };
 
-                    let (mut entity_commands, is_new) =
-                        if item_box_update.replace || children.is_none() {
-                            let mut entity_commands = commands.spawn_empty();
-                            entity_commands.insert(ChildOf(*entity));
-                            (entity_commands, true)
-                        } else if let Some(child_entity) =
-                            children.unwrap().get(item_box.index as usize)
-                        {
-                            let mut entity_commands = commands.entity(*child_entity);
-                            entity_commands.despawn_related::<Children>();
-                            (entity_commands, false)
-                        } else {
-                            let mut entity_commands = commands.spawn_empty();
-                            entity_commands.insert(ChildOf(*entity));
-                            (entity_commands, true)
-                        };
-
-                    let item_stack_size = item_stack.size;
-                    entity_commands.insert((
-                        ImageNode {
-                            image: if let Some(item_id) = &item_stack.item {
-                                asset_server.load(&items.get(item_id).image_path).into()
-                            } else {
-                                default()
-                            },
-                            color: if item_stack.item.is_some() {
-                                Color::WHITE
-                            } else {
-                                Color::NONE
-                            },
-                            ..default()
-                        },
-                        Node {
-                            width: Val::Px(14.0),
-                            height: Val::Px(15.8),
-                            margin: UiRect {
-                                //left: Val::Px(0.0),
-                                //right: Val::Px(0.0),
-                                top: Val::Px(0.1),
-                                bottom: Val::Px(0.1),
-                                ..default()
-                            },
-                            // https://github.com/bevyengine/bevy/issues/6879
-                            //padding: UiRect {
-                            //    left: Val::Px(1.0),
-                            //    right: Val::Auto,
-                            //    top: Val::Px(1.0),
-                            //    bottom: Val::Auto,
-                            //},
-                            // puts item count text in the bottom right corner
-                            flex_direction: FlexDirection::ColumnReverse,
-                            align_items: AlignItems::FlexEnd,
-                            ..default()
-                        },
-                        ItemBox {
-                            item_stack,
-                            index: item_box.index as usize,
-                        },
-                    ));
-
-                    // Re-inserting Interaction on an existing box would reset the hover/press
-                    // state computed in PreUpdate, making discard_items believe the cursor is
-                    // outside the interface.
-                    if is_new {
-                        entity_commands.insert((
-                            // TODO: This doesn't actually block? Can't highlight items because of it.
-                            FocusPolicy::Block,
-                            Interaction::default(),
-                        ));
+                    if let Some(child_entity) =
+                        children.and_then(|children| children.get(item_box.index as usize))
+                    {
+                        item_box_query.get_mut(*child_entity).unwrap().item_stack = item_stack;
+                    } else {
+                        commands
+                            .spawn((
+                                ChildOf(*entity),
+                                ImageNode {
+                                    color: Color::NONE,
+                                    ..default()
+                                },
+                                Node {
+                                    width: Val::Px(14.0),
+                                    height: Val::Px(15.8),
+                                    margin: UiRect {
+                                        //left: Val::Px(0.0),
+                                        //right: Val::Px(0.0),
+                                        top: Val::Px(0.1),
+                                        bottom: Val::Px(0.1),
+                                        ..default()
+                                    },
+                                    // https://github.com/bevyengine/bevy/issues/6879
+                                    //padding: UiRect {
+                                    //    left: Val::Px(1.0),
+                                    //    right: Val::Auto,
+                                    //    top: Val::Px(1.0),
+                                    //    bottom: Val::Auto,
+                                    //},
+                                    // puts item count text in the bottom right corner
+                                    flex_direction: FlexDirection::ColumnReverse,
+                                    align_items: AlignItems::FlexEnd,
+                                    ..default()
+                                },
+                                // TODO: This doesn't actually block? Can't highlight items because of it.
+                                FocusPolicy::Block,
+                                Interaction::default(),
+                                ItemBox {
+                                    item_stack,
+                                    index: item_box.index as usize,
+                                },
+                            ))
+                            .with_children(|parent| {
+                                // Item count text
+                                parent.spawn((
+                                    Node {
+                                        top: Val::Px(1.0),
+                                        left: Val::Px(2.0),
+                                        ..default()
+                                    },
+                                    Text::default(),
+                                    TextColor(Color::NONE),
+                                    TextFont {
+                                        font: asset_server
+                                            .load("server_assets/active/font.otf")
+                                            .into(),
+                                        font_size: FontSize::Px(8.0),
+                                        ..default()
+                                    },
+                                ));
+                            });
                     }
+                }
 
-                    // Item count text
-                    entity_commands.with_children(|parent| {
-                        parent.spawn((
-                            Node {
-                                top: Val::Px(1.0),
-                                left: Val::Px(2.0),
-                                ..default()
-                            },
-                            Text(item_stack_size.to_string()),
-                            TextColor::from(if item_stack_size > 1 {
-                                Color::WHITE
-                            } else {
-                                Color::NONE
-                            }),
-                            TextFont {
-                                font: asset_server.load("server_assets/active/font.otf").into(),
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                        ));
-                    });
+                if item_box_update.replace {
+                    if let Some(children) = children {
+                        for child_entity in children.iter().skip(new_item_boxes.len()) {
+                            commands.entity(child_entity).despawn();
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+fn update_item_box_images(
+    asset_server: Res<AssetServer>,
+    items: Res<Items>,
+    mut changed_item_boxes: Query<(&ItemBox, &mut ImageNode, &Children), Changed<ItemBox>>,
+    mut text_query: Query<(&mut Text, &mut TextColor)>,
+) {
+    for (item_box, mut image, children) in changed_item_boxes.iter_mut() {
+        if let Some(item_id) = &item_box.item_stack.item {
+            image.image = asset_server.load(&items.get(item_id).image_path).into();
+            image.color = Color::WHITE;
+        } else {
+            image.color = Color::NONE;
+        }
+
+        let (mut text, mut color) = text_query.get_mut(children[0]).unwrap();
+        *text = Text(item_box.item_stack.size.to_string());
+        *color = TextColor(if item_box.item_stack.size > 1 {
+            Color::WHITE
+        } else {
+            Color::NONE
+        });
     }
 }
 
