@@ -45,6 +45,35 @@ pub struct HeldInterfaceStack {
     pub item_stack: ItemStack,
 }
 
+impl HeldInterfaceStack {
+    /// Helper to transfer items between the held item stack and the item stack that's interacted with.
+    pub fn transfer(
+        &mut self,
+        interaction: &messages::InterfaceInteraction,
+        item_stacks: &mut [ItemStack],
+    ) {
+        match interaction {
+            messages::InterfaceInteraction::TakeItem {
+                index, quantity, ..
+            } => {
+                let Some(item_stack) = item_stacks.get_mut(*index as usize) else {
+                    return;
+                };
+                item_stack.transfer_to(&mut self.item_stack, *quantity);
+            }
+            messages::InterfaceInteraction::PlaceItem {
+                index, quantity, ..
+            } => {
+                let Some(item_stack) = item_stacks.get_mut(*index as usize) else {
+                    return;
+                };
+                self.item_stack.transfer_to(item_stack, *quantity);
+            }
+            messages::InterfaceInteraction::Button { .. } => (),
+        }
+    }
+}
+
 // When interface interactions are received from a player, this maps where they should be sent. For
 // example, a crafting table may want to have a unique interface for each player. When a player
 // clicks a crafting table, it can respond by sending a RegisterInterfaceNode event mapping
