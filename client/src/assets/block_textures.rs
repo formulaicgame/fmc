@@ -16,7 +16,7 @@ const TEXTURE_PATH: &str = "server_assets/active/textures/blocks";
 #[derive(Resource, Debug)]
 pub struct BlockTextures {
     pub handle: Handle<Image>,
-    // XXX: Even though the id is stored as u32 the texture array only has 19 bits of indices
+    // XXX: Even though the id is stored as u32 the texture array only has 19 bits for indices
     // because of bit packing in the shaders.
     texture_array_indices: HashMap<String, u32>,
 }

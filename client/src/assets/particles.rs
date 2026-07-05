@@ -235,7 +235,11 @@ pub(super) fn load_particle_effects(
         .unwrap();
 
         let rows = image.height() / image.width();
-        image.reinterpret_stacked_2d_as_array(rows);
+        if rows > 1 {
+            // This errors on rows == 1, but it seems to work fine to pass them as array textures
+            // anyways
+            image.reinterpret_stacked_2d_as_array(rows).unwrap();
+        }
 
         // NOTE: Bevy automatically infers this based on the dimensions, so if they image is square
         // it will infer TextureViewDimension::D2, which crashes because the shader expects an

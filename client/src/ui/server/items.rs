@@ -400,21 +400,22 @@ fn handle_item_box_updates(
                         ItemStack::default()
                     };
 
-                    let mut entity_commands = if item_box_update.replace || children.is_none() {
-                        let mut entity_commands = commands.spawn_empty();
-                        entity_commands.insert(ChildOf(*entity));
-                        entity_commands
-                    } else if let Some(child_entity) =
-                        children.unwrap().get(item_box.index as usize)
-                    {
-                        let mut entity_commands = commands.entity(*child_entity);
-                        entity_commands.despawn_related::<Children>();
-                        entity_commands
-                    } else {
-                        let mut entity_commands = commands.spawn_empty();
-                        entity_commands.insert(ChildOf(*entity));
-                        entity_commands
-                    };
+                    let (mut entity_commands, is_new) =
+                        if item_box_update.replace || children.is_none() {
+                            let mut entity_commands = commands.spawn_empty();
+                            entity_commands.insert(ChildOf(*entity));
+                            (entity_commands, true)
+                        } else if let Some(child_entity) =
+                            children.unwrap().get(item_box.index as usize)
+                        {
+                            let mut entity_commands = commands.entity(*child_entity);
+                            entity_commands.despawn_related::<Children>();
+                            (entity_commands, false)
+                        } else {
+                            let mut entity_commands = commands.spawn_empty();
+                            entity_commands.insert(ChildOf(*entity));
+                            (entity_commands, true)
+                        };
 
                     let item_stack_size = item_stack.size;
                     entity_commands.insert((
@@ -453,14 +454,22 @@ fn handle_item_box_updates(
                             align_items: AlignItems::FlexEnd,
                             ..default()
                         },
-                        // TODO: This doesn't actually block? Can't highlight items because of it.
-                        FocusPolicy::Block,
-                        Interaction::default(),
                         ItemBox {
                             item_stack,
                             index: item_box.index as usize,
                         },
                     ));
+
+                    // Re-inserting Interaction on an existing box would reset the hover/press
+                    // state computed in PreUpdate, making discard_items believe the cursor is
+                    // outside the interface.
+                    if is_new {
+                        entity_commands.insert((
+                            // TODO: This doesn't actually block? Can't highlight items because of it.
+                            FocusPolicy::Block,
+                            Interaction::default(),
+                        ));
+                    }
 
                     // Item count text
                     entity_commands.with_children(|parent| {
@@ -555,7 +564,7 @@ fn left_click_item_box(
 ) {
     for (mut item_box, interaction, parent) in item_box_query.iter_mut() {
         if *interaction != Interaction::Pressed {
-            return;
+            continue;
         }
 
         let mut cursor_box = cursor_item_box_query.single_mut().unwrap();

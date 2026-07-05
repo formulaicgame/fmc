@@ -352,7 +352,11 @@ impl MainMenuWidgets for ChildSpawnerCommands<'_> {
                                     height: Val::Percent(100.0),
                                     ..default()
                                 },
-                                ImageNode::new(LIST_ITEM_PLACEHOLDER_IMAGE),
+                                ImageNode {
+                                    image: LIST_ITEM_PLACEHOLDER_IMAGE,
+                                    image_mode: NodeImageMode::Stretch,
+                                    ..default()
+                                },
                             ));
                             // Text container
                             parent

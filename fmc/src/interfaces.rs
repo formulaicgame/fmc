@@ -13,18 +13,31 @@ pub struct InterfacePlugin;
 impl Plugin for InterfacePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<RegisterInterfaceNode>()
+            .configure_sets(
+                Update,
+                (
+                    InterfaceSystems::Registration,
+                    InterfaceSystems::HandleEvents,
+                )
+                    .chain(),
+            )
             .add_systems(
                 Update,
-                sort_interface_interactions.in_set(InterfaceEventRegistration),
+                sort_interface_interactions.in_set(InterfaceSystems::Registration),
             )
             .add_systems(Update, (insert_held_item, register_interface_nodes));
     }
 }
 
-/// SystemSet used to order event handling. Use .after(InterfaceEventRegistration) for systems that
-/// should handle interface events.
+/// SystemSets used to order interface event handling.
 #[derive(SystemSet, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct InterfaceEventRegistration;
+pub enum InterfaceSystems {
+    /// Incoming interactions are routed to the entities registered for their interface node.
+    Registration,
+    /// Systems that read InterfaceEvents and act on them, e.g. by moving items between an
+    /// interface and the held item stack.
+    HandleEvents,
+}
 
 /// The item stack currently held by the cursor
 #[derive(Component, Deref, DerefMut)]
