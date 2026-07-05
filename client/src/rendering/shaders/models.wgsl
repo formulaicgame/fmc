@@ -177,9 +177,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         let u_direction = (dp_dx * duv_dy.y - dp_dy * duv_dx.y) / det;
         let v_direction = (dp_dy * duv_dx.x - dp_dx * duv_dy.x) / det;
 
+        // Dividing by the squared length instead of normalizing preserves how much the texture
+        // is stretched over the surface. The offset then comes out in uv units of equal world
+        // length on both axes, so the shadows keep their proportions when the texture is
+        // stretched over something bigger than a block, e.g. a door.
         let normal = normalize(in.world_normal);
-        let coordinate_transform = mat3x3(normalize(u_direction), normalize(v_direction), normal);
-        let view_direction = normalize((in.world_position.xyz - view.world_position.xyz) * coordinate_transform);
+        let coordinate_transform = mat3x3(
+            u_direction / dot(u_direction, u_direction),
+            v_direction / dot(v_direction, v_direction),
+            normal,
+        );
+        let view_direction = (in.world_position.xyz - view.world_position.xyz) * coordinate_transform;
 
         let texture_size = textureDimensions(pbr_bindings::depth_map_texture);
         let offset: vec2<f32> = view_direction.xy / -view_direction.z / f32(texture_size.x) * 0.5;
