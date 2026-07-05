@@ -829,50 +829,27 @@ fn keyboard_select_item_box(
     >,
 ) {
     for key in keyboard.get_just_pressed() {
+        let index = match key {
+            KeyCode::Digit1 => 0,
+            KeyCode::Digit2 => 1,
+            KeyCode::Digit3 => 2,
+            KeyCode::Digit4 => 3,
+            KeyCode::Digit5 => 4,
+            KeyCode::Digit6 => 5,
+            KeyCode::Digit7 => 6,
+            KeyCode::Digit8 => 7,
+            KeyCode::Digit9 => 8,
+            _ => continue,
+        };
+
         for (children, visibility, mut selected) in item_box_section_query.iter_mut() {
             if visibility == Visibility::Hidden {
                 continue;
             }
 
-            *selected = match key {
-                KeyCode::Digit1 => match children.get(0) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit2 => match children.get(1) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit3 => match children.get(2) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit4 => match children.get(3) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit5 => match children.get(4) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit6 => match children.get(5) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit7 => match children.get(6) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit8 => match children.get(7) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                KeyCode::Digit9 => match children.get(8) {
-                    Some(entity) => SelectedItemBox(*entity),
-                    None => continue,
-                },
-                _ => continue,
-            };
+            if let Some(entity) = children.get(index) {
+                *selected = SelectedItemBox(*entity);
+            }
         }
     }
 }
@@ -882,7 +859,10 @@ fn keyboard_select_item_box(
 fn discard_items(
     net: Res<NetworkClient>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    item_box_section_query: Query<&InterfaceConfig, Changed<InheritedVisibility>>,
+    interface_query: Query<
+        &InheritedVisibility,
+        (With<InterfaceConfig>, Changed<InheritedVisibility>),
+    >,
     interaction_query: Query<&Interaction, With<ImageNode>>,
     mut cursor_box: Single<&mut CursorItemBox>,
 ) {
@@ -890,7 +870,8 @@ fn discard_items(
         return;
     }
 
-    if !item_box_section_query.is_empty() {
+    // If an interface closed while the item was held
+    if interface_query.iter().any(|visibility| !visibility.get()) {
         net.send_message(messages::InterfaceInteraction::PlaceItem {
             interface_path: "".to_owned(),
             index: 0,
