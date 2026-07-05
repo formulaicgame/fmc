@@ -272,6 +272,10 @@ impl ItemStack {
     }
 }
 
+/// Marker for the item count text of an [ItemBox] or the [CursorItemBox]
+#[derive(Component)]
+pub(super) struct ItemBoxText;
+
 #[derive(Component)]
 pub struct ItemBox {
     pub item_stack: ItemStack,
@@ -444,6 +448,7 @@ fn handle_item_box_updates(
                             .with_children(|parent| {
                                 // Item count text
                                 parent.spawn((
+                                    ItemBoxText,
                                     Node {
                                         top: Val::Px(1.0),
                                         left: Val::Px(2.0),
@@ -479,7 +484,7 @@ fn update_item_box_images(
     asset_server: Res<AssetServer>,
     items: Res<Items>,
     mut changed_item_boxes: Query<(&ItemBox, &mut ImageNode, &Children), Changed<ItemBox>>,
-    mut text_query: Query<(&mut Text, &mut TextColor)>,
+    mut text_query: Query<(&mut Text, &mut TextColor), With<ItemBoxText>>,
 ) {
     for (item_box, mut image, children) in changed_item_boxes.iter_mut() {
         if let Some(item_id) = &item_box.item_stack.item {
@@ -764,40 +769,29 @@ fn update_cursor_item_stack_position(
 fn update_cursor_image(
     asset_server: Res<AssetServer>,
     items: Res<Items>,
-    mut cursor_item_query: Query<(&mut ImageNode, &CursorItemBox, &Children)>,
-    // TODO: Add marker component
-    mut text_query: Query<(&mut Text, &mut TextColor, &mut TextFont)>,
+    mut cursor_item_query: Query<
+        (&CursorItemBox, &mut ImageNode, &Children),
+        Changed<CursorItemBox>,
+    >,
+    mut text_query: Query<(&mut Text, &mut TextColor), With<ItemBoxText>>,
 ) {
-    for (mut image, cursor_box, children) in cursor_item_query.iter_mut() {
+    for (cursor_box, mut image, children) in cursor_item_query.iter_mut() {
         if let Some(item_id) = cursor_box.item_stack.item {
             image.image = asset_server.load(&items.get(&item_id).image_path).into();
             image.color = Color::WHITE;
-
-            let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
-            *text = Text(cursor_box.item_stack.size.to_string());
-            *font = TextFont {
-                font: asset_server.load("server_assets/active/font.otf").into(),
-                font_size: FontSize::Px(8.0),
-                ..default()
-            };
-            *color = TextColor(if cursor_box.item_stack.size > 1 {
-                Color::WHITE
-            } else {
-                Color::NONE
-            });
         } else {
             // Instead of hiding the node through visibility we mask it with the color. This is
             // because the item box still needs to be interactable so items can be put into it.
             image.color = Color::NONE;
-            let (mut text, mut color, mut font) = text_query.get_mut(children[0]).unwrap();
-            *text = Text(cursor_box.item_stack.size.to_string());
-            *font = TextFont {
-                font: asset_server.load("server_assets/active/font.otf").into(),
-                font_size: FontSize::Px(6.0),
-                ..default()
-            };
-            *color = TextColor(Color::NONE);
         }
+
+        let (mut text, mut color) = text_query.get_mut(children[0]).unwrap();
+        *text = Text(cursor_box.item_stack.size.to_string());
+        *color = TextColor(if cursor_box.item_stack.size > 1 {
+            Color::WHITE
+        } else {
+            Color::NONE
+        });
     }
 }
 

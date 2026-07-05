@@ -16,7 +16,7 @@ use crate::{
     ui::{DEFAULT_FONT_HANDLE, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE_PX, text_input::TextBox},
 };
 
-use self::items::{CursorItemBox, ItemBoxSection};
+use self::items::{CursorItemBox, ItemBoxSection, ItemBoxText};
 
 use super::{CursorVisibility, UiState};
 
@@ -353,7 +353,13 @@ pub fn load_interfaces(
         ))
         .with_children(|parent| {
             parent.spawn((
+                ItemBoxText,
                 Text::default(),
+                TextFont {
+                    font: asset_server.load("server_assets/active/font.otf").into(),
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
                 Node {
                     top: Val::Px(1.0),
                     left: Val::Px(2.0),
