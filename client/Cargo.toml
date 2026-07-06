@@ -33,10 +33,9 @@ nonmax = "0.5.5"
 tar = "0.4.46"
 zstd = "0.13.3"
 
-# Enable a small amount of optimization in debug mode
 [profile.dev]
-strip = "debuginfo"
-#opt-level = 1
+strip = "debuginfo" # Prevent disk churn
+opt-level = 1
 
 # Enable high optimizations for dependencies (incl. Bevy), but not for our code:
 [profile.dev.package."*"]

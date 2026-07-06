@@ -6,7 +6,10 @@ use serde::Deserialize;
 use crate::{
     assets::BlockTextures,
     networking::NetworkClient,
-    rendering::materials::{BlockMaterial, ModelMaterial, ModelMaterialExtension},
+    rendering::{
+        light_texture::{LIGHT_TEXTURE, LightTexture},
+        materials::{BlockMaterial, ModelMaterial, ModelMaterialExtension},
+    },
     settings::Settings,
 };
 
@@ -248,6 +251,8 @@ fn load_model_materials(
             base: standard_material,
             extension: ModelMaterialExtension {
                 block_textures: block_textures.handle.clone(),
+                light_texture: LIGHT_TEXTURE,
+                origin: IVec3::ZERO,
             },
         });
 
@@ -324,6 +329,8 @@ fn load_block_materials(
             depth_bias: 0.0,
             texture_array: Some(block_textures.handle.clone()),
             animation_frames: config.animation_frames,
+            light_texture: LIGHT_TEXTURE,
+            origin: IVec3::ZERO,
         };
         let handle = block_material_assets.add(block_material);
 

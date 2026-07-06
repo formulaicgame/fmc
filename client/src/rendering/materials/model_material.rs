@@ -1,8 +1,7 @@
 use bevy::{
+    app::SceneSpawnerSystems,
     asset::{load_internal_asset, uuid_handle},
-    camera::primitives::MeshAabb,
-    math::{DVec3, Vec3A},
-    mesh::{MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef, VertexAttributeValues},
+    mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
     prelude::*,
     render::render_resource::*,
@@ -12,9 +11,7 @@ use bevy::{
 use std::collections::HashMap;
 
 use crate::{
-    assets::BlockTextures,
-    game_state::GameState,
-    rendering::lighting::{Light, LightMap},
+    assets::BlockTextures, game_state::GameState, rendering::light_texture::LIGHT_TEXTURE,
     world::Origin,
 };
 
@@ -27,13 +24,12 @@ impl Plugin for ModelMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ModelMaterials::default())
             .add_plugins(MaterialPlugin::<ModelMaterial>::default())
-            // Some weird schedule ordering here to avoid flickering. Chosen at random until it
-            // worked.
             .add_systems(
-                PostUpdate,
-                (add_lighting, replace_standard_material).run_if(in_state(GameState::Playing)),
+                SpawnScene,
+                replace_standard_material
+                    .after(SceneSpawnerSystems::WorldInstanceSpawn)
+                    .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(Last, update_light)
             .add_systems(OnEnter(GameState::Launcher), cleanup);
 
         load_internal_asset!(
@@ -52,67 +48,10 @@ fn cleanup(mut materials: ResMut<ModelMaterials>) {
     materials.clear();
 }
 
-fn update_light(
-    origin: Res<Origin>,
-    light_map: Res<LightMap>,
-    mut mesh_query: Query<
-        (&GlobalTransform, &Mesh3d, &mut MeshTag),
-        (
-            With<MeshMaterial3d<ModelMaterial>>,
-            Or<(
-                Changed<GlobalTransform>,
-                Added<MeshMaterial3d<ModelMaterial>>,
-            )>,
-        ),
-    >,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
-    for (transform, mesh_handle, mut mesh_tag) in mesh_query.iter_mut() {
-        let transform = transform.compute_transform();
-        let mesh = meshes.get_mut(mesh_handle).unwrap();
-        let mut mesh_aabb = mesh.compute_aabb().unwrap();
-        mesh_aabb.center *= Vec3A::from(transform.scale);
-        mesh_aabb.half_extents *= Vec3A::from(transform.scale);
-
-        let position = origin.to_global(transform.translation);
-
-        // There's an assumption here that lighting is finsihed before this first runs that I don't
-        // know if holds true.
-        let mut new_light = Light(0);
-        for (i, offset) in mesh_aabb.half_extents.to_array().into_iter().enumerate() {
-            let mut offset_vec = DVec3::ZERO;
-            offset_vec[i] = offset as f64;
-            for direction in [-1.0, 1.0] {
-                let position = (position + mesh_aabb.center.as_dvec3() + offset_vec * direction)
-                    .floor()
-                    .as_ivec3();
-                if let Some(light) = light_map.get_light(position) {
-                    if light.sunlight() > new_light.sunlight() {
-                        new_light.set_sunlight(light.sunlight());
-                    }
-                    if light.artificial() > new_light.artificial() {
-                        new_light.set_artificial(light.artificial());
-                    }
-                }
-            }
-        }
-
-        mesh_tag.0 = new_light.0 as u32;
-    }
-}
-
-fn add_lighting(
-    mut commands: Commands,
-    material_query: Query<Entity, (With<MeshMaterial3d<ModelMaterial>>, Without<MeshTag>)>,
-) {
-    for entity in material_query.iter() {
-        commands.entity(entity).insert(MeshTag(0));
-    }
-}
-
 fn replace_standard_material(
     mut commands: Commands,
-    mut model_materials: ResMut<ModelMaterials>,
+    model_materials: Res<ModelMaterials>,
+    origin: Res<Origin>,
     material_query: Query<
         (Entity, &MeshMaterial3d<StandardMaterial>),
         Added<MeshMaterial3d<StandardMaterial>>,
@@ -130,14 +69,15 @@ fn replace_standard_material(
                 base: standard_material.clone(),
                 extension: ModelMaterialExtension {
                     block_textures: block_textures.handle.clone(),
+                    light_texture: LIGHT_TEXTURE,
+                    origin: origin.0,
                 },
             })
         };
 
         let mut entity_commands = commands.entity(entity);
         entity_commands.remove::<MeshMaterial3d<StandardMaterial>>();
-        // MeshTag is used for per instance lighting
-        entity_commands.insert((MeshMaterial3d(model_material), MeshTag(0)));
+        entity_commands.insert(MeshMaterial3d(model_material));
     }
 }
 
@@ -146,6 +86,15 @@ pub struct ModelMaterialExtension {
     #[texture(31, dimension = "2d_array")]
     #[sampler(32)]
     pub block_textures: Handle<Image>,
+
+    /// 3d texture holding the light level of every block within render distance. Sampled by world
+    /// position, see the block material for details.
+    #[texture(33, dimension = "3d")]
+    #[sampler(34)]
+    pub light_texture: Handle<Image>,
+
+    #[uniform(35)]
+    pub origin: IVec3,
 }
 
 impl ModelMaterialExtension {

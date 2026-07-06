@@ -46,7 +46,7 @@ impl Origin {
 #[derive(Component)]
 pub struct MovesWithOrigin;
 
-fn update_origin(
+pub fn update_origin(
     mut origin: ResMut<Origin>,
     mut positions: ParamSet<(
         Query<&GlobalTransform, (Changed<GlobalTransform>, With<Head>)>,

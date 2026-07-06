@@ -65,6 +65,14 @@ pub struct BlockMaterial {
     // TODO: Need a way to define the length of the animation too.
     /// Cycle through the n next textures in the texture array. Defaults to 1(no animation)
     pub animation_frames: u32,
+
+    /// 3d texture holding the light level of every block.
+    #[texture(3, dimension = "3d")]
+    #[sampler(4)]
+    pub light_texture: Handle<Image>,
+
+    /// The world's chunk origin
+    pub origin: IVec3,
 }
 
 impl BlockMaterial {
@@ -99,6 +107,7 @@ pub struct BlockMaterialUniform {
     /// Doubles as diffuse albedo for non-metallic, specular for metallic and a mix for everything
     /// in between.
     pub base_color: Vec4,
+    pub origin: IVec3,
     /// The [`StandardMaterialFlags`] accessible in the `wgsl` shader.
     pub flags: u32,
     /// When the alpha mode mask flag is set, any base color alpha above this cutoff means fully opaque,
@@ -191,6 +200,7 @@ impl AsBindGroupShaderType<BlockMaterialUniform> for BlockMaterial {
 
         BlockMaterialUniform {
             base_color: LinearRgba::from(self.base_color).to_vec4(),
+            origin: self.origin,
             flags: flags.bits(),
             alpha_cutoff,
             animation_frames: self.animation_frames,

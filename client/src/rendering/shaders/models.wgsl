@@ -16,6 +16,8 @@
 #endif
 
 #import bevy_render::maths::powsafe
+
+#import fmc::lighting::get_light
 #import bevy_core_pipeline::tonemapping:: {
     screen_space_dither,
     tone_mapping,
@@ -29,6 +31,12 @@
 var block_textures: texture_2d_array<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(32)
 var block_textures_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(33)
+var light_texture: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(34)
+var light_texture_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(35)
+var<uniform> origin: vec3<i32>;
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -78,7 +86,6 @@ struct VertexOutput {
 #ifdef BLOCK_TEXTURE
     @location(5) block_texture_index: i32,
 #endif
-    @location(6) light: u32,
 };
 
 @vertex
@@ -129,8 +136,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.block_texture_index = i32(vertex.block_texture_index);
 #endif
 
-    out.light = mesh_functions::get_tag(vertex.instance_index);
-
     return out;
 }
 
@@ -162,7 +167,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         //
         // It uses the view direction(camera -> position) to decide what the offset should be.
         // The view direction must be expressed in the texture's frame: x along the texture's u
-        // axis, y along its v axis, z along the surface normal. The original shader hardcodes
+        // axis, y -> v axis, z along the surface normal. The original shader hardcodes
         // these axes per face. Instead we measure how position and uv each change across the
         // surface and solve for the world direction in which u and v increases.
         let dp_dx = dpdx(in.world_position.xyz);
@@ -232,14 +237,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     output_color = output_color * in.color;
 #endif
 
-    let artificial_level = f32(in.light & 0xFu);
-    var sunlight_level = f32((in.light >> 4u) & 0xFu);
-
     // TODO: The 1.2 is a scaling factor to make it look bright enough, idk if it's the models
     // themselves or something else in the shader that makes them darker than they should be.
-    let artificial = (pow(0.8, 15.0 - artificial_level)) * 1.2;
-    let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a * 1.2;
-    let light = max(artificial, sunlight);
+    let light = get_light(
+        light_texture,
+        light_texture_sampler,
+        origin,
+        in.world_position.xyz,
+        normalize(in.world_normal),
+    ) * 1.2;
 
     output_color = vec4(output_color.rgb * light, output_color.a);
     

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 pub mod world;
 
 mod clouds;
+pub mod light_texture;
 mod lighting;
 pub mod materials;
 mod sky;
@@ -14,6 +15,7 @@ impl Plugin for RenderingPlugin {
         app.add_plugins(materials::MaterialsPlugin)
             .add_plugins(world::ChunkMeshPlugin)
             .add_plugins(lighting::LightingPlugin)
+            .add_plugins(light_texture::LightTexturePlugin)
             .add_plugins(clouds::CloudPlugin)
             .add_plugins(sky::SkyPlugin);
         app.configure_sets(

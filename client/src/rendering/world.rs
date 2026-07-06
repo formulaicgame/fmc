@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::{
     asset::RenderAssetUsages,
@@ -7,18 +7,16 @@ use bevy::{
     render::render_resource::PrimitiveTopology,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
+use fmc_protocol::messages;
 
 use crate::{
     blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
     game_state::GameState,
     rendering::materials::BlockMaterial,
-    world::{Chunk, Origin, WorldMap},
+    world::{Chunk, NewChunkEvent, Origin, WorldMap},
 };
 
-use super::{
-    RenderSet,
-    lighting::{Light, LightChunk, LightMap},
-};
+use super::RenderSet;
 
 const TRIANGLES: [u32; 6] = [0, 1, 2, 2, 1, 3];
 
@@ -29,11 +27,43 @@ impl Plugin for ChunkMeshPlugin {
         app.add_message::<ChunkMeshEvent>();
         app.add_systems(
             Update,
-            (mesh_system, ApplyDeferred, handle_mesh_tasks)
+            (
+                send_mesh_events,
+                mesh_system,
+                ApplyDeferred,
+                handle_mesh_tasks,
+            )
                 .chain()
                 .in_set(RenderSet::Mesh)
                 .run_if(in_state(GameState::Playing)),
         );
+    }
+}
+
+// TODO: Don't rebuild surrounding chunks unless a block at the edge of the chunk has changed.
+fn send_mesh_events(
+    mut new_chunks: MessageReader<NewChunkEvent>,
+    mut block_updates: MessageReader<messages::BlockUpdates>,
+    mut mesh_events: MessageWriter<ChunkMeshEvent>,
+) {
+    let mut positions = HashSet::new();
+
+    for chunk_position in new_chunks
+        .read()
+        .map(|event| event.position)
+        .chain(block_updates.read().map(|update| update.chunk_position))
+    {
+        positions.insert(chunk_position);
+        positions.insert(chunk_position + IVec3::new(Chunk::SIZE as i32, 0, 0));
+        positions.insert(chunk_position - IVec3::new(Chunk::SIZE as i32, 0, 0));
+        positions.insert(chunk_position + IVec3::new(0, Chunk::SIZE as i32, 0));
+        positions.insert(chunk_position - IVec3::new(0, Chunk::SIZE as i32, 0));
+        positions.insert(chunk_position + IVec3::new(0, 0, Chunk::SIZE as i32));
+        positions.insert(chunk_position - IVec3::new(0, 0, Chunk::SIZE as i32));
+    }
+
+    for chunk_position in positions {
+        mesh_events.write(ChunkMeshEvent { chunk_position });
     }
 }
 
@@ -55,7 +85,6 @@ fn mesh_system(
     mut commands: Commands,
     origin: Res<Origin>,
     world_map: Res<WorldMap>,
-    light_map: Res<LightMap>,
     blocks: Res<Blocks>,
     mut mesh_events: MessageReader<ChunkMeshEvent>,
 ) {
@@ -69,7 +98,6 @@ fn mesh_system(
                 };
 
                 let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
-                let expanded_light_chunk = light_map.get_expanded_chunk(event.chunk_position);
 
                 let task = if (event.chunk_position - origin.0)
                     .abs()
@@ -78,18 +106,10 @@ fn mesh_system(
                 {
                     // Chunks that are close get meshed on main thread to minimize visual latency. A
                     // task can take several frames to execute in scheduling alone.
-                    let result = future::block_on(build_mesh(
-                        blocks.clone(),
-                        expanded_chunk,
-                        expanded_light_chunk,
-                    ));
+                    let result = future::block_on(build_mesh(blocks.clone(), expanded_chunk));
                     thread_pool.spawn(async { result })
                 } else {
-                    thread_pool.spawn(build_mesh(
-                        blocks.clone(),
-                        expanded_chunk,
-                        expanded_light_chunk,
-                    ))
+                    thread_pool.spawn(build_mesh(blocks.clone(), expanded_chunk))
                 };
                 commands.entity(chunk_entity).insert(ChunkMeshTask {
                     position: event.chunk_position,
@@ -119,12 +139,12 @@ fn mesh_system(
     //}
 }
 
-// Meshes are computed async, this handles completed meshes
 fn handle_mesh_tasks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut chunk_meshes: Query<(Entity, &mut ChunkMeshTask)>,
 ) {
+    let mut count = 0;
     for (entity, mut task) in chunk_meshes.iter_mut() {
         if let Some(chunk_meshes) = future::block_on(future::poll_once(&mut task.task)) {
             commands
@@ -134,9 +154,15 @@ fn handle_mesh_tasks(
                 .remove::<ChunkMeshTask>()
                 .with_children(|parent| {
                     for (material_handle, mesh) in chunk_meshes.into_iter() {
+                        count += 1;
                         parent.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material_handle)));
                     }
                 });
+            // Bevy's allocate_and_free_meshes uses too much of the frame time if we commit too many
+            // meshes per frame.
+            if count > 10 {
+                return;
+            }
         }
     }
 }
@@ -172,7 +198,6 @@ impl MeshBuilder {
         &mut self,
         position: [f32; 3],
         quad: &QuadPrimitive,
-        light: Light,
         block_state: BlockState,
         cull_delimiter: Option<(f32, f32)>,
     ) {
@@ -186,6 +211,10 @@ impl MeshBuilder {
             vertices[3][1] = vertices[3][1].max(top_right);
         }
 
+        let mut normals = quad.normals.clone();
+        block_state.rotation().rotate_normal(&mut normals[0]);
+        block_state.rotation().rotate_normal(&mut normals[1]);
+
         for (i, mut vertex) in vertices.into_iter().enumerate() {
             // TODO: Upside down
             block_state.rotation().rotate_vertex(&mut vertex);
@@ -194,19 +223,17 @@ impl MeshBuilder {
             vertex[1] += position[1];
             vertex[2] += position[2];
             self.vertices.push(vertex);
-            self.normals.push(quad.normals[i / 2]);
+            self.normals.push(normals[i / 2]);
             self.uvs.push(quad.uvs[i]);
             // Pack bits, from right to left:
             // 19 bits, texture index
             // 3 bits, uv, 1 bit for if it should be diagonal, 2 for coordinate index
-            // 5 bits, light, 1 bit bool true if sunlight, 4 bits intensity
             self.packed_bits.push(
                 quad.texture_array_id
                     // uv
                     | (i as u32) << 19
                     // diagonal texture marker
-                    | (quad.rotate_texture as u32) << 21
-                    | (light.0 as u32) << 22,
+                    | (quad.rotate_texture as u32) << 21,
             )
         }
         self.triangles
@@ -215,11 +242,7 @@ impl MeshBuilder {
     }
 }
 
-async fn build_mesh(
-    blocks: Blocks,
-    chunk: ExpandedChunk,
-    light_chunk: ExpandedLightChunk,
-) -> Vec<(Handle<BlockMaterial>, Mesh)> {
+async fn build_mesh(blocks: Blocks, chunk: ExpandedChunk) -> Vec<(Handle<BlockMaterial>, Mesh)> {
     let mut mesh_builders = HashMap::new();
 
     for x in 1..Chunk::SIZE + 1 {
@@ -295,23 +318,9 @@ async fn build_mesh(
                         None
                     };
 
-                    let light = if let Some(light_face) = quad.light_face {
-                        match light_face.rotate(block_state.rotation()) {
-                            BlockFace::Right => light_chunk.get_light(x + 1, y, z),
-                            BlockFace::Left => light_chunk.get_light(x - 1, y, z),
-                            BlockFace::Front => light_chunk.get_light(x, y, z + 1),
-                            BlockFace::Back => light_chunk.get_light(x, y, z - 1),
-                            BlockFace::Top => light_chunk.get_light(x, y + 1, z),
-                            BlockFace::Bottom => light_chunk.get_light(x, y - 1, z),
-                        }
-                    } else {
-                        light_chunk.get_light(x, y, z)
-                    };
-
                     builder.add_face(
                         [x as f32 - 1.0, y as f32 - 1.0, z as f32 - 1.0],
                         quad,
-                        light,
                         block_state,
                         cull_delimiter,
                     );
@@ -405,36 +414,6 @@ impl ExpandedChunk {
                 .and_then(|chunk| chunk.get_block_state(x - 1, y - 1, 0));
         } else {
             return self.center.get_block_state(x - 1, y - 1, z - 1);
-        }
-    }
-}
-
-pub struct ExpandedLightChunk {
-    pub center: LightChunk,
-    pub top: [[Light; Chunk::SIZE]; Chunk::SIZE],
-    pub bottom: [[Light; Chunk::SIZE]; Chunk::SIZE],
-    pub right: [[Light; Chunk::SIZE]; Chunk::SIZE],
-    pub left: [[Light; Chunk::SIZE]; Chunk::SIZE],
-    pub front: [[Light; Chunk::SIZE]; Chunk::SIZE],
-    pub back: [[Light; Chunk::SIZE]; Chunk::SIZE],
-}
-
-impl ExpandedLightChunk {
-    fn get_light(&self, x: usize, y: usize, z: usize) -> Light {
-        if x == 0 {
-            return self.left[y - 1][z - 1];
-        } else if x == 17 {
-            return self.right[y - 1][z - 1];
-        } else if y == 0 {
-            return self.bottom[x - 1][z - 1];
-        } else if y == 17 {
-            return self.top[x - 1][z - 1];
-        } else if z == 0 {
-            return self.back[x - 1][y - 1];
-        } else if z == 17 {
-            return self.front[x - 1][y - 1];
-        } else {
-            return self.center[[x - 1, y - 1, z - 1]];
         }
     }
 }

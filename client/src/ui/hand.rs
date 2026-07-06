@@ -256,10 +256,6 @@ fn play_equip_animation(
             *hand_model = Model::Asset(*model_id);
 
             let gltf = gltfs.get(&model.gltf_handle).unwrap();
-            // I've confirmed through bevy_inspector_egui that the scene is spawned correctly. I
-            // think it's a spawn order bug. Spawning the bottom of the hierarchy before the top or
-            // something.
-            info!("The following warning (if any) is a bevy bug");
             *scene_handle = WorldAssetRoot(gltf.scenes[0].clone());
             *animation_graph = AnimationGraphHandle(model.animation_graph.clone().unwrap());
         } else {

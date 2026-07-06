@@ -299,6 +299,7 @@ pub fn load_blocks(
                                 Vec3::from_array(quad.vertices[2])
                                     - Vec3::from_array(quad.vertices[1]),
                             )
+                            .normalize()
                             .to_array(),
                             (Vec3::from_array(quad.vertices[3])
                                 - Vec3::from_array(quad.vertices[1]))
@@ -306,6 +307,7 @@ pub fn load_blocks(
                                 Vec3::from_array(quad.vertices[2])
                                     - Vec3::from_array(quad.vertices[1]),
                             )
+                            .normalize()
                             .to_array(),
                         ];
 
@@ -681,6 +683,15 @@ impl BlockRotation {
         let new_z = 0.5 - sin * (vertex[0] - 0.5) + cos * (vertex[2] - 0.5);
         vertex[0] = new_x;
         vertex[2] = new_z;
+    }
+
+    pub fn rotate_normal(&self, normal: &mut [f32; 3]) {
+        match self {
+            Self::None => (),
+            Self::Once => *normal = [normal[2], normal[1], -normal[0]],
+            Self::Twice => *normal = [-normal[0], normal[1], -normal[2]],
+            Self::Thrice => *normal = [-normal[2], normal[1], normal[0]],
+        }
     }
 
     pub fn as_quat(self) -> Quat {

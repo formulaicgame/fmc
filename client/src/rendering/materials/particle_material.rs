@@ -1,22 +1,18 @@
 use bevy::{
     asset::{Handle, load_internal_asset, uuid_handle},
     image::Image,
-    mesh::MeshTag,
     prelude::*,
     reflect::TypePath,
     render::render_resource::*,
     shader::ShaderRef,
 };
 
-use crate::{rendering::lighting::LightMap, world::Origin};
-
 const PARTICLE_SHADER: Handle<Shader> = uuid_handle!("d0c4577a-75e0-4794-9355-eb4b7a8a2036");
 
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default())
-            .add_systems(Update, update_lighting);
+        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default());
 
         load_internal_asset!(
             app,
@@ -40,6 +36,14 @@ pub struct ParticleMaterial {
     // Samples a smaller section of the texture for each particle.
     pub random_uv: UVec2,
     pub spawn_time: f32,
+
+    /// 3d texture holding the light level of every block.
+    #[texture(3, dimension = "3d")]
+    #[sampler(4)]
+    pub light_texture: Handle<Image>,
+
+    /// The world's chunk origin
+    pub origin: IVec3,
 }
 
 impl Material for ParticleMaterial {
@@ -70,6 +74,7 @@ struct ParticleMaterialUniform {
     lifetime: Vec2,
     random_uv: UVec2,
     spawn_time: f32,
+    origin: IVec3,
 }
 
 impl From<&ParticleMaterial> for ParticleMaterialUniform {
@@ -79,28 +84,7 @@ impl From<&ParticleMaterial> for ParticleMaterialUniform {
             lifetime: material.lifetime,
             random_uv: material.random_uv,
             spawn_time: material.spawn_time,
+            origin: material.origin,
         }
-    }
-}
-
-fn update_lighting(
-    origin: Res<Origin>,
-    light_map: Res<LightMap>,
-    mut particles: Query<
-        (&GlobalTransform, &mut MeshTag),
-        (
-            With<MeshMaterial3d<ParticleMaterial>>,
-            Changed<GlobalTransform>,
-        ),
-    >,
-) {
-    for (transform, mut tag) in particles.iter_mut() {
-        let position = origin.to_global(transform.translation()).floor().as_ivec3();
-        let Some(light) = light_map.get_light(position) else {
-            continue;
-        };
-
-        tag.0 &= !0xFF;
-        tag.0 |= light.0 as u32;
     }
 }

@@ -8,11 +8,14 @@
     }
 }
 
+#import fmc::lighting::get_light
+
 struct ParticleMaterialUniform {
     base_color: vec4<f32>,
     lifetime: vec2<f32>,
     random_uv: vec2<u32>,
     spawn_time: f32,
+    origin: vec3<i32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
@@ -21,6 +24,10 @@ var<uniform> material: ParticleMaterialUniform;
 var texture: texture_2d_array<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var texture_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(3)
+var light_texture: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(4)
+var light_texture_sampler: sampler;
 
 struct VertexInput {
     @builtin(instance_index) instance_index: u32,
@@ -33,6 +40,7 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) mesh_tag: u32,
+    @location(3) world_position: vec4<f32>,
 }
 
 
@@ -45,11 +53,12 @@ fn vertex(
     let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
     let world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(in.position, 1.0));
     out.position = position_world_to_clip(world_position.xyz);
+    out.world_position = world_position;
 
     out.mesh_tag = mesh_functions::get_tag(in.instance_index);
 
     if material.random_uv.y != 0 {
-        var seed = out.mesh_tag >> 8u;
+        var seed = out.mesh_tag;
         let range = material.random_uv.y - material.random_uv.x + 1;
         let pixel_size = material.random_uv.x + rand_range_u(range, &seed);
         let texture_dimensions = textureDimensions(texture);
@@ -69,14 +78,15 @@ fn fragment(
 ) -> @location(0) vec4<f32> {
     var output_color: vec4<f32>;
 
-    let artificial_level = f32(in.mesh_tag & 0xFu);
-    let sunlight_level = f32((in.mesh_tag & 0xF0) >> 4);
+    let light = get_light(
+        light_texture,
+        light_texture_sampler,
+        material.origin,
+        in.world_position.xyz,
+        vec3(0.0),
+    );
 
-    let artificial = (pow(0.8, 15.0 - artificial_level));
-    let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a;
-    let light = max(artificial, sunlight);
-
-    var seed = in.mesh_tag >> 8u;
+    var seed = in.mesh_tag;
     let lifetime = material.lifetime.x + (material.lifetime.y - material.lifetime.x) * rand_f(&seed);
     let frames = f32(textureNumLayers(texture));
     let fps = frames / lifetime;

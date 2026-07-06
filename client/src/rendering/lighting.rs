@@ -1,5 +1,5 @@
 use std::{
-    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
+    collections::{BinaryHeap, HashMap, VecDeque},
     ops::{Index, IndexMut},
 };
 
@@ -9,32 +9,35 @@ use fmc_protocol::messages;
 use crate::{
     blocks::Blocks,
     game_state::GameState,
+    settings::Settings,
     utils,
     world::{Chunk, ChunkFace, NewChunkEvent, Origin, WorldMap},
 };
 
 use super::{
     RenderSet,
-    world::{ChunkMeshEvent, ExpandedLightChunk},
+    light_texture::{LightTexture, LightTextureUploads, LightUpload},
 };
 
 pub struct LightingPlugin;
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(LightMap::default())
-            .add_message::<TestFinishedLightingEvent>()
             .insert_resource(Queues::default())
             .add_systems(
                 Update,
                 (
                     handle_block_updates.before(propagate_light),
                     propagate_light.after(handle_new_chunks),
-                    send_chunk_mesh_events.after(propagate_light),
                     handle_new_chunks,
                     light_chunk_unloading.run_if(resource_changed::<Origin>),
                 )
                     .in_set(RenderSet::Light)
                     .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                reupload_light_texture.run_if(resource_exists_and_changed::<LightTexture>),
             )
             .add_systems(OnEnter(GameState::Launcher), cleanup);
     }
@@ -50,17 +53,6 @@ pub struct LightMap {
 }
 
 impl LightMap {
-    pub fn get_light(&self, block_position: IVec3) -> Option<Light> {
-        let (chunk_pos, block_index) =
-            utils::world_position_to_chunk_position_and_block_index(block_position);
-        if let Some(light_chunk) = self.chunks.get(&chunk_pos) {
-            Some(light_chunk[block_index])
-        } else {
-            None
-        }
-    }
-
-    #[track_caller]
     fn propagate_to_adjacent(
         &mut self,
         chunk_position: IVec3,
@@ -90,7 +82,7 @@ impl LightMap {
 
             let adjacent_light_queue = light_update_queues
                 .entry(adjacent_chunk_position)
-                .or_insert(LightUpdateQueue::new());
+                .or_insert_with(LightUpdateQueue::new);
 
             if chunk_face == ChunkFace::Bottom {
                 adjacent_light_queue.sunlit = true;
@@ -141,70 +133,6 @@ impl LightMap {
             }
         }
     }
-
-    pub fn get_expanded_chunk(&self, position: IVec3) -> ExpandedLightChunk {
-        let center = self.chunks.get(&position).unwrap().clone();
-
-        let top_position = position + IVec3::new(0, Chunk::SIZE as i32, 0);
-        let top_chunk = self.chunks.get(&top_position);
-
-        let bottom_position = position - IVec3::new(0, Chunk::SIZE as i32, 0);
-        let bottom_chunk = self.chunks.get(&bottom_position);
-
-        let right_position = position + IVec3::new(Chunk::SIZE as i32, 0, 0);
-        let right_chunk = self.chunks.get(&right_position);
-
-        let left_position = position - IVec3::new(Chunk::SIZE as i32, 0, 0);
-        let left_chunk = self.chunks.get(&left_position);
-
-        let front_position = position + IVec3::new(0, 0, Chunk::SIZE as i32);
-        let front_chunk = self.chunks.get(&front_position);
-
-        let back_position = position - IVec3::new(0, 0, Chunk::SIZE as i32);
-        let back_chunk = self.chunks.get(&back_position);
-
-        // XXX: The lights default to zero to avoid having to wrap them in Option, if the
-        // corresponding block is None, the light will be irrelevant.
-        let mut top: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-        let mut bottom: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-        let mut right: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-        let mut left: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-        let mut front: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-        let mut back: [[Light; Chunk::SIZE]; Chunk::SIZE] = Default::default();
-
-        for i in 0..Chunk::SIZE {
-            for j in 0..Chunk::SIZE {
-                if let Some(top_chunk) = top_chunk {
-                    top[i][j] = top_chunk[[i, 0, j]];
-                }
-                if let Some(bottom_chunk) = bottom_chunk {
-                    bottom[i][j] = bottom_chunk[[i, Chunk::SIZE - 1, j]];
-                }
-                if let Some(right_chunk) = right_chunk {
-                    right[i][j] = right_chunk[[0, i, j]];
-                }
-                if let Some(left_chunk) = left_chunk {
-                    left[i][j] = left_chunk[[Chunk::SIZE - 1, i, j]];
-                }
-                if let Some(back_chunk) = back_chunk {
-                    back[i][j] = back_chunk[[i, j, Chunk::SIZE - 1]];
-                }
-                if let Some(front_chunk) = front_chunk {
-                    front[i][j] = front_chunk[[i, j, 0]];
-                }
-            }
-        }
-
-        return ExpandedLightChunk {
-            center,
-            top,
-            bottom,
-            right,
-            left,
-            front,
-            back,
-        };
-    }
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +148,7 @@ impl std::fmt::Debug for Light {
 }
 
 impl Light {
+    const NONE: Light = Light::new(0, 0);
     const SUNLIGHT_MASK: u8 = 0b1111_0000;
     const ARTIFICIAL_MASK: u8 = 0b0000_1111;
 
@@ -279,13 +208,6 @@ pub struct LightChunk {
 }
 
 impl LightChunk {
-    fn new_normal() -> Self {
-        Self {
-            is_sunlit: false,
-            light: LightStorage::Normal(vec![Light::new(0, 0); Chunk::SIZE.pow(3)]),
-        }
-    }
-
     fn new_uniform_sunlight() -> Self {
         Self {
             is_sunlit: true,
@@ -296,7 +218,7 @@ impl LightChunk {
     fn new_uniform_shadow() -> Self {
         Self {
             is_sunlit: false,
-            light: LightStorage::Uniform(Light::new(0, 0)),
+            light: LightStorage::Uniform(Light::NONE),
         }
     }
 
@@ -313,6 +235,33 @@ impl LightChunk {
 
     fn is_uniform_shadow(&self) -> bool {
         matches!(self.light, LightStorage::Uniform(light) if light.sunlight() == 0)
+    }
+
+    fn as_upload(&self, chunk_position: IVec3) -> LightUpload {
+        match &self.light {
+            LightStorage::Uniform(light) => {
+                if light.sunlight() == 15 {
+                    LightUpload::uniform_sunlight(chunk_position)
+                } else {
+                    LightUpload::uniform_dark(chunk_position)
+                }
+            }
+            LightStorage::Normal(lights) => {
+                let mut data = [0; Chunk::SIZE.pow(3) * 2];
+                for x in 0..Chunk::SIZE {
+                    for z in 0..Chunk::SIZE {
+                        for y in 0..Chunk::SIZE {
+                            let light = lights[x << 8 | z << 4 | y];
+                            let index = (z * Chunk::SIZE.pow(2) + y * Chunk::SIZE + x) * 2;
+                            // Scaled so 15 maps to 1.0 in the shader
+                            data[index] = light.sunlight() * 17;
+                            data[index + 1] = light.artificial() * 17;
+                        }
+                    }
+                }
+                LightUpload::new(chunk_position, data)
+            }
+        }
     }
 }
 
@@ -418,6 +367,7 @@ fn handle_new_chunks(
     world_map: Res<WorldMap>,
     blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
+    mut light_texture_uploads: ResMut<LightTextureUploads>,
     mut new_chunks: MessageReader<NewChunkEvent>,
 ) {
     for new_chunk in new_chunks.read() {
@@ -431,10 +381,10 @@ fn handle_new_chunks(
         };
 
         // All uniform chunks where sunlight can travel unimpeded are counted as origins of
-        // sunlight as long as they are 4 chunks above y=0.
+        // sunlight as long as they aren't below y=0.
         let light_chunk = if chunk.is_uniform()
             && blocks.get_config(chunk[0]).light_attenuation() == 0
-            && new_chunk.position.y >= 64
+            && new_chunk.position.y >= 0
         {
             // TODO: This is not accurate. The server can know where there is sunlight, and it will
             // probably need it too in some way.
@@ -535,6 +485,12 @@ fn handle_new_chunks(
         };
 
         let is_uniform_sunlight = light_chunk.is_uniform_sunlight();
+        if is_uniform_sunlight {
+            // Chunks that go through the update queues are uploaded when their queue empties,
+            // uniform sunlight chunks skip the queues so they are uploaded here.
+            light_texture_uploads.push(light_chunk.as_upload(new_chunk.position));
+        }
+
         light_map.chunks.insert(new_chunk.position, light_chunk);
 
         // Transfer sunlight to all connected uniform shadow chunks below
@@ -554,6 +510,7 @@ fn handle_new_chunks(
 
                 if light_chunk.is_uniform_shadow() && chunk.is_uniform() {
                     *light_chunk = LightChunk::new_uniform_sunlight();
+                    light_texture_uploads.push(light_chunk.as_upload(chunk_position));
                     light_map.propagate_to_adjacent(
                         chunk_position,
                         &mut light_update_queues,
@@ -605,7 +562,7 @@ fn handle_block_updates(
 
             let queue = light_update_queues
                 .entry(block_updates.chunk_position)
-                .or_insert(LightUpdateQueue::new());
+                .or_insert_with(LightUpdateQueue::new);
 
             let block_config = blocks.get_config(*block_id);
             if block_config.light_level() > 0 {
@@ -617,7 +574,7 @@ fn handle_block_updates(
 
             // In the event that the light is sunlight = 0, artificial = 0, the removal would
             // do nothing, so we substitute a false light level.
-            if *light == Light::new(0, 0) {
+            if *light == Light::NONE {
                 *light = Light::new(1, 1);
             }
 
@@ -661,7 +618,7 @@ fn handle_block_updates(
             //     });
             // }
             //
-            // *light = Light::new(0, 0);
+            // *light = Light::NONE;
         }
 
         light_map
@@ -675,7 +632,7 @@ fn propagate_light(
     blocks: Res<Blocks>,
     mut light_update_queues: ResMut<Queues>,
     mut light_map: ResMut<LightMap>,
-    mut chunk_mesh_events: MessageWriter<TestFinishedLightingEvent>,
+    mut light_texture_uploads: ResMut<LightTextureUploads>,
 ) {
     for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
         let mut update_queue = light_update_queues.remove(&chunk_position).unwrap();
@@ -711,7 +668,7 @@ fn propagate_light(
                 LightStorage::Normal(light_chunk) => &mut light_chunk[removal.index],
             };
 
-            let mut removed_light = Light::new(0, 0);
+            let mut removed_light = Light::NONE;
 
             if light.sunlight() != 0 && light.sunlight() <= removal.light.sunlight() {
                 removed_light.set_sunlight(light.sunlight());
@@ -725,7 +682,7 @@ fn propagate_light(
 
             let attenuation = blocks.get_config(chunk[removal.index]).light_attenuation();
 
-            if removed_light != Light::new(0, 0) {
+            if removed_light != Light::NONE {
                 for block_offset in [
                     IVec3::X,
                     IVec3::NEG_X,
@@ -746,7 +703,7 @@ fn propagate_light(
                         } else if light_map.chunks.contains_key(&adjacent_chunk_position) {
                             light_update_queues
                                 .entry(adjacent_chunk_position)
-                                .or_insert(LightUpdateQueue::new())
+                                .or_insert_with(LightUpdateQueue::new)
                         } else {
                             continue;
                         }
@@ -793,7 +750,7 @@ fn propagate_light(
                         } else if light_map.chunks.contains_key(&adjacent_chunk_position) {
                             light_update_queues
                                 .entry(adjacent_chunk_position)
-                                .or_insert(LightUpdateQueue::new())
+                                .or_insert_with(LightUpdateQueue::new)
                         } else {
                             continue;
                         }
@@ -817,17 +774,15 @@ fn propagate_light(
 
         // The initial sunlight propagation
         if update_queue.propagation.len() > 0 && update_queue.sunlit {
-            // TODO: Maybe do a two-layered height map? First height is the block where it was
-            // first attenuated, and second the block it became light level 0. This way water can
-            // also be sunlit quickly.
-            //
             // un-attenuated sunlight is spread differently. Normal spreading is somewhat
-            // expensive; and there's a lot of sunlight. A "ray" is spread all the way to the ground,
-            // the height one above where it collides is stored. Adjacent values in the height map
-            // can be used to determine if there's a need to spread the sunlight sideways. This way
-            // we save most of the redundant sideways propagations, and spreading to adjacent
-            // chunks can be batched.
+            // expensive; and there's a lot of sunlight. A "ray" is spread all the way down,
+            // passing through attenuating blocks until the light runs out. Two heights are
+            // stored per column: where the ray was first attenuated and where it went dark.
+            // Adjacent values in the height maps can be used to determine if there's a need to
+            // spread the sunlight sideways. This way we save most of the redundant sideways
+            // propagations, and spreading to adjacent chunks can be batched.
             let mut height_map: [usize; Chunk::SIZE.pow(2)] = [Chunk::SIZE; Chunk::SIZE.pow(2)];
+            let mut dark_map: [usize; Chunk::SIZE.pow(2)] = [Chunk::SIZE; Chunk::SIZE.pow(2)];
 
             light_chunk.convert_to_normal();
 
@@ -840,36 +795,44 @@ fn propagate_light(
 
                 // Propagate the sunlight downward
                 let max_y = propagation.index & 0b1111;
-                let mut index = Chunk::SIZE - 1;
+                let mut sunlight = propagation.light.sunlight();
+                let mut attenuated = Chunk::SIZE;
+                let mut index = propagation.index;
                 for y in 0..=max_y {
                     index = propagation.index - y;
 
-                    light_chunk[index].set_sunlight(propagation.light.sunlight());
+                    light_chunk[index].set_sunlight(sunlight);
 
                     let attenuation = blocks.get_config(chunk[index]).light_attenuation();
-                    if attenuation != 0 {
+                    let decrement = if sunlight == 15 {
+                        if attenuation != 0 && attenuated == Chunk::SIZE {
+                            attenuated = index & 0b1111;
+                        }
+                        attenuation
+                    } else {
+                        // All light is always pre-attenuated by 1 when propagated unless it is
+                        // direct sunlight, same as in the propagation loop below.
+                        attenuation.saturating_sub(1).max(1)
+                    };
+
+                    sunlight = sunlight.saturating_sub(decrement);
+                    if sunlight == 0 {
                         break;
                     }
                 }
-                height_map[index >> 4] = index & 0b1111;
+                height_map[index >> 4] = if attenuated == Chunk::SIZE {
+                    0
+                } else {
+                    attenuated
+                };
+                dark_map[index >> 4] = index & 0b1111;
             }
 
             for x in 0..Chunk::SIZE {
                 for z in 0..Chunk::SIZE {
+                    // Everything at and above the attenuation height is full sunlight and can't
+                    // be improved by sideways propagation.
                     let stop = height_map[x << 4 | z];
-                    // Vertical propagation stops as soon as the light level is no longer 15, so
-                    // propagate once down if it stopped early.
-                    if stop > 0 && stop < Chunk::SIZE {
-                        let index = x << 8 | z << 4 | stop;
-                        let attenuation = blocks.get_config(chunk[index]).light_attenuation();
-
-                        if light_chunk[index].decrement(attenuation).can_propagate() {
-                            update_queue.propagation.push_front(LightUpdate {
-                                index: index - 1,
-                                light: light_chunk[index].decrement(attenuation),
-                            });
-                        }
-                    }
 
                     for (shift_x, shift_z) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
                         let shifted_x = (x as i32 + shift_x) as usize;
@@ -881,20 +844,33 @@ fn propagate_light(
                             continue;
                         }
 
-                        let from = height_map[shifted_x << 4 | shifted_z];
+                        let from = dark_map[shifted_x << 4 | shifted_z];
 
                         for y in (from..stop).rev() {
-                            let attenuation = blocks
-                                .get_config(chunk[[shifted_x, y, shifted_z]])
-                                .light_attenuation()
-                                .max(1);
                             let light = light_chunk[[shifted_x, y, shifted_z]];
-                            if !light.decrement(attenuation).can_propagate() {
+
+                            let mut attenuation = blocks
+                                .get_config(chunk[[shifted_x, y, shifted_z]])
+                                .light_attenuation();
+                            if light.sunlight() != 15 {
+                                attenuation = attenuation.saturating_sub(1);
+                            }
+
+                            let propagated_light = light.decrement(attenuation.max(1));
+                            if !propagated_light.can_propagate() {
                                 break;
                             }
+
+                            let existing_light = light_chunk[[x, y, z]];
+                            if existing_light.sunlight() >= propagated_light.sunlight()
+                                && existing_light.artificial() >= propagated_light.artificial()
+                            {
+                                continue;
+                            }
+
                             update_queue.propagation.push_back(LightUpdate {
                                 index: x << 8 | z << 4 | y,
-                                light: light.decrement(attenuation),
+                                light: propagated_light,
                             });
                         }
                     }
@@ -982,7 +958,7 @@ fn propagate_light(
                     } else if light_map.chunks.contains_key(&adjacent_chunk_position) {
                         light_update_queues
                             .entry(adjacent_chunk_position)
-                            .or_insert(LightUpdateQueue::new())
+                            .or_insert_with(LightUpdateQueue::new)
                     } else {
                         continue;
                     }
@@ -1020,25 +996,9 @@ fn propagate_light(
 
     light_update_queues.retain(|chunk_position, queue| {
         if queue.propagation.is_empty() && queue.removal.is_empty() {
-            chunk_mesh_events.write(TestFinishedLightingEvent(*chunk_position));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position + IVec3::new(Chunk::SIZE as i32, 0, 0),
-            ));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position - IVec3::new(Chunk::SIZE as i32, 0, 0),
-            ));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position + IVec3::new(0, Chunk::SIZE as i32, 0),
-            ));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position - IVec3::new(0, Chunk::SIZE as i32, 0),
-            ));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position + IVec3::new(0, 0, Chunk::SIZE as i32),
-            ));
-            chunk_mesh_events.write(TestFinishedLightingEvent(
-                *chunk_position - IVec3::new(0, 0, Chunk::SIZE as i32),
-            ));
+            if let Some(light_chunk) = light_map.chunks.get(chunk_position) {
+                light_texture_uploads.push(light_chunk.as_upload(*chunk_position));
+            }
             false
         } else {
             true
@@ -1046,42 +1006,23 @@ fn propagate_light(
     });
 }
 
-fn light_chunk_unloading(world_map: Res<WorldMap>, mut light_map: ResMut<LightMap>) {
-    for position in light_map.chunks.keys().cloned().collect::<Vec<_>>().iter() {
-        if !world_map.contains_chunk(position) {
-            light_map.chunks.remove(position);
+fn reupload_light_texture(
+    origin: Res<Origin>,
+    settings: Res<Settings>,
+    light_map: Res<LightMap>,
+    mut light_texture_uploads: ResMut<LightTextureUploads>,
+) {
+    let max_distance = settings.render_distance as i32 * Chunk::SIZE as i32;
+    for (chunk_position, light_chunk) in light_map.chunks.iter() {
+        if (*chunk_position - origin.0).abs().max_element() > max_distance {
+            continue;
         }
+        light_texture_uploads.push(light_chunk.as_upload(*chunk_position));
     }
 }
 
-#[derive(Message, Hash, PartialEq, Eq)]
-struct TestFinishedLightingEvent(IVec3);
-
-// TODO: Don't rebuild surrounding chunks unless a block at the edge of the chunk has changed.
-fn send_chunk_mesh_events(
-    light_map: Res<LightMap>,
-    light_update_queues: Res<Queues>,
-    mut lighting_events: MessageReader<TestFinishedLightingEvent>,
-    mut chunk_mesh_events: MessageWriter<ChunkMeshEvent>,
-) {
-    // Multiple events are often sent so duplicates are removed through the hashset
-    for light_event in lighting_events
-        .read()
-        .collect::<HashSet<&TestFinishedLightingEvent>>()
-    {
-        let position = light_event.0;
-        if light_map.chunks.contains_key(&position)
-            && !light_update_queues.contains_key(&position)
-            && !light_update_queues.contains_key(&(position + IVec3::new(0, Chunk::SIZE as i32, 0)))
-            && !light_update_queues.contains_key(&(position - IVec3::new(0, Chunk::SIZE as i32, 0)))
-            && !light_update_queues.contains_key(&(position + IVec3::new(Chunk::SIZE as i32, 0, 0)))
-            && !light_update_queues.contains_key(&(position - IVec3::new(Chunk::SIZE as i32, 0, 0)))
-            && !light_update_queues.contains_key(&(position + IVec3::new(0, 0, Chunk::SIZE as i32)))
-            && !light_update_queues.contains_key(&(position - IVec3::new(0, 0, Chunk::SIZE as i32)))
-        {
-            chunk_mesh_events.write(ChunkMeshEvent {
-                chunk_position: position,
-            });
-        }
-    }
+fn light_chunk_unloading(world_map: Res<WorldMap>, mut light_map: ResMut<LightMap>) {
+    light_map
+        .chunks
+        .retain(|position, _| world_map.contains_chunk(position));
 }

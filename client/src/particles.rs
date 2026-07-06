@@ -8,7 +8,7 @@ use crate::{
     blocks::{BlockRotation, Blocks},
     game_state::GameState,
     player::{Head, Player},
-    rendering::materials::ParticleMaterial,
+    rendering::{light_texture::LIGHT_TEXTURE, materials::ParticleMaterial},
     utils,
     world::{MovesWithOrigin, Origin, WorldMap},
 };
@@ -81,6 +81,8 @@ fn handle_particles_from_server(
             lifetime: Vec2::from_array(effect.lifetime),
             random_uv: effect.random_uv.unwrap_or_default(),
             spawn_time: time.elapsed_secs(),
+            light_texture: LIGHT_TEXTURE,
+            origin: origin.0,
         });
 
         let mesh = asset_server.add(Rectangle::from_length(0.5).mesh().build());
@@ -107,8 +109,7 @@ fn handle_particles_from_server(
             let particle_lifetime =
                 effect.lifetime[0] + (effect.lifetime[1] - effect.lifetime[0]) * rand(seed);
 
-            // 8 bits reserved for light
-            let mesh_tag = MeshTag(seed << 8);
+            let mesh_tag = MeshTag(seed);
 
             commands.spawn((
                 Particle::new(

@@ -14,6 +14,8 @@
 
 #import bevy_render::maths::{powsafe, HALF_PI}
 
+#import fmc::lighting::get_light
+
 #ifdef OIT_ENABLED
     #import bevy_core_pipeline::oit::oit_draw
 #endif // OIT_ENABLED
@@ -32,7 +34,6 @@ struct VertexOutput {
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) texture_index: i32,
-    @location(4) light: u32,
 };
 
 // NOTE: 0,0 is top left corner
@@ -47,7 +48,6 @@ const UVS: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 
-    out.light = (vertex.packed_bits >> 22u) & 0xFFu;
     out.texture_index = i32(vertex.packed_bits & 0x0007FFFFu);
 
     let world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
@@ -126,6 +126,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 struct BlockMaterial {
     base_color: vec4<f32>,
+    origin: vec3<i32>,
     flags: u32,
     alpha_cutoff: f32,
     animation_frames: u32,
@@ -137,6 +138,10 @@ var<uniform> material: BlockMaterial;
 var texture_array: texture_2d_array<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var texture_array_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(3)
+var light_texture: texture_3d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(4)
+var light_texture_sampler: sampler;
 
 @fragment
 fn fragment(
@@ -145,7 +150,6 @@ fn fragment(
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) texture_index: i32,
-    @location(4) light_packed: u32,
 ) -> @location(0) vec4<f32> {
     var output_color: vec4<f32> = material.base_color;
 
@@ -154,12 +158,13 @@ fn fragment(
     let texture_index_animation_offset: i32 = texture_index + i32(globals.time * fps) % i32(material.animation_frames);
     output_color = output_color * textureSample(texture_array, texture_array_sampler, uv, texture_index_animation_offset);
 
-    let artificial_level = f32(light_packed & 0xFu);
-    let sunlight_level = f32((light_packed >> 4u) & 0xFu);
-
-    let artificial = (pow(0.8, 15.0 - artificial_level));
-    let sunlight = pow(0.8, 15.0 - sunlight_level) * lights.ambient_color.a;
-    let light = max(artificial, sunlight);
+    let light = get_light(
+        light_texture,
+        light_texture_sampler,
+        material.origin,
+        world_position.xyz,
+        world_normal,
+    );
 
     output_color = vec4(output_color.rgb * light, output_color.a);
 
@@ -267,44 +272,3 @@ fn alpha_discard(material: BlockMaterial, output_color: vec4<f32>) -> vec4<f32> 
 
     return color;
 }
-
-// for debug
-fn get_light(light: u32) -> f32 {
-    // TODO: This would be nice as a constant array, but dynamic indexing is not supported by naga.
-    if light == 0u {
-        return 0.03;
-    } else if light == 1u {
-        return 0.04;
-    } else if light == 2u {
-        return 0.05;
-    } else if light == 3u {
-        return 0.07;
-    } else if light == 4u {
-        return 0.09;
-    } else if light == 5u {
-        return 0.11;
-    } else if light == 6u {
-        return 0.135;
-    } else if light == 7u {
-        return 0.17;
-    } else if light == 8u {
-        return 0.21;
-    } else if light == 9u {
-        return 0.26;
-    } else if light == 10u {
-        return 0.38;
-    } else if light == 11u {
-        return 0.41;
-    } else if light == 12u {
-        return 0.51;
-    } else if light == 13u {
-        return 0.64;
-    } else if light == 14u {
-        return 0.8;
-    } else if light == 15u {
-        return 1.0;
-    } else {
-        return 0.0;
-    }
-}
-
