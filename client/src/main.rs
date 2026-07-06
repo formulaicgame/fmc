@@ -30,6 +30,9 @@ fn main() {
     App::new()
         //.insert_resource(Msaa { samples: 4 })
         .insert_resource(Time::<Fixed>::from_seconds(1.0 / 144.0))
+        // TODO: When enabled(deafult) this causes chunk meshes to not be rendered at the correct
+        // location. The parent chunk's transform isn't propagated to the mesh.
+        .insert_resource(StaticTransformOptimizations::Disabled)
         .add_plugins(
             DefaultPlugins
                 // TODO: Current default is vsync, add a settings option that lets you opt out.
