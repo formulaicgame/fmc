@@ -301,8 +301,8 @@ impl LightChunk {
     }
 
     fn convert_to_normal(&mut self) {
-        if matches!(self.light, LightStorage::Uniform(_)) {
-            self.light = LightStorage::Normal(vec![Light::new(0, 0); Chunk::SIZE.pow(3)]);
+        if let LightStorage::Uniform(uniform_light) = self.light {
+            self.light = LightStorage::Normal(vec![uniform_light; Chunk::SIZE.pow(3)]);
         }
     }
 
@@ -765,6 +765,7 @@ fn propagate_light(
                     });
                 }
             } else if light.decrement(attenuation.max(1)).can_propagate() {
+                let light = *light;
                 for block_offset in [
                     IVec3::NEG_Y,
                     IVec3::Y,
@@ -779,6 +780,13 @@ fn propagate_light(
                         );
                     let adjacent_chunk_position = chunk_position + chunk_offset;
 
+                    let propagated_light = light
+                        .decrement_sun(u8::max(
+                            (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
+                            attenuation,
+                        ))
+                        .decrement_artificial(attenuation.max(1));
+
                     let update_queue = if adjacent_chunk_position != chunk_position {
                         if let Some(adj) = light_update_queues.get_mut(&adjacent_chunk_position) {
                             adj
@@ -790,17 +798,18 @@ fn propagate_light(
                             continue;
                         }
                     } else {
+                        let adjacent_light = light_chunk[index];
+                        if adjacent_light.sunlight() >= propagated_light.sunlight()
+                            && adjacent_light.artificial() >= propagated_light.artificial()
+                        {
+                            continue;
+                        }
                         &mut update_queue
                     };
 
                     update_queue.propagation.push_front(LightUpdate {
                         index,
-                        light: light
-                            .decrement_sun(u8::max(
-                                (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
-                                attenuation,
-                            ))
-                            .decrement_artificial(attenuation.max(1)),
+                        light: propagated_light,
                     });
                 }
             }
@@ -850,7 +859,7 @@ fn propagate_light(
                     let stop = height_map[x << 4 | z];
                     // Vertical propagation stops as soon as the light level is no longer 15, so
                     // propagate once down if it stopped early.
-                    if stop > 0 {
+                    if stop > 0 && stop < Chunk::SIZE {
                         let index = x << 8 | z << 4 | stop;
                         let attenuation = blocks.get_config(chunk[index]).light_attenuation();
 
@@ -921,6 +930,12 @@ fn propagate_light(
                 changed = true;
             }
 
+            if !changed {
+                continue;
+            }
+
+            let light = *light;
+
             let mut attenuation = blocks
                 .get_config(chunk[propagation.index])
                 .light_attenuation();
@@ -932,7 +947,7 @@ fn propagate_light(
                 attenuation = attenuation.saturating_sub(1);
             }
 
-            if !changed || !light.decrement(attenuation).can_propagate() {
+            if !light.decrement(attenuation).can_propagate() {
                 continue;
             }
 
@@ -948,6 +963,14 @@ fn propagate_light(
                     utils::block_index_to_position(propagation.index) + block_offset,
                 );
                 let adjacent_chunk_position = chunk_position + chunk_offset;
+
+                let propagated_light = light
+                    .decrement_sun(u8::max(
+                        (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
+                        attenuation,
+                    ))
+                    .decrement_artificial(attenuation.max(1));
+
                 let update_queue = if adjacent_chunk_position != chunk_position {
                     if update_queue.sunlit {
                         // Skip, send to adjacent chunks in batch later.
@@ -964,17 +987,18 @@ fn propagate_light(
                         continue;
                     }
                 } else {
+                    let adjacent_light = light_chunk[index];
+                    if adjacent_light.sunlight() >= propagated_light.sunlight()
+                        && adjacent_light.artificial() >= propagated_light.artificial()
+                    {
+                        continue;
+                    }
                     &mut update_queue
                 };
 
                 update_queue.propagation.push_front(LightUpdate {
                     index,
-                    light: light
-                        .decrement_sun(u8::max(
-                            (light.sunlight() != 15 || block_offset != IVec3::NEG_Y) as u8,
-                            attenuation,
-                        ))
-                        .decrement_artificial(attenuation.max(1)),
+                    light: propagated_light,
                 });
             }
         }

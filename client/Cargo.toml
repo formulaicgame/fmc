@@ -50,5 +50,5 @@ strip = true
 #lto = true
 
 # flamegraph
-#[profile.release]
-#debug=true
+# [profile.release]
+# debug=true

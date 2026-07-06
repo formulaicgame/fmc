@@ -36,6 +36,7 @@ fn interface_setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
             },
             ImageNode {
                 image: super::BACKGROUND,
+                image_mode: NodeImageMode::Stretch,
                 ..default()
             },
         ))
