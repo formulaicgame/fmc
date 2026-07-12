@@ -403,7 +403,7 @@ fn initialize_connection(
 
             #[cfg(target_family = "windows")]
             {
-                std::os::windows::fs::symlink_dir(&asset_hash_hex, &link_path);
+                junction::create(&path, &link_path).unwrap();
             }
             #[cfg(target_family = "unix")]
             {
