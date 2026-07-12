@@ -590,7 +590,13 @@ fn send_model_transform(
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut model_map: ResMut<ModelMap>,
     model_query: Query<
-        (Entity, &Transform, &GlobalTransform, &ModelVisibility, Ref<Model>),
+        (
+            Entity,
+            &Transform,
+            &GlobalTransform,
+            &ModelVisibility,
+            Ref<Model>,
+        ),
         Changed<Transform>,
     >,
 ) {
