@@ -1,6 +1,6 @@
 use std::{
     io::{Read, Write},
-    net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
+    net::{Shutdown, TcpStream, ToSocketAddrs},
     path::PathBuf,
 };
 
@@ -136,6 +136,8 @@ impl NetworkClient {
         let mut connection = self.connection.as_ref().unwrap();
         match connection.write_all(&serialized) {
             Ok(_) => (),
+            // This includes WouldBlock since the stream is non-blocking. It's assumed that if we've
+            // managed to fill the os buffer, it's a dead connection since we send almost nothing.
             Err(_e) => {
                 self.disconnect("connection lost");
             }
@@ -147,7 +149,7 @@ impl NetworkClient {
             return;
         }
 
-        println!("{}", message.as_ref());
+        info!("{}", message.as_ref());
         // Disconnect might be called many times as errors cascade, but only the first message will
         // register as that will be the primary cause. The event queue only has capacity for one
         // element.
@@ -180,6 +182,7 @@ impl NetworkClient {
             };
 
             if size == 0 {
+                self.disconnect("The server closed the connection");
                 break;
             } else {
                 self.read_buffer.extend_from_slice(&buf[..size]);
@@ -189,7 +192,7 @@ impl NetworkClient {
 
     // Try to decompress a packet if there aren't any messages already available
     fn try_decompress_packet(&mut self) -> bool {
-        if self.message_buffer.len() - self.message_cursor > MESSAGE_HEADER_SIZE {
+        if self.message_buffer.len() - self.message_cursor >= MESSAGE_HEADER_SIZE {
             let message_size = u32::from_le_bytes(
                 self.message_buffer
                     [self.message_cursor + 1..self.message_cursor + MESSAGE_HEADER_SIZE]
@@ -204,7 +207,7 @@ impl NetworkClient {
             }
         }
 
-        if self.read_buffer.len() - self.read_cursor <= COMPRESSION_HEADER_SIZE {
+        if self.read_buffer.len() - self.read_cursor < COMPRESSION_HEADER_SIZE {
             return false;
         }
 
@@ -223,10 +226,21 @@ impl NetworkClient {
 
         let packet = &self.read_buffer[self.read_cursor..self.read_cursor + packet_length];
 
-        if let Err(e) = zstd::stream::copy_decode(packet, &mut self.message_buffer) {
-            error!("{}", e);
-            self.disconnect("Corrupt network packet, failed to decompress");
+        let Ok(Some(decompressed_size)) = zstd::zstd_safe::get_frame_content_size(packet) else {
+            self.disconnect("Corrupt network packet, missing decompressed size");
             return false;
+        };
+        let decompressed_size = decompressed_size as usize;
+
+        let old_len = self.message_buffer.len();
+        self.message_buffer.resize(old_len + decompressed_size, 0);
+        match zstd::bulk::decompress_to_buffer(packet, &mut self.message_buffer[old_len..]) {
+            Ok(size) if size == decompressed_size => (),
+            Ok(_) | Err(_) => {
+                self.message_buffer.truncate(old_len);
+                self.disconnect("Corrupt network packet, failed to decompress");
+                return false;
+            }
         }
 
         self.read_cursor += packet_length;
@@ -236,7 +250,7 @@ impl NetworkClient {
 
     // Extract a message from the message buffer
     fn extract_message<'a>(&'a mut self) -> Option<(MessageType, &'a [u8])> {
-        if self.message_buffer.len() - self.message_cursor <= MESSAGE_HEADER_SIZE {
+        if self.message_buffer.len() - self.message_cursor < MESSAGE_HEADER_SIZE {
             // Move the partial message to the beginning of the buffer to make room for more bytes.
             self.message_buffer.copy_within(self.message_cursor.., 0);
             self.message_buffer
@@ -320,7 +334,7 @@ fn connect(
             }
 
             net.connection_task = Some(AsyncComputeTaskPool::get().spawn(async move {
-                let socket_addrs = address.to_socket_addrs()?.cycle();
+                let socket_addrs = address.to_socket_addrs()?;
 
                 let start = std::time::Instant::now();
                 let timeout = std::time::Duration::from_secs(5);
@@ -476,6 +490,11 @@ fn disconnect(
         }
 
         net.connection_task.take();
+
+        net.read_buffer.clear();
+        net.read_cursor = 0;
+        net.message_buffer.clear();
+        net.message_cursor = 0;
 
         game_state.set(GameState::Launcher);
     }
