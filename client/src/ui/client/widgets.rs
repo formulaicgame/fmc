@@ -1386,7 +1386,7 @@ fn set_slider_value(
 
     for (slider_entity, interaction, _) in sliders.iter() {
         if interaction.is_changed() && *interaction == Interaction::Pressed {
-            selected.insert(slider_entity);
+            *selected = Some(slider_entity);
         }
     }
 
@@ -1402,14 +1402,11 @@ fn set_slider_value(
         // Not part of control flow, docs say the cursor position can be unknown, no reason given.
         return;
     };
-
     let thumb_width = thumb_computed_node.size.x / rail_computed_node.size.x;
 
     let min = thumb_width / 2.0;
-    let max = 1.0 - min;
-    let new_value = ((rail_cursor_position.x - min) / (1.0 - thumb_width))
-        .min(1.0)
-        .max(0.0);
+    let new_value = ((rail_cursor_position.x + 0.5 - min) / (1.0 - thumb_width)).clamp(0.0, 1.0);
+
     // Change detection guard
     if slider.value != new_value {
         slider.value = new_value;
