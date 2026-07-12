@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{
     camera::primitives::Aabb,
-    ecs::system::SystemState,
+    ecs::{message::MessageCursor, system::SystemState},
     input::{ButtonState, keyboard::KeyboardInput},
     math::{Mat3A, Vec3A},
     prelude::*,
@@ -109,16 +109,16 @@ pub(super) fn load_plugins(host: ResMut<WasmHost>, net: Res<NetworkClient>) {
 
 // TODO: Even though dependencies are -O3 optimized in debug running the player physics still
 // jump from ~300 micros to ~30 when going from debug to release. What causes this?
-fn run_plugins(world: &mut World) {
+fn run_plugins(world: &mut World, mut data_cursor: Local<MessageCursor<messages::PluginData>>) {
     let mut host = world.remove_resource::<WasmHost>().unwrap();
-    let mut data_events = world
+    let data_events = world
         .remove_resource::<Messages<messages::PluginData>>()
         .unwrap();
 
     let state = host.store.data_mut();
     state._world = Some(world as *mut World);
 
-    for plugin_data in data_events.update_drain() {
+    for plugin_data in data_cursor.read(&data_events) {
         let Some(plugin) = host.enabled.get(&plugin_data.plugin) else {
             error!(
                 "Received data for plugin with name '{}', but there is no plugin by that name",

@@ -54,8 +54,7 @@ impl Plugin for ClientPlugin {
             .add_message::<messages::Sound>()
             .add_message::<messages::ParticleEffect>()
             .add_message::<messages::Plugin>()
-            // Updated manually
-            .init_resource::<Messages<messages::PluginData>>()
+            .add_message::<messages::PluginData>()
             .add_systems(OnEnter(GameState::Playing), send_client_ready)
             .add_systems(
                 PreUpdate,
@@ -122,12 +121,6 @@ impl NetworkClient {
             read_cursor: 0,
             message_buffer: Vec::new(),
             message_cursor: 0,
-        }
-    }
-
-    pub fn connect(&mut self, addr: SocketAddr) {
-        if self.connection.is_some() || self.connection_task.is_some() {
-            panic!("Already connected");
         }
     }
 
@@ -521,7 +514,6 @@ impl Identity {
     }
 }
 
-// TODO: Write a macro for all this
 #[derive(SystemParam)]
 struct MessageWriters<'w> {
     asset_response: MessageWriter<'w, messages::AssetResponse>,
@@ -553,7 +545,7 @@ struct MessageWriters<'w> {
     plugin_data: MessageWriter<'w, messages::PluginData>,
 }
 
-fn read_messages(net: ResMut<NetworkClient>, mut event_writers: MessageWriters) {
+fn read_messages(net: ResMut<NetworkClient>, mut message_writers: MessageWriters) {
     if !net.is_connected() {
         return;
     }
@@ -564,171 +556,51 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: MessageWriters) 
     net.read_packets();
 
     while let Some((message_type, message_data)) = net.next_message() {
+        // Takes the name of a field in MessageWriters and sets up the handling of its message.
+        macro_rules! receive {
+            ($writer:ident) => {
+                if let Ok(message) = bincode::deserialize(message_data) {
+                    message_writers.$writer.write(message);
+                } else {
+                    net.disconnect(format!(
+                        "Corrupt network message, received message type {:?} \
+                        but it did not correspond to the data.",
+                        message_type
+                    ));
+                    break;
+                }
+            };
+        }
+
+        use MessageType::*;
         match message_type {
-            MessageType::AssetResponse => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.asset_response.write(message);
-                    continue;
-                }
-            }
-            MessageType::Disconnect => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.disconnect.write(message);
-                    continue;
-                }
-            }
-            MessageType::ServerConfig => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.server_config.write(message);
-                    continue;
-                }
-            }
-            MessageType::Time => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.time.write(message);
-                    continue;
-                }
-            }
-            MessageType::Chunk => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.chunk.write(message);
-                    continue;
-                }
-            }
-            MessageType::BlockUpdates => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.block_updates.write(message);
-                    continue;
-                }
-            }
-            MessageType::NewModel => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.new_model.write(message);
-                    continue;
-                }
-            }
-            MessageType::DeleteModel => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.delete_model.write(message);
-                    continue;
-                }
-            }
-            MessageType::ModelPlayAnimation => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_play_animation.write(message);
-                    continue;
-                }
-            }
-            MessageType::ModelUpdateAsset => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_update_asset.write(message);
-                    continue;
-                }
-            }
-            MessageType::ModelUpdateTransform => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_update_transform.write(message);
-                    continue;
-                }
-            }
-            MessageType::SpawnCustomModel => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.spawn_custom_model.write(message);
-                    continue;
-                }
-            }
-            MessageType::ModelColor => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.model_color.write(message);
-                    continue;
-                }
-            }
-            MessageType::PlayerAabb => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_aabb.write(message);
-                    continue;
-                }
-            }
-            MessageType::PlayerCameraPosition => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_camera_position.write(message);
-                    continue;
-                }
-            }
-            MessageType::PlayerCameraRotation => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_camera_rotation.write(message);
-                    continue;
-                }
-            }
-            MessageType::PlayerPosition => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.player_position.write(message);
-                    continue;
-                }
-            }
-            MessageType::InterfaceItemBoxUpdate => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_item_box_update.write(message);
-                    continue;
-                }
-            }
-            MessageType::InterfaceNodeVisibilityUpdate => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers
-                        .interface_node_visibility_update
-                        .write(message);
-                    continue;
-                }
-            }
-            MessageType::InterfaceTextUpdate => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_text_update.write(message);
-                    continue;
-                }
-            }
-            MessageType::InterfaceVisibilityUpdate => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.interface_visibility_update.write(message);
-                    continue;
-                }
-            }
-            MessageType::GuiSetting => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.gui_setting.write(message);
-                    continue;
-                }
-            }
-            MessageType::EnableClientAudio => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.enable_client_audio.write(message);
-                    continue;
-                }
-            }
-            MessageType::Sound => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.sound.write(message);
-                    continue;
-                }
-            }
-            MessageType::ParticleEffect => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.particle_effect.write(message);
-                    continue;
-                }
-            }
-            MessageType::Plugin => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.plugin.write(message);
-                    continue;
-                }
-            }
-            MessageType::PluginData => {
-                if let Ok(message) = bincode::deserialize(message_data) {
-                    event_writers.plugin_data.write(message);
-                    continue;
-                }
-            }
+            AssetResponse => receive!(asset_response),
+            Disconnect => receive!(disconnect),
+            ServerConfig => receive!(server_config),
+            Time => receive!(time),
+            Chunk => receive!(chunk),
+            BlockUpdates => receive!(block_updates),
+            NewModel => receive!(new_model),
+            DeleteModel => receive!(delete_model),
+            ModelPlayAnimation => receive!(model_play_animation),
+            ModelUpdateAsset => receive!(model_update_asset),
+            ModelUpdateTransform => receive!(model_update_transform),
+            SpawnCustomModel => receive!(spawn_custom_model),
+            ModelColor => receive!(model_color),
+            PlayerAabb => receive!(player_aabb),
+            PlayerCameraPosition => receive!(player_camera_position),
+            PlayerCameraRotation => receive!(player_camera_rotation),
+            PlayerPosition => receive!(player_position),
+            InterfaceItemBoxUpdate => receive!(interface_item_box_update),
+            InterfaceNodeVisibilityUpdate => receive!(interface_node_visibility_update),
+            InterfaceTextUpdate => receive!(interface_text_update),
+            InterfaceVisibilityUpdate => receive!(interface_visibility_update),
+            GuiSetting => receive!(gui_setting),
+            EnableClientAudio => receive!(enable_client_audio),
+            Sound => receive!(sound),
+            ParticleEffect => receive!(particle_effect),
+            Plugin => receive!(plugin),
+            PluginData => receive!(plugin_data),
             _ => {
                 net.disconnect(format!(
                     "Corrupt network message, received invalid message type: {:?}",
@@ -737,8 +609,5 @@ fn read_messages(net: ResMut<NetworkClient>, mut event_writers: MessageWriters) 
                 break;
             }
         }
-
-        net.disconnect(format!("Corrupt network message, received message type {:?} but it did not correspond to the data.", message_type));
-        break;
     }
 }
