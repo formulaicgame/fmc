@@ -160,7 +160,10 @@ fn manage_subscriptions(
     world_map: Res<WorldMap>,
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    player_query: Query<(Entity, &MovementTracker, &RenderDistance), Changed<ChunkPosition>>,
+    player_query: Query<
+        (Entity, &MovementTracker, &RenderDistance),
+        Or<(Changed<ChunkPosition>, Changed<RenderDistance>)>,
+    >,
     mut subscription_events: MessageReader<ChunkSubscriptionEvent>,
     mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
 ) {
@@ -278,7 +281,7 @@ fn traversal_subscriber(
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut player_query: Query<
         (Entity, &mut MovementTracker, &RenderDistance),
-        Changed<MovementTracker>,
+        Or<(Changed<MovementTracker>, Changed<RenderDistance>)>,
     >,
     mut subscription_events: MessageWriter<ChunkSubscriptionEvent>,
     mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
