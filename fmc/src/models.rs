@@ -589,10 +589,13 @@ fn send_model_transform(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut model_map: ResMut<ModelMap>,
-    model_query: Query<(Entity, &Transform, &ModelVisibility, Ref<Model>), Changed<Transform>>,
+    model_query: Query<
+        (Entity, &Transform, &GlobalTransform, &ModelVisibility, Ref<Model>),
+        Changed<Transform>,
+    >,
 ) {
-    for (entity, transform, visibility, change_tracker) in model_query.iter() {
-        let chunk_position = ChunkPosition::from(transform.translation);
+    for (entity, transform, global_transform, visibility, change_tracker) in model_query.iter() {
+        let chunk_position = ChunkPosition::from(global_transform.translation());
 
         model_map.insert_or_move(chunk_position, entity);
 
