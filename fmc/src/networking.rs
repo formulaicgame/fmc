@@ -50,14 +50,12 @@ impl Plugin for ServerPlugin {
             .add_systems(First, read_messages)
             .add_systems(
                 PreUpdate,
-                (
-                    // XXX: Remember that new connnections should always be added after messages are
-                    // read so that the server has one tick to register components to the player it
-                    // needs to handle messages.
-                    handle_new_connections,
-                    log_connections,
-                ),
+                // XXX: Remember that new connnections should always be added after messages are
+                // read so that the server has one tick to register components to the player it
+                // needs to handle messages.
+                handle_new_connections,
             )
+            .add_systems(Update, log_connections)
             .add_systems(
                 Last,
                 (
@@ -185,22 +183,6 @@ impl MessageBuffer {
         unsafe { (*(self.0.get())).capacity() }
     }
 
-    fn shrink(&self, amount: usize) {
-        unsafe {
-            let buf = &mut *(self.0.get());
-            buf.resize(amount, 0);
-            buf.shrink_to_fit();
-        }
-    }
-
-    fn grow(&self, amount: usize) {
-        unsafe {
-            let buf = &mut *(self.0.get());
-            let new_cap = buf.capacity() * 2;
-            buf.resize(new_cap.max(amount), 0);
-        }
-    }
-
     // TODO: This could be implemented with SliceIndex I think, but it requires an unstable flag
     // and I somewhat prefer having all the methods, makes you aware you are doing something
     // dangerous.
@@ -241,7 +223,9 @@ struct Connection {
     read_cursor: usize,
     read_bytes: usize,
     write_cursor: AtomicUsize,
-    is_growing: AtomicBool,
+    // Surge protection, holds messages that don't fit in the message buffer. Emptied each time
+    // messages are sent so the allocation isn't permanent.
+    overflow: Mutex<Vec<u8>>,
     // (length, data) of a partially received message. When the message buffer is used for writing,
     // partially read messages are stored here, and then moved back into the buffer when it's time
     // to read again.
@@ -257,7 +241,7 @@ impl Connection {
             read_cursor: 0,
             read_bytes: 0,
             write_cursor: AtomicUsize::new(0),
-            is_growing: AtomicBool::new(false),
+            overflow: Mutex::new(Vec::new()),
             partially_read_message: (0, [0; 1024]),
         }
     }
@@ -279,40 +263,39 @@ impl Connection {
 
     fn write_message<T: ClientBound + Serialize>(&self, message: &T) -> Result<(), ()> {
         let size = bincode::serialized_size(message).unwrap() as usize;
-        let mut cursor = self
-            .write_cursor
-            .fetch_add(size + HEADER_SIZE, Ordering::Relaxed);
+        let total_size = size + HEADER_SIZE;
 
-        // TODO: It's very likely that reading the messsage buffer len while it is being grown is
-        // bad.
-        //
-        // This is for surge protection, it should happen rarely. The MESSAGE_BUFFER_SIZE should be
-        // set to a value that covers 99% of operation. Happens for example when a player gets
-        // spawned at a spot where all the chunks are already loaded, and get sent at the same
-        // time.
-        // The allocated memory is freed again when reading messages the next tick.
-        let final_len = cursor + size + HEADER_SIZE;
-        if final_len > self.message_buffer.capacity() {
-            if self.message_buffer.capacity() >= MESSAGE_BUFFER_MAX_SIZE {
-                return Err(());
+        let mut cursor = self.write_cursor.load(Ordering::Relaxed);
+        loop {
+            if cursor + total_size > self.message_buffer.capacity() {
+                // Surge protection, it should happen rarely. The MESSAGE_BUFFER_SIZE should be
+                // set to a value that covers 99% of operation. Happens for example when a player
+                // gets spawned at a spot where all the chunks are already loaded, and get sent at
+                // the same time.
+                // The allocated memory is freed again when the messages are sent.
+                let mut overflow = self.overflow.lock().unwrap();
+
+                if self.message_buffer.capacity() + overflow.len() + total_size
+                    > MESSAGE_BUFFER_MAX_SIZE
+                {
+                    return Err(());
+                }
+
+                overflow.push(T::TYPE as u8);
+                overflow.extend_from_slice(&(size as u32).to_le_bytes());
+                bincode::serialize_into(&mut *overflow, message).unwrap();
+
+                return Ok(());
             }
 
-            // Another write function may already be in the process of growing the buffer.
-            let currently_growing = self
-                .is_growing
-                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                .is_err();
-            if currently_growing {
-                // If there is, loop until it finishes growing
-                while cursor + size + HEADER_SIZE > self.message_buffer.capacity() {}
-            } else {
-                // The first capacity check is done before the atomic exchange. In this timespan
-                // another write function might finish growing it, so we check again so it doesn't
-                // grow it again.
-                if final_len > self.message_buffer.capacity() {
-                    self.message_buffer.grow(size + HEADER_SIZE);
-                }
-                self.is_growing.store(false, Ordering::Relaxed);
+            match self.write_cursor.compare_exchange_weak(
+                cursor,
+                cursor + total_size,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(current) => cursor = current,
             }
         }
 
@@ -361,7 +344,7 @@ impl Connection {
             // return an invalid message that will fail to deserialize so that the client is
             // disconnected.
             return Some((message_type, &[]));
-        } else if self.read_bytes - self.read_cursor + HEADER_SIZE < message_length {
+        } else if message_length > self.read_bytes - self.read_cursor - HEADER_SIZE {
             self.save_partial_message();
             return None;
         }
@@ -459,7 +442,7 @@ impl ServerConfig<'_> {
         serialized.push(MessageType::ServerConfig as u8);
         serialized.extend(serialized_size.to_le_bytes());
         serialized.extend(bincode::serialize(&server_config).unwrap());
-        let compressed = zstd::encode_all(&serialized[..], 5).unwrap();
+        let compressed = zstd::bulk::compress(&serialized, 5).unwrap();
         let mut message = Vec::from((compressed.len() as u32).to_le_bytes());
         message.extend(compressed);
 
@@ -495,8 +478,10 @@ fn handle_new_connections(
         }
 
         if let Some(progress) = uninitialized.asset_download_progress {
-            let Ok(sent) = connection.socket.write(&assets.asset_message[progress..]) else {
-                return false;
+            let sent = match connection.socket.write(&assets.asset_message[progress..]) {
+                Ok(sent) => sent,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => 0,
+                Err(_) => return false,
             };
 
             let new_progress = progress + sent;
@@ -635,149 +620,40 @@ fn read_messages(server: ResMut<Server>, mut event_writers: MessageWriters) {
     server.compression_buffer.shrink_to_fit();
 
     for (entity, connection) in server.connections.iter_mut() {
-        connection.message_buffer.shrink(MESSAGE_BUFFER_SIZE);
         if connection.read_from_socket().is_err() {
             server.to_disconnect.insert(*entity);
             continue;
         };
 
         while let Some((message_type, message_data)) = connection.next_message() {
+            macro_rules! receive {
+                ($writer:ident) => {
+                    if let Ok(message) = bincode::deserialize(message_data) {
+                        event_writers.$writer.write(NetworkMessage {
+                            player_entity: *entity,
+                            message,
+                        });
+                    } else {
+                        server.to_disconnect.insert(*entity);
+                        error!(
+                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
+                            message_type, connection.address
+                        );
+                        break;
+                    }
+                };
+            }
+
             match message_type {
-                MessageType::LeftClick => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.left_click.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::RightClick => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.right_click.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::RenderDistance => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.render_distance.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::PlayerCameraRotation => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.player_camera_rotation.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::PlayerPosition => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.player_position.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::InterfaceEquipItem => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_equip_item.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::InterfaceInteraction => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_interaction.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::InterfaceTextInput => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.interface_text_input.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
-                MessageType::GuiSetting => {
-                    if let Ok(message) = bincode::deserialize(message_data) {
-                        event_writers.gui_setting.write(NetworkMessage {
-                            player_entity: *entity,
-                            message,
-                        });
-                    } else {
-                        server.to_disconnect.insert(*entity);
-                        error!(
-                            "Received {:?} from {}, but the message could not be deserialized, disconnecting client.",
-                            message_type, connection.address
-                        );
-                        break;
-                    }
-                }
+                MessageType::LeftClick => receive!(left_click),
+                MessageType::RightClick => receive!(right_click),
+                MessageType::RenderDistance => receive!(render_distance),
+                MessageType::PlayerCameraRotation => receive!(player_camera_rotation),
+                MessageType::PlayerPosition => receive!(player_position),
+                MessageType::InterfaceEquipItem => receive!(interface_equip_item),
+                MessageType::InterfaceInteraction => receive!(interface_interaction),
+                MessageType::InterfaceTextInput => receive!(interface_text_input),
+                MessageType::GuiSetting => receive!(gui_setting),
                 _ => {
                     server.to_disconnect.insert(*entity);
                     error!(
@@ -797,36 +673,37 @@ fn send_messages(server: ResMut<Server>) {
     for (entity, connection) in server.connections.iter_mut() {
         // Encode what has been written to the message buffer
         let len = connection.write_cursor.swap(0, Ordering::Relaxed);
+        let overflow = std::mem::take(&mut *connection.overflow.lock().unwrap());
 
-        if len == 0 {
+        if len == 0 && overflow.is_empty() {
             continue;
         }
 
-        // The message buffer might have grown so the compression buffer must also
-        server
-            .compression_buffer
-            .resize(connection.message_buffer.capacity(), 0);
+        let total_len = len + overflow.len();
+        server.compression_buffer.resize(
+            COMPRESSION_HEADER + zstd::zstd_safe::compress_bound(total_len),
+            0,
+        );
 
         // Reserve first bytes to store the compression header
         let mut encoder =
             zstd::Encoder::new(&mut server.compression_buffer[COMPRESSION_HEADER..], 5).unwrap();
 
-        encoder.set_pledged_src_size(Some(len as u64)).unwrap();
-        std::io::copy(
-            &mut connection.message_buffer.range_to(..len).as_ref(),
-            &mut encoder,
-        )
-        .unwrap();
+        encoder
+            .set_pledged_src_size(Some(total_len as u64))
+            .unwrap();
+        encoder
+            .write_all(connection.message_buffer.range_to(..len))
+            .unwrap();
+        encoder.write_all(&overflow).unwrap();
 
         // Use how much was left of the compression_buffer to determine length of what was written.
         let remaining = encoder.finish().unwrap().len();
-        let encoded_len = (server.compression_buffer.len() - remaining - 4) as u32;
+        let encoded_len = (server.compression_buffer.len() - remaining - COMPRESSION_HEADER) as u32;
         server.compression_buffer[..COMPRESSION_HEADER].copy_from_slice(&encoded_len.to_le_bytes());
 
-        match connection
-            .socket
-            .write(&server.compression_buffer[..4 + encoded_len as usize])
-        {
+        let frame = &server.compression_buffer[..COMPRESSION_HEADER + encoded_len as usize];
+        match connection.socket.write_all(frame) {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // The kernel buffer is full, probably because of a slow connection. The buffer can
                 // hold a couple of megabytes so it will optimistically never occur, but if it does the
@@ -843,7 +720,7 @@ fn send_messages(server: ResMut<Server>) {
                     error!("Encountered error while sending messages to player: {}", e);
                 }
             }
-            Ok(_) => (),
+            Ok(()) => (),
         }
     }
     server.safe.store(false, Ordering::Relaxed);

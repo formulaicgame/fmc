@@ -58,10 +58,9 @@ fn compress_assets(mut commands: Commands) {
     // TODO: This needs to be max compressed, as it will probably reach hundreds of megabytes.
     // Compressing it would take several seconds each startup. Need to store uncrompressed archive
     // hash so that we know whether we need to rebuild, avoid compressing.
-    let mut compressed = vec![0; 4];
-    zstd::stream::copy_encode(message.as_slice(), &mut compressed, 5).unwrap();
-    let size = compressed.len() as u32 - 4;
-    compressed[0..4].copy_from_slice(&size.to_le_bytes());
+    let compressed_message = zstd::bulk::compress(&message, 5).unwrap();
+    let mut compressed = Vec::from((compressed_message.len() as u32).to_le_bytes());
+    compressed.extend(compressed_message);
 
     // if let Ok(saved_assets) = std::fs::read("assets/assets.tar.zstd") {
     //     if hash(&saved_assets) != hash(&possibly_changed_assets) {
