@@ -269,27 +269,40 @@ struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 // contention for the WorldMap. The locations that borrow it mutably will need all the time they
 // can get, and this system will hog it.
 //
-// TODO: Optimization idea: Instead of using events, use an mpsc. Removes the only need for
-// mutability, and so the players can be handled in parallel. Con: Lots of allocation? Keep queues
-// for each player. Maybe the search can be done by recursion? How is stack memory even handled
-// when it is done in parallel.
+// TODO: Optimization idea: The players can be handled in parallel with par_iter.
+// Use Local<Parallel<(already_visited, queue, sub_events)>>. After the par_iter, drain each
+// thread's events into the MessageWriter with write_batch. Destructure the scratch struct to get
+// independent borrows of the buffers.
 //
 // Search for chunks by fanning out from the player's chunk position to find chunks that are
 // visible to it.
 fn traversal_subscriber(
     world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut player_query: Query<
-        (Entity, &mut MovementTracker, &RenderDistance),
+    player_query: Query<
+        (Entity, &MovementTracker, &RenderDistance),
         Or<(Changed<MovementTracker>, Changed<RenderDistance>)>,
     >,
     mut subscription_events: MessageWriter<ChunkSubscriptionEvent>,
     mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
-    mut already_visited: Local<HashSet<ChunkPosition>>,
+    mut already_visited: Local<Vec<bool>>,
 ) {
-    for (player_entity, mut chunk_tracker, render_distance) in player_query.iter_mut() {
+    for (player_entity, chunk_tracker, render_distance) in player_query.iter() {
+        let radius = render_distance.chunks as i32;
+        let side_len = radius * 2 + 1;
+
         already_visited.clear();
-        already_visited.insert(chunk_tracker.current_position);
+        already_visited.resize(side_len.pow(3) as usize, false);
+
+        let min = *chunk_tracker.current_position - IVec3::splat(radius * Chunk::SIZE as i32);
+        let max = *chunk_tracker.current_position + IVec3::splat(radius * Chunk::SIZE as i32);
+
+        let visited_index = |chunk_position: ChunkPosition| -> usize {
+            let relative = (*chunk_position - min) / Chunk::SIZE as i32;
+            (relative.x * side_len.pow(2) + relative.y * side_len + relative.z) as usize
+        };
+
+        already_visited[visited_index(chunk_tracker.current_position)] = true;
 
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
@@ -311,11 +324,9 @@ fn traversal_subscriber(
             ChunkFace::Front,
             ChunkFace::Back,
         ] {
-            queue.push((
-                chunk_face.shift_position(chunk_tracker.current_position),
-                chunk_face.opposite(),
-                chunk_face.opposite(),
-            ));
+            let seed_position = chunk_face.shift_position(chunk_tracker.current_position);
+            already_visited[visited_index(seed_position)] = true;
+            queue.push((seed_position, chunk_face.opposite(), chunk_face.opposite()));
         }
 
         // chunk_position = chunk to check
@@ -349,27 +360,18 @@ fn traversal_subscriber(
 
             for to_face in surrounding {
                 let adjacent_position = to_face.shift_position(chunk_position);
-                let distance_to_adjacent =
-                    *(adjacent_position - chunk_tracker.current_position) / Chunk::SIZE as i32;
-                if distance_to_adjacent
-                    .abs()
-                    .cmpgt(IVec3::splat(render_distance.chunks as i32))
-                    .any()
-                {
+                if adjacent_position.cmplt(min).any() || adjacent_position.cmpgt(max).any() {
                     continue;
                 }
 
                 if chunk.is_neighbour_visible(from_face, to_face) {
-                    if !already_visited.insert(adjacent_position) {
-                        // insert returns false if the position is in the set
+                    let index = visited_index(adjacent_position);
+                    if already_visited[index] {
                         continue;
                     }
+                    already_visited[index] = true;
 
-                    queue.push((
-                        to_face.shift_position(chunk_position),
-                        to_face.opposite(),
-                        main_face,
-                    ));
+                    queue.push((adjacent_position, to_face.opposite(), main_face));
                 }
             }
         }
