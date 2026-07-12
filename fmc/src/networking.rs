@@ -76,7 +76,7 @@ impl Plugin for ServerPlugin {
 }
 
 fn server_setup(mut commands: Commands) {
-    let socket_address: SocketAddr = "127.0.0.1:42069".parse().unwrap();
+    let socket_address: SocketAddr = "0.0.0.0:42069".parse().unwrap();
 
     let listener = std::net::TcpListener::bind(socket_address).unwrap();
     listener.set_nonblocking(true).unwrap();
