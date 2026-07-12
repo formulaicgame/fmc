@@ -204,6 +204,9 @@ fn load_blocks_to_resource(
                 replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
                 drop,
+                transparent: material
+                    .as_ref()
+                    .is_none_or(|material| material.transparency != "opaque"),
                 material,
                 placement: block_config_json.placement,
                 collider,
@@ -552,6 +555,8 @@ pub struct BlockConfig {
     drop: Option<BlockDrop>,
     // The rendering material for the block, if it uses one.
     material: Option<BlockMaterial>,
+    // Whether the block can be seen through, derived from the material.
+    transparent: bool,
     /// Collider used for physics and hit detection.
     pub collider: Collider,
     /// Rules for how the block can be placed by the player.
@@ -567,15 +572,7 @@ pub struct BlockConfig {
 
 impl BlockConfig {
     pub fn is_transparent(&self) -> bool {
-        if let Some(material) = &self.material {
-            if material.transparency == "opaque" {
-                false
-            } else {
-                true
-            }
-        } else {
-            true
-        }
+        return self.transparent;
     }
 
     pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<ItemId> {

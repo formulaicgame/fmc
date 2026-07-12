@@ -37,7 +37,7 @@ pub struct Chunk {
     // Temporary storage for the block entities' blockdata, until it is transfered to entities.
     pub block_data: HashMap<usize, BlockData>,
     // Which chunk faces within the chunk are visible from one another.
-    visible_faces: HashSet<(ChunkFace, ChunkFace)>,
+    visible_faces: [u8; 6],
 }
 
 impl Chunk {
@@ -103,7 +103,7 @@ impl Chunk {
     }
 
     pub fn is_neighbour_visible(&self, from: ChunkFace, to: ChunkFace) -> bool {
-        return self.visible_faces.contains(&(from, to));
+        return self.visible_faces[from as usize] & (1 << to as usize) != 0;
     }
 
     // TODO: This is expensive and needs to be recomputed every time a block changes. I don't think
@@ -114,7 +114,7 @@ impl Chunk {
     pub(super) fn check_visible_faces(&mut self) {
         let blocks = Blocks::get();
 
-        self.visible_faces.clear();
+        self.visible_faces = [0; 6];
 
         let mut visited = [false; Self::SIZE.pow(3)];
 
@@ -129,14 +129,7 @@ impl Chunk {
 
         if self.is_uniform() {
             if blocks.get_config(&self[0]).is_transparent() {
-                for face in FACES {
-                    for other_face in FACES {
-                        self.visible_faces
-                            .insert((face.clone(), other_face.clone()));
-                        self.visible_faces
-                            .insert((other_face.clone(), face.clone()));
-                    }
-                }
+                self.visible_faces = [0b111111; 6];
             }
             return;
         }
@@ -150,45 +143,51 @@ impl Chunk {
                     let left_right = BlockPosition::new(k, i, j);
                     let top_bottom = BlockPosition::new(i, k, j);
                     for source_position in [front_back, left_right, top_bottom] {
+                        let source_index = source_position.as_chunk_index();
+                        if visited[source_index]
+                            || !blocks.get_config(&self[source_index]).is_transparent()
+                        {
+                            continue;
+                        }
+                        visited[source_index] = true;
                         stack.push(source_position);
 
-                        // TODO: This is too heavy, maybe ChunkFace could be a bitmask and
-                        // you can just | them.
-                        let mut seen = HashSet::new();
+                        let mut seen: u8 = 0;
 
                         while let Some(position) = stack.pop() {
-                            match ChunkFace::from_position(&position) {
-                                ChunkFace::None => (),
-                                face => {
-                                    seen.insert(face);
-                                    // This position is outside the chunk, skip to next position
-                                    continue;
+                            for offset in [
+                                IVec3::X,
+                                IVec3::NEG_X,
+                                IVec3::Y,
+                                IVec3::NEG_Y,
+                                IVec3::Z,
+                                IVec3::NEG_Z,
+                            ] {
+                                let neighbour = position + offset;
+                                match ChunkFace::from_position(&neighbour) {
+                                    ChunkFace::None => (),
+                                    face => {
+                                        // This position is outside the chunk, skip to next position
+                                        seen |= 1 << face as usize;
+                                        continue;
+                                    }
                                 }
-                            }
 
-                            let index = position.as_chunk_index();
-                            if !visited[index] && blocks.get_config(&self[index]).is_transparent() {
-                                visited[index] = true;
-                                for offset in [
-                                    IVec3::X,
-                                    IVec3::NEG_X,
-                                    IVec3::Y,
-                                    IVec3::NEG_Y,
-                                    IVec3::Z,
-                                    IVec3::NEG_Z,
-                                ] {
-                                    stack.push(position + offset);
+                                let index = neighbour.as_chunk_index();
+                                if !visited[index]
+                                    && blocks.get_config(&self[index]).is_transparent()
+                                {
+                                    visited[index] = true;
+                                    stack.push(neighbour);
                                 }
                             }
                         }
 
-                        for face in seen.iter() {
-                            for other_face in seen.iter() {
-                                self.visible_faces
-                                    .insert((face.clone(), other_face.clone()));
-                                self.visible_faces
-                                    .insert((other_face.clone(), face.clone()));
+                        for face in FACES {
+                            if seen & (1 << face as usize) == 0 {
+                                continue;
                             }
+                            self.visible_faces[face as usize] |= seen;
                         }
                     }
                 }
