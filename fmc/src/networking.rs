@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
-    ops::{Range, RangeFrom, RangeTo},
+    ops::{Range, RangeTo},
     sync::{
         Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -24,9 +24,11 @@ use crate::{
     world::MaxRenderDistance,
 };
 
-// Size of each connection's read/write buffer
-const MESSAGE_BUFFER_SIZE: usize = 1024 * 1024;
-const MESSAGE_BUFFER_MAX_SIZE: usize = 32 * 1024 * 1024;
+// Size of each connection's write buffer
+const WRITE_BUFFER_SIZE: usize = 1024 * 1024;
+const WRITE_BUFFER_MAX_SIZE: usize = 32 * 1024 * 1024;
+// Size of each connection's read buffer, also caps the size of inbound messages
+const READ_BUFFER_SIZE: usize = 1024;
 // MessageType (1 byte) + message length (4 bytes)
 const HEADER_SIZE: usize = 5;
 // message length (4 bytes)
@@ -83,7 +85,7 @@ fn server_setup(mut commands: Commands) {
         listener,
         connections: HashMap::new(),
         to_disconnect: Disconnections::default(),
-        compression_buffer: vec![0; MESSAGE_BUFFER_SIZE],
+        compression_buffer: vec![0; WRITE_BUFFER_SIZE],
         safe: AtomicBool::new(false),
     };
 
@@ -141,7 +143,7 @@ impl Server {
             if connection.write_message(&message).is_err() {
                 if self.disconnect(connection_entity) {
                     error!(
-                        "Failed to send message, the player's message buffer is at capacity. Server is \
+                        "Failed to send message, the player's write buffer is at capacity. Server is \
                         sending too much, or the connection is too slow. Disconnecting to prevent the \
                         client from being left in an unsynchronised state."
                     );
@@ -162,21 +164,11 @@ impl Server {
     }
 }
 
-// TODO: There's no reason to share between read and write buffers. The read buffer can be ~1kb
-// large and it will likely be more than enough.
-//
-// To save memory each connection gets only one buffer allocation for read/writes.
-// Since it is shared, we need to be careful when we read and write as they cannot be allowed to
-// happen at the same time.
-//
-// 1. The buffer is only used to read from the socket in the 'First' schedule
-// 2. The buffer is only written to in the 'PreUpdate', 'Update' or 'PostUpdate' schedules.
-// 3. The messages are written to socket in the 'Last' schedule
-struct MessageBuffer(SyncUnsafeCell<Vec<u8>>);
+struct WriteBuffer(SyncUnsafeCell<Vec<u8>>);
 
-impl MessageBuffer {
+impl WriteBuffer {
     fn new() -> Self {
-        Self(SyncUnsafeCell::new(vec![0; MESSAGE_BUFFER_SIZE]))
+        Self(SyncUnsafeCell::new(vec![0; WRITE_BUFFER_SIZE]))
     }
 
     fn capacity(&self) -> usize {
@@ -207,29 +199,19 @@ impl MessageBuffer {
             &mut vec[index]
         }
     }
-
-    fn range_from(&self, index: RangeFrom<usize>) -> &mut [u8] {
-        unsafe {
-            let vec = &mut *self.0.get();
-            &mut vec[index]
-        }
-    }
 }
 
 struct Connection {
     socket: TcpStream,
     address: SocketAddr,
-    message_buffer: MessageBuffer,
+    write_buffer: WriteBuffer,
+    read_buffer: [u8; READ_BUFFER_SIZE],
     read_cursor: usize,
     read_bytes: usize,
     write_cursor: AtomicUsize,
-    // Surge protection, holds messages that don't fit in the message buffer. Emptied each time
+    // Surge protection, holds messages that don't fit in the write buffer. Emptied each time
     // messages are sent so the allocation isn't permanent.
     overflow: Mutex<Vec<u8>>,
-    // (length, data) of a partially received message. When the message buffer is used for writing,
-    // partially read messages are stored here, and then moved back into the buffer when it's time
-    // to read again.
-    partially_read_message: (usize, [u8; 1024]),
 }
 
 impl Connection {
@@ -237,21 +219,23 @@ impl Connection {
         Self {
             socket,
             address,
-            message_buffer: MessageBuffer::new(),
+            write_buffer: WriteBuffer::new(),
+            read_buffer: [0; READ_BUFFER_SIZE],
             read_cursor: 0,
             read_bytes: 0,
             write_cursor: AtomicUsize::new(0),
             overflow: Mutex::new(Vec::new()),
-            partially_read_message: (0, [0; 1024]),
         }
     }
 
     fn read_from_socket(&mut self) -> std::io::Result<usize> {
-        self.load_partial_message();
-        match self
-            .socket
-            .read(&mut self.message_buffer.range_from(self.read_bytes..))
-        {
+        // Move any partially received message to the front to make room
+        self.read_buffer
+            .copy_within(self.read_cursor..self.read_bytes, 0);
+        self.read_bytes -= self.read_cursor;
+        self.read_cursor = 0;
+
+        match self.socket.read(&mut self.read_buffer[self.read_bytes..]) {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(0),
             Ok(size) => {
                 self.read_bytes += size;
@@ -267,16 +251,16 @@ impl Connection {
 
         let mut cursor = self.write_cursor.load(Ordering::Relaxed);
         loop {
-            if cursor + total_size > self.message_buffer.capacity() {
-                // Surge protection, it should happen rarely. The MESSAGE_BUFFER_SIZE should be
+            if cursor + total_size > self.write_buffer.capacity() {
+                // Surge protection, it should happen rarely. The WRITE_BUFFER_SIZE should be
                 // set to a value that covers 99% of operation. Happens for example when a player
                 // gets spawned at a spot where all the chunks are already loaded, and get sent at
                 // the same time.
                 // The allocated memory is freed again when the messages are sent.
                 let mut overflow = self.overflow.lock().unwrap();
 
-                if self.message_buffer.capacity() + overflow.len() + total_size
-                    > MESSAGE_BUFFER_MAX_SIZE
+                if self.write_buffer.capacity() + overflow.len() + total_size
+                    > WRITE_BUFFER_MAX_SIZE
                 {
                     return Err(());
                 }
@@ -299,19 +283,16 @@ impl Connection {
             }
         }
 
-        *self.message_buffer.index(cursor) = T::TYPE as u8;
+        *self.write_buffer.index(cursor) = T::TYPE as u8;
         cursor += 1;
 
-        self.message_buffer
+        self.write_buffer
             .range(cursor..cursor + 4)
             .copy_from_slice(&(size as u32).to_le_bytes());
         cursor += 4;
 
-        bincode::serialize_into(
-            &mut self.message_buffer.range(cursor..cursor + size),
-            message,
-        )
-        .unwrap();
+        bincode::serialize_into(&mut self.write_buffer.range(cursor..cursor + size), message)
+            .unwrap();
 
         Ok(())
     }
@@ -319,63 +300,39 @@ impl Connection {
     fn next_message(&mut self) -> Option<(MessageType, &[u8])> {
         // XXX: Only less than, messages can be zero length
         if self.read_bytes - self.read_cursor < HEADER_SIZE {
-            self.save_partial_message();
             return None;
         }
 
-        let message_type = self.message_buffer.index(self.read_cursor);
-        if *message_type >= MessageType::MAX as u8 {
+        let message_type = self.read_buffer[self.read_cursor];
+        if message_type >= MessageType::MAX as u8 {
             // Invalid message type, return invalid message so it disconnects.
             return Some((MessageType::MAX, &[]));
         }
-        let message_type: MessageType = unsafe { std::mem::transmute(*message_type) };
+        let message_type: MessageType = unsafe { std::mem::transmute(message_type) };
 
         let message_length = u32::from_le_bytes(
-            self.message_buffer
-                .range(self.read_cursor + 1..self.read_cursor + 5)
+            self.read_buffer[self.read_cursor + 1..self.read_cursor + 5]
                 .try_into()
                 .unwrap(),
         ) as usize;
 
-        if message_length > self.partially_read_message.1.len() - HEADER_SIZE {
+        if message_length > self.read_buffer.len() - HEADER_SIZE {
             // TODO: Would be useful for development to tell the client that it messed up.
             //
-            // Messages larger than the partial buffer will cause corruption of the stream, so we
+            // Messages larger than the read buffer will cause corruption of the stream, so we
             // return an invalid message that will fail to deserialize so that the client is
             // disconnected.
             return Some((message_type, &[]));
         } else if message_length > self.read_bytes - self.read_cursor - HEADER_SIZE {
-            self.save_partial_message();
             return None;
         }
 
         self.read_cursor += HEADER_SIZE;
 
-        let message = self
-            .message_buffer
-            .range(self.read_cursor..self.read_cursor + message_length);
+        let message = &self.read_buffer[self.read_cursor..self.read_cursor + message_length];
         self.read_cursor += message_length;
-        if self.read_cursor > self.read_bytes {
-            panic!();
-        }
 
         return Some((message_type, message));
-    }
-
-    fn save_partial_message(&mut self) {
-        let remaining = &self.message_buffer.range(self.read_cursor..self.read_bytes);
-        let length = remaining.len();
-        self.partially_read_message.0 = length;
-        self.partially_read_message.1[..length].copy_from_slice(remaining);
-    }
-
-    fn load_partial_message(&mut self) {
-        let length = self.partially_read_message.0;
-        self.message_buffer
-            .range_to(..length)
-            .copy_from_slice(&self.partially_read_message.1[..length]);
-        self.read_cursor = 0;
-        self.read_bytes = length;
     }
 }
 
@@ -522,9 +479,6 @@ fn handle_new_connections(
                 ))
                 .id();
 
-            // More messages might have arrived, we'll be able to handle them next tick.
-            connection.save_partial_message();
-
             server
                 .connections
                 .insert(player_entity, uninitialized.connection.take().unwrap());
@@ -616,7 +570,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: MessageWriters) {
 
     // During the last tick the message/compression buffer might have grown. This growth is for surge
     // protection and shouldn't be permanent. So we reset it each read.
-    server.compression_buffer.resize(MESSAGE_BUFFER_SIZE, 0);
+    server.compression_buffer.resize(WRITE_BUFFER_SIZE, 0);
     server.compression_buffer.shrink_to_fit();
 
     for (entity, connection) in server.connections.iter_mut() {
@@ -671,7 +625,7 @@ fn read_messages(server: ResMut<Server>, mut event_writers: MessageWriters) {
 fn send_messages(server: ResMut<Server>) {
     let server = server.into_inner();
     for (entity, connection) in server.connections.iter_mut() {
-        // Encode what has been written to the message buffer
+        // Encode what has been written to the write buffer
         let len = connection.write_cursor.swap(0, Ordering::Relaxed);
         let overflow = std::mem::take(&mut *connection.overflow.lock().unwrap());
 
@@ -693,7 +647,7 @@ fn send_messages(server: ResMut<Server>) {
             .set_pledged_src_size(Some(total_len as u64))
             .unwrap();
         encoder
-            .write_all(connection.message_buffer.range_to(..len))
+            .write_all(connection.write_buffer.range_to(..len))
             .unwrap();
         encoder.write_all(&overflow).unwrap();
 
@@ -708,7 +662,7 @@ fn send_messages(server: ResMut<Server>) {
                 // The kernel buffer is full, probably because of a slow connection. The buffer can
                 // hold a couple of megabytes so it will optimistically never occur, but if it does the
                 // client has to be disconnected as continuing would cause loss of data when the
-                // message buffer is rotated.
+                // write buffer is rotated.
                 if server.to_disconnect.insert(*entity) {
                     error!(
                         "Connection to player too slow, write buffer at capacity, disconnecting player."
