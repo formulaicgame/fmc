@@ -1,4 +1,5 @@
-use bevy::platform::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+
 use bevy::{
     math::DVec3,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
@@ -13,12 +14,10 @@ use crate::{
     players::Player,
     prelude::*,
     world::{
-        RenderDistance, WorldMap,
+        ChunkPosition, RenderDistance, WorldMap,
         chunk::{Chunk, ChunkFace},
     },
 };
-
-use super::chunk::ChunkPosition;
 
 // Handles loading/unloading, generation and sending chunks to the players.
 pub struct ChunkManagerPlugin;
