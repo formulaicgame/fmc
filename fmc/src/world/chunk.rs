@@ -37,7 +37,7 @@ pub struct Chunk {
     // Temporary storage for the block entities' blockdata, until it is transfered to entities.
     pub block_data: HashMap<usize, BlockData>,
     // Which chunk faces within the chunk are visible from one another.
-    visible_faces: [u8; 6],
+    pub visible_faces: [u8; 6],
 }
 
 impl Chunk {

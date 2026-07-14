@@ -44,7 +44,7 @@ impl Plugin for WorldPlugin {
                     update_chunk_positions,
                     change_player_render_distance,
                     save_blocks_to_database
-                        .run_if(on_timer(Duration::from_secs(5)).or(on_message::<AppExit>)),
+                        .run_if(on_timer(Duration::from_secs(5)).or_else(on_message::<AppExit>)),
                 ),
             )
             .add_systems(

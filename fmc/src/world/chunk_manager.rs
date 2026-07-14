@@ -1,9 +1,9 @@
+use bevy::platform::collections::{HashMap, HashSet};
 use bevy::{
     math::DVec3,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
 use fmc_protocol::messages;
-use std::collections::{HashMap, HashSet};
 
 use crate::{
     blocks::{BlockPosition, Blocks},
@@ -31,16 +31,13 @@ impl Plugin for ChunkManagerPlugin {
             .add_systems(
                 Update,
                 (
-                    update_movement_trackers,
                     (
                         add_and_remove_subscribers,
-                        // vicinity_subscriber,
                         traversal_subscriber,
                         manage_subscriptions,
                         handle_chunk_loading_tasks,
                     )
-                        .chain()
-                        .after(update_movement_trackers),
+                        .chain(),
                     unload_chunks,
                 ),
             );
@@ -48,45 +45,22 @@ impl Plugin for ChunkManagerPlugin {
 }
 
 #[derive(Component)]
-struct MovementTracker {
-    current_position: ChunkPosition,
-    prev_position: ChunkPosition,
-}
-
-impl MovementTracker {
-    fn new(chunk_position: ChunkPosition) -> Self {
-        Self {
-            current_position: chunk_position,
-            prev_position: chunk_position,
-        }
-    }
-}
-
-fn update_movement_trackers(
-    mut player_query: Query<(&mut MovementTracker, &ChunkPosition), Changed<ChunkPosition>>,
-) {
-    for (mut movement_tracker, chunk_position) in player_query.iter_mut() {
-        movement_tracker.prev_position = movement_tracker.current_position;
-        movement_tracker.current_position = *chunk_position;
-    }
-}
+struct SubscriptionTrigger;
 
 fn add_and_remove_subscribers(
     mut commands: Commands,
     world_map: Res<WorldMap>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
-    connections: Query<(Entity, &ChunkPosition), Added<Player>>,
+    connections: Query<Entity, Added<Player>>,
     mut disconnections: MessageReader<NetworkEvent>,
     mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
 ) {
-    for (entity, chunk_position) in connections.iter() {
+    for entity in connections.iter() {
         chunk_subscriptions
             .subscriber_to_chunks
             .insert(entity, HashSet::default());
 
-        commands
-            .entity(entity)
-            .insert(MovementTracker::new(*chunk_position));
+        commands.entity(entity).insert(SubscriptionTrigger);
     }
 
     for network_event in disconnections.read() {
@@ -161,7 +135,7 @@ fn manage_subscriptions(
     database: Res<Database>,
     mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     player_query: Query<
-        (Entity, &MovementTracker, &RenderDistance),
+        (Entity, &ChunkPosition, &RenderDistance),
         Or<(Changed<ChunkPosition>, Changed<RenderDistance>)>,
     >,
     mut subscription_events: MessageReader<ChunkSubscriptionEvent>,
@@ -192,9 +166,10 @@ fn manage_subscriptions(
                 );
             }
         } else {
-            chunk_subscriptions
-                .chunk_to_subscribers
-                .insert(event.chunk_position, HashSet::from([event.player_entity]));
+            chunk_subscriptions.chunk_to_subscribers.insert(
+                event.chunk_position,
+                HashSet::from_iter([event.player_entity]),
+            );
 
             let task = thread_pool.spawn(Chunk::load(
                 event.chunk_position,
@@ -209,14 +184,14 @@ fn manage_subscriptions(
     // reborrow for split borrow
     let chunk_subscriptions = chunk_subscriptions.into_inner();
 
-    for (entity, tracker, render_distance) in player_query.iter() {
+    for (entity, player_position, render_distance) in player_query.iter() {
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get_mut(&entity)
             .unwrap();
 
         let removed = subscribed_chunks.extract_if(|chunk_position| {
-            let distance = (*chunk_position - tracker.current_position).abs() / Chunk::SIZE as i32;
+            let distance = (*chunk_position - *player_position).abs() / Chunk::SIZE as i32;
             if distance
                 .cmpgt(IVec3::splat(render_distance.chunks as i32))
                 .any()
@@ -251,128 +226,148 @@ fn manage_subscriptions(
 #[derive(Component)]
 struct ChunkLoadingTask(Task<(ChunkPosition, Chunk)>);
 
-// fn vicinity_subscriber(
-//     player_query: Query<(Entity, &MovementTracker), Changed<MovementTracker>
-// ) {
-//
-// }
-
-// TODO: This is too expensive to accommodate many players. I'm thinking chunks can be sorted into
-// columns. If it is a chunk that contains blocks, it would be considered a column base. All chunks
-// of air in succession above a base would be part of the column. More generally perhaps, all
-// chunks that share the same set of visible chunk faces. You will then have a set of arbitrary
-// length columns with gaps that you need to traverse. Not obvious to me how to do that, but it
-// gives the advantage of traversing the chunks at the world surface(which is the most expensive
-// case) column by column, almost converting it from a search in 3d to a search in 2d.
-// It might also make sense to split both the column representation and the visible faces part of
-// the chunk into its own struct. It is pretty how it is, but I foresee that there will be
-// contention for the WorldMap. The locations that borrow it mutably will need all the time they
-// can get, and this system will hog it.
-//
 // TODO: Optimization idea: The players can be handled in parallel with par_iter.
-// Use Local<Parallel<(already_visited, queue, sub_events)>>. After the par_iter, drain each
+// Use Local<Parallel<(chunk_faces, chunk_visible, sub_events)>>. After the par_iter, drain each
 // thread's events into the MessageWriter with write_batch. Destructure the scratch struct to get
 // independent borrows of the buffers.
 //
-// Search for chunks by fanning out from the player's chunk position to find chunks that are
-// visible to it.
+// This finds all chunks that are visible from the chunk the player is currently in.
+// A chunk is visible if it can be reached from the player's chunk through the
+// interior of loaded chunks by only ever moving away from the player.
 fn traversal_subscriber(
     world_map: Res<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     player_query: Query<
-        (Entity, &MovementTracker, &RenderDistance),
-        Or<(Changed<MovementTracker>, Changed<RenderDistance>)>,
+        (Entity, &ChunkPosition, &RenderDistance),
+        Or<(
+            Changed<ChunkPosition>,
+            Changed<SubscriptionTrigger>,
+            Changed<RenderDistance>,
+        )>,
     >,
     mut subscription_events: MessageWriter<ChunkSubscriptionEvent>,
-    mut queue: Local<Vec<(ChunkPosition, ChunkFace, ChunkFace)>>,
-    mut already_visited: Local<Vec<bool>>,
+    mut chunk_faces: Local<Vec<[u8; 6]>>,
+    mut chunk_visible: Local<Vec<u8>>,
 ) {
-    for (player_entity, chunk_tracker, render_distance) in player_query.iter() {
+    for (player_entity, player_position, render_distance) in player_query.iter() {
         let radius = render_distance.chunks as i32;
-        let side_len = radius * 2 + 1;
+        let width = radius * 2 + 1;
 
-        already_visited.clear();
-        already_visited.resize(side_len.pow(3) as usize, false);
+        chunk_faces.clear();
+        chunk_faces.resize(width.pow(3) as usize, [0; 6]);
+        chunk_visible.clear();
+        chunk_visible.resize(width.pow(3) as usize, 0);
 
-        let min = *chunk_tracker.current_position - IVec3::splat(radius * Chunk::SIZE as i32);
-        let max = *chunk_tracker.current_position + IVec3::splat(radius * Chunk::SIZE as i32);
+        let min = **player_position - IVec3::splat(radius * Chunk::SIZE as i32);
 
-        let visited_index = |chunk_position: ChunkPosition| -> usize {
-            let relative = (*chunk_position - min) / Chunk::SIZE as i32;
-            (relative.x * side_len.pow(2) + relative.y * side_len + relative.z) as usize
+        let grid_index = |offset: IVec3| -> usize {
+            ((offset.x * width + offset.y) * width + offset.z) as usize
         };
 
-        already_visited[visited_index(chunk_tracker.current_position)] = true;
+        let center = IVec3::splat(radius);
+        chunk_faces[grid_index(center)] = [0b111111; 6];
+        chunk_visible[grid_index(center)] = 0b111111;
+
+        for octant in [
+            IVec3::new(1, 1, 1),
+            IVec3::new(1, 1, -1),
+            IVec3::new(1, -1, 1),
+            IVec3::new(1, -1, -1),
+            IVec3::new(-1, 1, 1),
+            IVec3::new(-1, 1, -1),
+            IVec3::new(-1, -1, 1),
+            IVec3::new(-1, -1, -1),
+        ] {
+            // The face the neighbouring chunk is exited through when moving towards this chunk.
+            let x_exit = if octant.x == 1 {
+                ChunkFace::Right
+            } else {
+                ChunkFace::Left
+            };
+            let y_exit = if octant.y == 1 {
+                ChunkFace::Top
+            } else {
+                ChunkFace::Bottom
+            };
+            let z_exit = if octant.z == 1 {
+                ChunkFace::Front
+            } else {
+                ChunkFace::Back
+            };
+
+            for dx in 0..=radius {
+                for dy in 0..=radius {
+                    for dz in 0..=radius {
+                        if dx == 0 && dy == 0 && dz == 0 {
+                            continue;
+                        }
+
+                        let offset = center + IVec3::new(dx, dy, dz) * octant;
+
+                        let mut visible = 0;
+                        if dx > 0 {
+                            let neighbour = grid_index(offset - IVec3::new(octant.x, 0, 0));
+                            if chunk_visible[neighbour] & chunk_faces[neighbour][x_exit as usize]
+                                != 0
+                            {
+                                visible |= 1 << x_exit.opposite() as usize;
+                            }
+                        }
+                        if dy > 0 {
+                            let neighbour = grid_index(offset - IVec3::new(0, octant.y, 0));
+                            if chunk_visible[neighbour] & chunk_faces[neighbour][y_exit as usize]
+                                != 0
+                            {
+                                visible |= 1 << y_exit.opposite() as usize;
+                            }
+                        }
+                        if dz > 0 {
+                            let neighbour = grid_index(offset - IVec3::new(0, 0, octant.z));
+                            if chunk_visible[neighbour] & chunk_faces[neighbour][z_exit as usize]
+                                != 0
+                            {
+                                visible |= 1 << z_exit.opposite() as usize;
+                            }
+                        }
+
+                        if visible != 0 {
+                            let index = grid_index(offset);
+                            chunk_visible[index] = visible;
+
+                            let chunk_position =
+                                ChunkPosition::from(min + offset * Chunk::SIZE as i32);
+                            if let Some(chunk) = world_map.get_chunk(&chunk_position) {
+                                chunk_faces[index] = chunk.visible_faces;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let subscribed_chunks = chunk_subscriptions
             .subscriber_to_chunks
             .get(&player_entity)
             .unwrap();
 
-        if !subscribed_chunks.contains(&chunk_tracker.current_position) {
-            subscription_events.write(ChunkSubscriptionEvent {
-                player_entity,
-                chunk_position: chunk_tracker.current_position,
-            });
-        }
+        for (index, visible) in chunk_visible.iter().enumerate() {
+            if *visible == 0 {
+                continue;
+            }
 
-        for chunk_face in [
-            ChunkFace::Top,
-            ChunkFace::Bottom,
-            ChunkFace::Right,
-            ChunkFace::Left,
-            ChunkFace::Front,
-            ChunkFace::Back,
-        ] {
-            let seed_position = chunk_face.shift_position(chunk_tracker.current_position);
-            already_visited[visited_index(seed_position)] = true;
-            queue.push((seed_position, chunk_face.opposite(), chunk_face.opposite()));
-        }
+            let index = index as i32;
+            let offset = IVec3::new(
+                index / (width * width),
+                index / width % width,
+                index % width,
+            );
+            let chunk_position = ChunkPosition::from(min + offset * Chunk::SIZE as i32);
 
-        // chunk_position = chunk to check
-        // from_face = The chunk face the chunk was entered through.
-        // main_face = The chunk face entered through at the start of the search.
-        while let Some((chunk_position, from_face, main_face)) = queue.pop() {
             if !subscribed_chunks.contains(&chunk_position) {
                 subscription_events.write(ChunkSubscriptionEvent {
                     player_entity,
                     chunk_position,
                 });
-            }
-
-            let chunk = match world_map.get_chunk(&chunk_position) {
-                Some(chunk) => chunk,
-                None => {
-                    continue;
-                }
-            };
-
-            let surrounding = [
-                ChunkFace::Front,
-                ChunkFace::Back,
-                ChunkFace::Left,
-                ChunkFace::Right,
-                ChunkFace::Top,
-                ChunkFace::Bottom,
-            ]
-            .into_iter()
-            .filter(|face| *face != main_face && *face != from_face);
-
-            for to_face in surrounding {
-                let adjacent_position = to_face.shift_position(chunk_position);
-                if adjacent_position.cmplt(min).any() || adjacent_position.cmpgt(max).any() {
-                    continue;
-                }
-
-                if chunk.is_neighbour_visible(from_face, to_face) {
-                    let index = visited_index(adjacent_position);
-                    if already_visited[index] {
-                        continue;
-                    }
-                    already_visited[index] = true;
-
-                    queue.push((adjacent_position, to_face.opposite(), main_face));
-                }
             }
         }
     }
@@ -383,7 +378,7 @@ fn handle_chunk_loading_tasks(
     net: Res<Server>,
     mut world_map: ResMut<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut chunk_tracker_query: Query<&mut MovementTracker>,
+    mut subscription_triggers: Query<&mut SubscriptionTrigger>,
     mut chunks: Query<(Entity, &mut ChunkLoadingTask)>,
     mut chunk_load_event_writer: MessageWriter<ChunkLoadEvent>,
 ) {
@@ -507,9 +502,9 @@ fn handle_chunk_loading_tasks(
 
             // Triggers 'traversal_subscriber' to run again so it can continue from
             // where it last stopped.
-            let mut iter = chunk_tracker_query.iter_many_mut(subscribers.iter());
-            while let Some(mut tracker) = iter.fetch_next() {
-                tracker.set_changed();
+            let mut iter = subscription_triggers.iter_many_mut(subscribers.iter());
+            while let Some(mut trigger) = iter.fetch_next() {
+                trigger.set_changed();
             }
 
             net.send_many(

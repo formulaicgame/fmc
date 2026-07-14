@@ -27,7 +27,7 @@ use crate::{
 // Size of each connection's write buffer
 const WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 const WRITE_BUFFER_MAX_SIZE: usize = 32 * 1024 * 1024;
-// Size of each connection's read buffer, also caps the size of inbound messages
+// Size of each connection's read buffer
 const READ_BUFFER_SIZE: usize = 1024;
 // MessageType (1 byte) + message length (4 bytes)
 const HEADER_SIZE: usize = 5;
