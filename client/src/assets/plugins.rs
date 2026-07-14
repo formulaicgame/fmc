@@ -456,7 +456,7 @@ impl wit::PluginImports for WasmState {
 
             let transformed_aabb = transform_aabb(transform, aabb);
 
-            if min.cmple(transformed_aabb.max()).all() || max.cmpge(transformed_aabb.min()).all() {
+            if min.cmple(transformed_aabb.max()).all() && max.cmpge(transformed_aabb.min()).all() {
                 let Some(model_id) = model_entites.get_model_id(&entity) else {
                     // Models may be spawned by a plugin or the client itself, in which case they
                     // won't be accounted for in the ModelEntities
