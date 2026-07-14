@@ -1,7 +1,5 @@
 use bevy::prelude::*;
 
-use std::collections::HashSet;
-
 use fmc_protocol::messages;
 
 use crate::{
@@ -12,7 +10,7 @@ use crate::{
     settings::Settings,
     world::{
         MovesWithOrigin, Origin, WorldMap,
-        chunk::{Chunk, ChunkFace, ChunkMarker},
+        chunk::{Chunk, ChunkMarker},
     },
 };
 
@@ -25,7 +23,7 @@ impl Plugin for ChunkManagerPlugin {
                 Update,
                 (
                     handle_new_chunks,
-                    prepare_for_frustum_culling,
+                    occlusion_culling,
                     handle_block_updates
                         .after(handle_new_chunks)
                         .in_set(RenderSet::UpdateBlocks),
@@ -52,7 +50,8 @@ impl Plugin for ChunkManagerPlugin {
                 // To work around this, it is run in PostUpdate. Systems that change components are
                 // kept in Update.
                 PostUpdate,
-                unload_chunks.run_if(resource_changed::<Origin>),
+                unload_chunks
+                    .run_if(resource_changed::<Origin>.or_else(resource_changed::<Settings>)),
             );
     }
 }
@@ -82,7 +81,7 @@ fn unload_chunks(
     world_map.chunks.retain(|chunk_pos, chunk| {
         let distance = (*chunk_pos - origin.0).abs() / IVec3::splat(Chunk::SIZE as i32);
         if distance
-            .cmpgt(IVec3::splat(settings.render_distance as i32) + 1)
+            .cmpgt(IVec3::splat(settings.render_distance as i32))
             .any()
         {
             if let Some(entity) = chunk.entity() {
@@ -95,68 +94,22 @@ fn unload_chunks(
     });
 }
 
-// The frustum chunk loading system needs some help. This loads the 3x3x3 chunks that are closest.
-// This is for when the player walks into a chunk without looking at it first. The player might
-// also collide with these without having looked at them (or collide with a chunk that isn't
-// actually visible)
-//fn proximity_chunk_loading(
-//    origin: Res<Origin>,
-//    world_map: Res<WorldMap>,
-//    player_position: Query<&GlobalTransform, With<Player>>,
-//    mut chunk_request_events: MessageWriter<ChunkRequestEvent>,
-//    pause: Res<Pause>,
-//) {
-//    if pause.0 {
-//        return;
-//    }
-//    let player_position = player_position.single();
-//    let player_chunk_position = utils::world_position_to_chunk_pos(
-//        player_position.translation().floor().as_ivec3() + origin.0,
-//    );
+// TODO: This could be made to do frustum culling too. Running it when the player looks through a
+// different chunk face could be good enough so it doesn't have to be done every frame.
 //
-//    for x in (player_chunk_position.x - CHUNK_SIZE as i32
-//        ..player_chunk_position.x + CHUNK_SIZE as i32)
-//        .step_by(CHUNK_SIZE)
-//    {
-//        for y in (player_chunk_position.y - CHUNK_SIZE as i32
-//            ..player_chunk_position.y + CHUNK_SIZE as i32)
-//            .step_by(CHUNK_SIZE)
-//        {
-//            for z in (player_chunk_position.z - CHUNK_SIZE as i32
-//                ..player_chunk_position.z + CHUNK_SIZE as i32)
-//                .step_by(CHUNK_SIZE)
-//            {
-//                let position = IVec3::new(x, y, z);
-//                if !world_map.contains_chunk(&position) {
-//                    chunk_request_events.send(ChunkRequestEvent(position));
-//                }
-//            }
-//        }
-//    }
-//}
-
-// TODO: When implementing this I wanted to create chunk columns where all vertically adjacent air
-// chunks belonged to the same column (with the first chunk with blocks below them as the column
-// base). This would reduce the search drastically when at the surface as you could check entire
-// columns in one step, instead of going through all their chunks individually. Didn't do it because
-// it was too hard to imagine how it would work. Went with simpler version to save time. Maybe
-// implement this or maybe ray tracing can solve it. Meanwhile, it will take up a huge chunk of the
-// frame time.
-// TODO: This could be made to do culling too. It's not fast enough to run each frame, but running
-// it when the player looks through a different chunk face could be good enough.
-//
-// This traverses all chunks that are visible from the chunk the player is currently in. It does
-// this by fanning out from the origin chunk, each step it takes, it marks the direction it entered
-// the chunk by up to a total of three directions. From then on it can only travel in those
-// directions. This makes it so that for example chunks that are on the other side of a mountain
-// are marked as not visible, culling the amount of chunks that need to be rendered.
-fn prepare_for_frustum_culling(
+// Does some crude occlusion culling in order to get rid of most the caves while at the surface.
+// Works by splitting the world into octants. The octant you're in decides which ways you can
+// traverse the chunk grid by its relative position to the player. If you move up, you can't move
+// down again, same for the other directions. So if you traverse up a mountain for example, you
+// can't traverse down the other side again, so what's behind it is culled.
+fn occlusion_culling(
     origin: Res<Origin>,
+    settings: Res<Settings>,
     world_map: Res<WorldMap>,
     pause: Res<Pause>,
     mut chunk_query: Query<&mut Visibility, With<ChunkMarker>>,
-    mut already_visited: Local<HashSet<IVec3>>,
-    mut queue: Local<Vec<(IVec3, [ChunkFace; 3])>>,
+    mut chunk_exists: Local<Vec<bool>>,
+    mut chunk_visible: Local<Vec<bool>>,
 ) {
     if !origin.is_changed() {
         return;
@@ -166,105 +119,86 @@ fn prepare_for_frustum_culling(
         return;
     }
 
-    already_visited.clear();
+    // Matches the distance chunks are retained at by unload_chunks
+    let radius = settings.render_distance as i32;
+    let width = (radius * 2 + 1) as usize;
 
-    // Reset the visibility of all chunks
-    chunk_query.iter_mut().for_each(|mut visibility| {
-        *visibility = Visibility::Hidden;
-    });
+    chunk_exists.clear();
+    chunk_exists.resize(width.pow(3), false);
+    chunk_visible.clear();
+    chunk_visible.resize(width.pow(3), false);
 
-    queue.push((origin.0, [ChunkFace::None; 3]));
-
-    while let Some((chunk_position, to_faces)) = queue.pop() {
-        if !already_visited.insert(chunk_position) {
-            // insert returns false if the position is in the set
-            continue;
+    let grid_index = |offset: IVec3| -> usize {
+        (offset.x as usize * width + offset.y as usize) * width + offset.z as usize
+    };
+    let grid_offset = |chunk_position: IVec3| -> Option<IVec3> {
+        let offset = (chunk_position - origin.0) / Chunk::SIZE as i32 + radius;
+        if offset.cmplt(IVec3::ZERO).any() || offset.cmpge(IVec3::splat(width as i32)).any() {
+            None
+        } else {
+            Some(offset)
         }
+    };
 
-        let chunk = match world_map.get_chunk(&chunk_position) {
-            Some(chunk) => chunk,
-            None => {
-                continue;
+    for chunk_position in world_map.chunks.keys() {
+        if let Some(offset) = grid_offset(*chunk_position) {
+            chunk_exists[grid_index(offset)] = true;
+        }
+    }
+
+    let center = IVec3::splat(radius);
+    chunk_visible[grid_index(center)] = chunk_exists[grid_index(center)];
+
+    for octant in [
+        IVec3::new(1, 1, 1),
+        IVec3::new(1, 1, -1),
+        IVec3::new(1, -1, 1),
+        IVec3::new(1, -1, -1),
+        IVec3::new(-1, 1, 1),
+        IVec3::new(-1, 1, -1),
+        IVec3::new(-1, -1, 1),
+        IVec3::new(-1, -1, -1),
+    ] {
+        for dx in 0..=radius {
+            for dy in 0..=radius {
+                for dz in 0..=radius {
+                    if dx == 0 && dy == 0 && dz == 0 {
+                        continue;
+                    }
+
+                    let offset = center + IVec3::new(dx, dy, dz) * octant;
+                    let index = grid_index(offset);
+                    if !chunk_exists[index] {
+                        continue;
+                    }
+
+                    chunk_visible[index] = (dx > 0
+                        && chunk_visible[grid_index(offset - IVec3::new(octant.x, 0, 0))])
+                        || (dy > 0
+                            && chunk_visible[grid_index(offset - IVec3::new(0, octant.y, 0))])
+                        || (dz > 0
+                            && chunk_visible[grid_index(offset - IVec3::new(0, 0, octant.z))]);
+                }
             }
+        }
+    }
+
+    for (chunk_position, chunk) in world_map.chunks.iter() {
+        let Some(entity) = chunk.entity() else {
+            continue;
         };
 
-        if let Some(entity) = chunk.entity() {
-            if let Ok(mut visibility) = chunk_query.get_mut(entity) {
-                *visibility = Visibility::Visible;
-            }
-        }
+        let visible = match grid_offset(*chunk_position) {
+            Some(offset) => chunk_visible[grid_index(offset)],
+            None => false,
+        };
 
-        if to_faces[0] == ChunkFace::None {
-            for chunk_face in [
-                ChunkFace::Top,
-                ChunkFace::Bottom,
-                ChunkFace::Right,
-                ChunkFace::Left,
-                ChunkFace::Front,
-                ChunkFace::Back,
-            ] {
-                queue.push((
-                    chunk_face.shift_position(chunk_position),
-                    [chunk_face, ChunkFace::None, ChunkFace::None],
-                ));
-            }
-            continue;
-        } else {
-            queue.push((to_faces[0].shift_position(chunk_position), to_faces));
-        }
-
-        if to_faces[1] == ChunkFace::None {
-            let surrounding = [
-                ChunkFace::Front,
-                ChunkFace::Back,
-                ChunkFace::Left,
-                ChunkFace::Right,
-                ChunkFace::Top,
-                ChunkFace::Bottom,
-            ]
-            .into_iter()
-            .filter(|face| *face != to_faces[0].opposite() && *face != to_faces[0]);
-
-            for face in surrounding {
-                queue.push((
-                    face.shift_position(chunk_position),
-                    [to_faces[0], face, ChunkFace::None],
-                ));
-            }
-
-            continue;
-        } else {
-            queue.push((to_faces[1].shift_position(chunk_position), to_faces));
-        }
-
-        if to_faces[2] == ChunkFace::None {
-            let remaining = match to_faces[0] {
-                ChunkFace::Top | ChunkFace::Bottom => match to_faces[1] {
-                    ChunkFace::Right | ChunkFace::Left => [ChunkFace::Front, ChunkFace::Back],
-                    ChunkFace::Front | ChunkFace::Back => [ChunkFace::Right, ChunkFace::Left],
-                    _ => unreachable!(),
-                },
-                ChunkFace::Right | ChunkFace::Left => match to_faces[1] {
-                    ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Front, ChunkFace::Back],
-                    ChunkFace::Front | ChunkFace::Back => [ChunkFace::Top, ChunkFace::Bottom],
-                    _ => unreachable!(),
-                },
-                ChunkFace::Front | ChunkFace::Back => match to_faces[1] {
-                    ChunkFace::Top | ChunkFace::Bottom => [ChunkFace::Right, ChunkFace::Left],
-                    ChunkFace::Right | ChunkFace::Left => [ChunkFace::Top, ChunkFace::Bottom],
-                    _ => unreachable!(),
-                },
-                ChunkFace::None => unreachable!(),
-            };
-
-            for face in remaining {
-                queue.push((
-                    face.shift_position(chunk_position),
-                    [to_faces[0], to_faces[1], face],
-                ));
-            }
-        } else {
-            queue.push((to_faces[2].shift_position(chunk_position), to_faces))
+        if let Ok(mut visibility) = chunk_query.get_mut(entity) {
+            visibility.set_if_neq(if visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            });
         }
     }
 }
