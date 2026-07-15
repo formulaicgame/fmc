@@ -11,6 +11,7 @@ use crate::{
         materials::{BlockMaterial, ModelMaterial, ModelMaterialExtension},
     },
     settings::Settings,
+    world::Origin,
 };
 
 const MODEL_MATERIAL_PATH: &str = "server_assets/active/materials/model";
@@ -128,14 +129,20 @@ impl Transparency {
 // TODO: Want the materials to be configurable at runtime by the server. That way it can do stuff
 // like changing how the sun looks or something.
 pub fn load_materials(
-    net: Res<NetworkClient>,
     mut commands: Commands,
+    net: Res<NetworkClient>,
+    origin: Res<Origin>,
     block_textures: Res<BlockTextures>,
     asset_server: Res<AssetServer>,
     mut block_material_assets: ResMut<Assets<BlockMaterial>>,
     mut model_material_assets: ResMut<Assets<ModelMaterial>>,
 ) {
-    match load_model_materials(&mut model_material_assets, &asset_server, &block_textures) {
+    match load_model_materials(
+        origin.0,
+        &mut model_material_assets,
+        &asset_server,
+        &block_textures,
+    ) {
         Ok(model_materials) => commands.insert_resource(model_materials),
         Err(e) => {
             net.disconnect(&e);
@@ -143,7 +150,12 @@ pub fn load_materials(
         }
     }
 
-    match load_block_materials(&mut block_material_assets, &asset_server, &block_textures) {
+    match load_block_materials(
+        origin.0,
+        &mut block_material_assets,
+        &asset_server,
+        &block_textures,
+    ) {
         Ok(block_materials) => commands.insert_resource(block_materials),
         Err(e) => {
             net.disconnect(&e);
@@ -153,6 +165,7 @@ pub fn load_materials(
 }
 
 fn load_model_materials(
+    origin: IVec3,
     model_material_assets: &mut Assets<ModelMaterial>,
     asset_server: &AssetServer,
     block_textures: &BlockTextures,
@@ -252,7 +265,7 @@ fn load_model_materials(
             extension: ModelMaterialExtension {
                 block_textures: block_textures.handle.clone(),
                 light_texture: LIGHT_TEXTURE,
-                origin: IVec3::ZERO,
+                origin,
             },
         });
 
@@ -268,6 +281,7 @@ fn load_model_materials(
 }
 
 fn load_block_materials(
+    origin: IVec3,
     block_material_assets: &mut Assets<BlockMaterial>,
     asset_server: &AssetServer,
     block_textures: &BlockTextures,
@@ -330,7 +344,7 @@ fn load_block_materials(
             texture_array: Some(block_textures.handle.clone()),
             animation_frames: config.animation_frames,
             light_texture: LIGHT_TEXTURE,
-            origin: IVec3::ZERO,
+            origin,
         };
         let handle = block_material_assets.add(block_material);
 
