@@ -31,10 +31,11 @@ impl Plugin for ChunkManagerPlugin {
                 Update,
                 (
                     (
-                        add_and_remove_subscribers,
+                        add_subscribers,
                         traversal_subscriber,
                         manage_subscriptions,
                         handle_chunk_loading_tasks,
+                        remove_subscribers,
                     )
                         .chain(),
                     unload_chunks,
@@ -46,13 +47,10 @@ impl Plugin for ChunkManagerPlugin {
 #[derive(Component)]
 struct SubscriptionTrigger;
 
-fn add_and_remove_subscribers(
+fn add_subscribers(
     mut commands: Commands,
-    world_map: Res<WorldMap>,
-    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
     connections: Query<Entity, Added<Player>>,
-    mut disconnections: MessageReader<NetworkEvent>,
-    mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
+    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
 ) {
     for entity in connections.iter() {
         chunk_subscriptions
@@ -61,7 +59,14 @@ fn add_and_remove_subscribers(
 
         commands.entity(entity).insert(SubscriptionTrigger);
     }
+}
 
+fn remove_subscribers(
+    world_map: Res<WorldMap>,
+    mut chunk_subscriptions: ResMut<ChunkSubscriptions>,
+    mut disconnections: MessageReader<NetworkEvent>,
+    mut unload_chunk_events: MessageWriter<ChunkUnloadEvent>,
+) {
     for network_event in disconnections.read() {
         let NetworkEvent::Disconnected { entity } = network_event else {
             continue;
