@@ -5,25 +5,21 @@ use super::{BACKGROUND, GuiState, Interface, Interfaces};
 use crate::{
     assets::AssetState,
     game_state::GameState,
-    networking::NetworkClient,
+    networking::{NetworkClient, NetworkEvent},
     ui::client::{BASE_SIZE, widgets::*},
 };
 
-// TODO: I think this looks better as an event architecture. You have something you want to
-// show in the connection ui -> you send an event with the string you want shown -> the ui is
-// shown. No logic needed for when to enter during connection, and no logic needed to enter when
-// disconnecting by some network error.
-pub struct ConnectingPlugin;
-impl Plugin for ConnectingPlugin {
+pub struct ConnectionStatusPlugin;
+impl Plugin for ConnectionStatusPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
+        app.add_message::<NetworkEvent>()
+            .add_systems(Startup, setup)
             .add_systems(
                 Update,
                 (
-                    press_cancel.run_if(in_state(GuiState::Connecting)),
+                    press_cancel.run_if(in_state(GuiState::ConnectionStatus)),
                     downloading_assets_text.run_if(resource_added::<messages::ServerConfig>),
-                    (disconnect_text, show_when_disconnected_for_reason)
-                        .run_if(on_message::<messages::Disconnect>),
+                    show_when_disconnected_for_reason.run_if(on_message::<NetworkEvent>),
                 ),
             )
             .add_systems(OnEnter(GameState::Connecting), show_when_connecting)
@@ -84,7 +80,7 @@ fn setup(mut commands: Commands, mut interfaces: ResMut<Interfaces>) {
                 .insert(CancelButton);
         })
         .id();
-    interfaces.insert(GuiState::Connecting, entity);
+    interfaces.insert(GuiState::ConnectionStatus, entity);
 }
 
 fn press_cancel(
@@ -112,27 +108,23 @@ fn loading_assets_text(mut status_text: Query<&mut Text, With<StatusText>>) {
     *text = Text::new("Loading assets...");
 }
 
-fn disconnect_text(
-    mut status_text: Query<&mut Text, With<StatusText>>,
-    mut disconnect_events: MessageReader<messages::Disconnect>,
-) {
-    for disconnect_event in disconnect_events.read() {
-        let mut text = status_text.single_mut().unwrap();
-        *text = Text::new(&disconnect_event.message);
-    }
-}
-
 fn show_when_disconnected_for_reason(
-    gui_state: Res<State<GuiState>>,
+    mut status_text: Query<&mut Text, With<StatusText>>,
     mut next_gui_state: ResMut<NextState<GuiState>>,
-    mut disconnect_events: MessageReader<messages::Disconnect>,
+    mut disconnect_events: MessageReader<NetworkEvent>,
 ) {
     for event in disconnect_events.read() {
-        if event.message.is_empty() || *gui_state.get() != GuiState::None {
+        let NetworkEvent::Disconnected(reason) = event else {
+            continue;
+        };
+        if reason.is_empty() {
             continue;
         }
 
-        next_gui_state.set(GuiState::Connecting);
+        let mut text = status_text.single_mut().unwrap();
+        *text = Text::new(reason);
+
+        next_gui_state.set(GuiState::ConnectionStatus);
     }
 }
 
@@ -141,7 +133,7 @@ fn show_when_connecting(
     mut gui_state: ResMut<NextState<GuiState>>,
 ) {
     *status_text.single_mut().unwrap() = Text::new("Connecting to server...");
-    gui_state.set(GuiState::Connecting);
+    gui_state.set(GuiState::ConnectionStatus);
 }
 
 fn hide_on_game_start(mut gui_state: ResMut<NextState<GuiState>>) {

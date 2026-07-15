@@ -34,12 +34,11 @@ impl Plugin for GuiPlugin {
                 widgets::WidgetPlugin,
                 login::LoginPlugin,
                 main_menu::MainMenuPlugin,
-                connecting::ConnectingPlugin,
+                connecting::ConnectionStatusPlugin,
                 pause::PausePlugin,
                 world_configuration::WorldConfigurationPlugin,
             ))
             .add_systems(Startup, setup)
-            // .add_systems(OnEnter(GameState::Launcher), go_to_main_menu_on_quit)
             .add_systems(Update, change_interface.run_if(state_changed::<GuiState>));
 
         load_internal_binary_asset!(
@@ -87,16 +86,13 @@ struct Interfaces(HashMap<GuiState, Entity>);
 // containing the interface layout that will be switched to when the state changes.
 #[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
 pub enum GuiState {
-    // Gui shown when in game, used for the cursor.
+    // TODO: Although this is meant to mean "no gui showing" I've had the good idea of hijacking it
+    // to show the in game cursor. Remove, server defines it.
     None,
-    // Let's you log into a user account
     Login,
     #[default]
     MainMenu,
-    // TODO: Rename to "Status"
-    // Interface shown while connecting, but is used to show all types of arbitrary messages to the
-    // player. Debug info, disconnection errors...
-    Connecting,
+    ConnectionStatus,
     // Shown when paused in game
     PauseMenu,
     // Interface for editing the settings of a world, or create a new world if it doesn't exist.
@@ -122,8 +118,4 @@ fn change_interface(
             node.display = Display::None;
         }
     }
-}
-
-fn go_to_main_menu_on_quit(mut gui_state: ResMut<NextState<GuiState>>) {
-    gui_state.set(GuiState::MainMenu);
 }

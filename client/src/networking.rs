@@ -2,6 +2,7 @@ use std::{
     io::{Read, Write},
     net::{Shutdown, TcpStream, ToSocketAddrs},
     path::PathBuf,
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use bevy::{
@@ -62,39 +63,24 @@ impl Plugin for ClientPlugin {
                     read_messages.run_if(in_state(GameState::Playing)),
                     connect.run_if(not(in_state(GameState::Playing))),
                     initialize_connection.run_if(in_state(GameState::Connecting)),
-                    (
-                        register_client_disconnect_events.before(disconnect),
-                        disconnect,
-                    )
-                        .run_if(not(in_state(GameState::Launcher))),
+                    disconnect.run_if(not(in_state(GameState::Launcher))),
                 ),
             );
     }
 }
 
 #[derive(Message)]
+pub enum NetworkEvent {
+    Connected,
+    Disconnected(String),
+}
+
+// TODO: Should this just be a "connect" method on NetworkCLient? A side effect is that
+// GameState::Connecting is to be set, so you have to have to remember to do it at the
+// call site.
+#[derive(Message)]
 pub struct ConnectionEvent {
     pub address: String,
-}
-
-struct ConcurrentQueue {
-    sender: crossbeam::Sender<String>,
-    receiver: crossbeam::Receiver<String>,
-}
-
-impl ConcurrentQueue {
-    fn new() -> Self {
-        let (sender, receiver) = crossbeam::bounded(1);
-        Self { sender, receiver }
-    }
-
-    fn push(&self, value: String) -> Result<(), String> {
-        self.sender.try_send(value).map_err(|e| e.into_inner())
-    }
-
-    fn pop(&self) -> Result<String, ()> {
-        self.receiver.try_recv().map_err(|_e| ())
-    }
 }
 
 // TODO: Implement the buffers as some Read/Write impl it's too much to keep track of.
@@ -102,7 +88,7 @@ impl ConcurrentQueue {
 pub struct NetworkClient {
     connection: Option<TcpStream>,
     connection_task: Option<Task<std::io::Result<TcpStream>>>,
-    disconnect_events: ConcurrentQueue,
+    client_disconnect: OnceLock<String>,
     // buffer for connection reads, compressed
     read_buffer: Vec<u8>,
     read_cursor: usize,
@@ -116,7 +102,7 @@ impl NetworkClient {
         Self {
             connection: None,
             connection_task: None,
-            disconnect_events: ConcurrentQueue::new(),
+            client_disconnect: OnceLock::default(),
             read_buffer: Vec::new(),
             read_cursor: 0,
             message_buffer: Vec::new(),
@@ -150,11 +136,11 @@ impl NetworkClient {
         }
 
         info!("{}", message.as_ref());
+
         // Disconnect might be called many times as errors cascade, but only the first message will
-        // register as that will be the primary cause. The event queue only has capacity for one
-        // element.
-        self.disconnect_events
-            .push(message.as_ref().to_string())
+        // register as that will be the primary cause.
+        self.client_disconnect
+            .set(message.as_ref().to_string())
             .ok();
     }
 
@@ -306,8 +292,9 @@ fn send_client_ready(net: Res<NetworkClient>) {
 fn connect(
     mut net: ResMut<NetworkClient>,
     identity: Res<Identity>,
-    mut connection_events: MessageReader<ConnectionEvent>,
     mut game_state: ResMut<NextState<GameState>>,
+    mut connection_events: MessageReader<ConnectionEvent>,
+    mut network_events: MessageWriter<NetworkEvent>,
 ) {
     if let Some(Some(result)) = net
         .connection_task
@@ -321,6 +308,7 @@ fn connect(
                     name: identity.username.clone(),
                 });
                 game_state.set(GameState::Connecting);
+                network_events.write(NetworkEvent::Connected);
             }
             Err(e) => net.disconnect(e.to_string()),
         };
@@ -467,34 +455,30 @@ fn initialize_connection(
     }
 }
 
-// Even though we disconnect through a client error we want to register the reason it
-// disconnected as an event so that it can be displayed to the user. We register it as a server
-// message to piggyback of the same code path as a disconnection initiated by the server.
-fn register_client_disconnect_events(
-    net: Res<NetworkClient>,
-    mut network_events: MessageWriter<messages::Disconnect>,
-) {
-    if let Ok(message) = net.disconnect_events.pop() {
-        network_events.write(messages::Disconnect { message });
-    }
-}
-
 fn disconnect(
     mut net: ResMut<NetworkClient>,
     mut game_state: ResMut<NextState<GameState>>,
     mut disconnect_events: MessageReader<messages::Disconnect>,
+    mut network_events: MessageWriter<NetworkEvent>,
 ) {
-    for _ in disconnect_events.read() {
+    let client_disconnect = net
+        .client_disconnect
+        .take()
+        .map(|reason| messages::Disconnect { message: reason });
+
+    for event in disconnect_events.read().chain(client_disconnect.iter()) {
         if let Some(connection) = net.connection.take() {
             connection.shutdown(Shutdown::Both).ok();
+        } else if !net.connection_task.take().is_some() {
+            continue;
         }
-
-        net.connection_task.take();
 
         net.read_buffer.clear();
         net.read_cursor = 0;
         net.message_buffer.clear();
         net.message_cursor = 0;
+
+        network_events.write(NetworkEvent::Disconnected(event.message.clone()));
 
         game_state.set(GameState::Launcher);
     }
