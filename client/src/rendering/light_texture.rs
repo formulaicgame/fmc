@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use bevy::{
     asset::{RenderAssetUsages, load_internal_asset, uuid_handle},
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    platform::collections::HashMap,
     prelude::*,
     render::{
         Extract, RenderApp,
@@ -69,7 +70,6 @@ static SUNLIGHT: [u8; Chunk::SIZE.pow(3) * 2] = {
 static NO_SUNLIGHT: [u8; Chunk::SIZE.pow(3) * 2] = [0; Chunk::SIZE.pow(3) * 2];
 
 pub struct LightUpload {
-    pub chunk_position: IVec3,
     // Two bytes per block, sunlight then artificial, scaled from 0..15 to 0..255.
     pub data: [u8; Chunk::SIZE.pow(3) * 2],
     // Uniform chunks are only ever full sunlight or full shadow. Points to one of SUNLIGHT or
@@ -78,25 +78,22 @@ pub struct LightUpload {
 }
 
 impl LightUpload {
-    pub fn new(chunk_position: IVec3, data: [u8; Chunk::SIZE.pow(3) * 2]) -> Self {
+    pub fn new(data: [u8; Chunk::SIZE.pow(3) * 2]) -> Self {
         Self {
-            chunk_position,
             data,
             uniform: None,
         }
     }
 
-    pub fn uniform_sunlight(chunk_position: IVec3) -> Self {
+    pub fn uniform_sunlight() -> Self {
         Self {
-            chunk_position,
             data: [0; Chunk::SIZE.pow(3) * 2],
             uniform: Some(&SUNLIGHT),
         }
     }
 
-    pub fn uniform_dark(chunk_position: IVec3) -> Self {
+    pub fn uniform_dark() -> Self {
         Self {
-            chunk_position,
             data: [0; Chunk::SIZE.pow(3) * 2],
             uniform: Some(&NO_SUNLIGHT),
         }
@@ -110,7 +107,7 @@ impl LightUpload {
 
 /// Chunk regions waiting to be written into the light texture.
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct LightTextureUploads(Vec<LightUpload>);
+pub struct LightTextureUploads(HashMap<IVec3, LightUpload>);
 
 fn create_light_texture(
     mut commands: Commands,
@@ -194,8 +191,8 @@ fn upload_light_regions(
     // Chunk positions are in blocks, so the wrap has to be too.
     let texture_size = IVec3::splat((light_texture.size * SIZE) as i32);
 
-    for upload in uploads.drain(..) {
-        let chunk_origin = upload.chunk_position.rem_euclid(texture_size).as_uvec3();
+    for (chunk_position, upload) in uploads.drain() {
+        let chunk_origin = chunk_position.rem_euclid(texture_size).as_uvec3();
 
         render_queue.write_texture(
             TexelCopyTextureInfo {

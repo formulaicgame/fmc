@@ -237,13 +237,13 @@ impl LightChunk {
         matches!(self.light, LightStorage::Uniform(light) if light.sunlight() == 0)
     }
 
-    fn as_upload(&self, chunk_position: IVec3) -> LightUpload {
+    fn as_upload(&self) -> LightUpload {
         match &self.light {
             LightStorage::Uniform(light) => {
                 if light.sunlight() == 15 {
-                    LightUpload::uniform_sunlight(chunk_position)
+                    LightUpload::uniform_sunlight()
                 } else {
-                    LightUpload::uniform_dark(chunk_position)
+                    LightUpload::uniform_dark()
                 }
             }
             LightStorage::Normal(lights) => {
@@ -259,7 +259,7 @@ impl LightChunk {
                         }
                     }
                 }
-                LightUpload::new(chunk_position, data)
+                LightUpload::new(data)
             }
         }
     }
@@ -488,7 +488,7 @@ fn handle_new_chunks(
         if is_uniform_sunlight {
             // Chunks that go through the update queues are uploaded when their queue empties,
             // uniform sunlight chunks skip the queues so they are uploaded here.
-            light_texture_uploads.push(light_chunk.as_upload(new_chunk.position));
+            light_texture_uploads.insert(new_chunk.position, light_chunk.as_upload());
         }
 
         light_map.chunks.insert(new_chunk.position, light_chunk);
@@ -510,7 +510,7 @@ fn handle_new_chunks(
 
                 if light_chunk.is_uniform_shadow() && chunk.is_uniform() {
                     *light_chunk = LightChunk::new_uniform_sunlight();
-                    light_texture_uploads.push(light_chunk.as_upload(chunk_position));
+                    light_texture_uploads.insert(chunk_position, light_chunk.as_upload());
                     light_map.propagate_to_adjacent(
                         chunk_position,
                         &mut light_update_queues,
@@ -997,7 +997,7 @@ fn propagate_light(
     light_update_queues.retain(|chunk_position, queue| {
         if queue.propagation.is_empty() && queue.removal.is_empty() {
             if let Some(light_chunk) = light_map.chunks.get(chunk_position) {
-                light_texture_uploads.push(light_chunk.as_upload(*chunk_position));
+                light_texture_uploads.insert(*chunk_position, light_chunk.as_upload());
             }
             false
         } else {
@@ -1017,7 +1017,7 @@ fn reupload_light_texture(
         if (*chunk_position - origin.0).abs().max_element() > max_distance {
             continue;
         }
-        light_texture_uploads.push(light_chunk.as_upload(*chunk_position));
+        light_texture_uploads.insert(*chunk_position, light_chunk.as_upload());
     }
 }
 
