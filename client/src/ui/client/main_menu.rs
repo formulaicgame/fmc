@@ -1038,7 +1038,14 @@ fn report_game_download_progress(
 fn download_default_game(mut commands: Commands) {
     let server_folder = Settings::data_dir().join("fmc_server");
     let server_path = server_folder.join("server".to_owned() + std::env::consts::EXE_SUFFIX);
-    if server_path.exists() {
+    if is_server_up_to_date(&server_path) {
+        return;
+    }
+
+    if let Err(e) = std::fs::remove_file(&server_path)
+        && e.kind() != ErrorKind::NotFound
+    {
+        error!("Could not remove outdated server executable: {e}");
         return;
     }
 
@@ -1056,6 +1063,25 @@ fn download_default_game(mut commands: Commands) {
     AsyncComputeTaskPool::get()
         .spawn(download_game(url, server_folder, sender))
         .detach();
+}
+
+fn is_server_up_to_date(server_path: &Path) -> bool {
+    let Ok(server_modified) = std::fs::metadata(server_path).and_then(|m| m.modified()) else {
+        return false;
+    };
+
+    if std::env::var_os("CARGO").is_some() {
+        return true;
+    }
+
+    let Ok(client_modified) = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .and_then(|m| m.modified())
+    else {
+        return true;
+    };
+
+    server_modified >= client_modified
 }
 
 async fn download_game(url: String, download_folder: PathBuf, reporter: Sender<DownloadStatus>) {
