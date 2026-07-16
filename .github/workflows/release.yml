@@ -159,7 +159,7 @@ jobs:
 
       - name: Compress Linux and Windows builds
         run: |
-          (cd artifacts/fmc-linux && tar -czf fmc-linux.tar.gz fmc-linux && rm fmc-linux)
+          (cd artifacts/fmc-linux && chmod +x fmc-linux && tar -czf fmc-linux.tar.gz fmc-linux && rm fmc-linux)
           (cd artifacts/fmc-windows && zip fmc-windows.zip fmc-windows.exe && rm fmc-windows.exe)
 
       - if: github.event_name == 'workflow_dispatch'
