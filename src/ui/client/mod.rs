@@ -44,7 +44,7 @@ impl Plugin for GuiPlugin {
         load_internal_binary_asset!(
             app,
             BACKGROUND,
-            "../../../assets/ui/background.png",
+            "../../../assets/textures/ui/background.png",
             |bytes: &[u8], _path: String| -> Image {
                 Image::from_buffer(
                     bytes,
