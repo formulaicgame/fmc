@@ -70,14 +70,19 @@ impl Plugin for WidgetPlugin {
         load_internal_binary_asset!(
             app,
             BUTTON_TEXTURE,
-            "../../../assets/ui/button.png",
+            "../../../assets/textures/ui/button.png",
             load_image
         );
-        load_internal_binary_asset!(app, TAB_TEXTURE, "../../../assets/ui/tab.png", load_image);
+        load_internal_binary_asset!(
+            app,
+            TAB_TEXTURE,
+            "../../../assets/textures/ui/tab.png",
+            load_image
+        );
         load_internal_binary_asset!(
             app,
             DROPDOWN_ARROW_TEXTURE,
-            "../../../assets/ui/dropdown_arrow.png",
+            "../../../assets/textures/ui/dropdown_arrow.png",
             load_image
         );
     }

@@ -50,7 +50,7 @@ impl Plugin for UiPlugin {
         load_internal_binary_asset!(
             app,
             DEFAULT_FONT_HANDLE,
-            "../../assets/ui/font.otf",
+            "../../assets/fonts/font.otf",
             |bytes: &[u8], _path: String| { Font::from_bytes(bytes.to_vec()) }
         );
     }

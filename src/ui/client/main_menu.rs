@@ -67,24 +67,34 @@ impl Plugin for MainMenuPlugin {
             .expect("Failed to load image")
         };
 
-        load_internal_binary_asset!(app, PLAY_BUTTON, "../../../assets/ui/play.png", load_image);
-        load_internal_binary_asset!(app, EDIT_BUTTON, "../../../assets/ui/edit.png", load_image);
+        load_internal_binary_asset!(
+            app,
+            PLAY_BUTTON,
+            "../../../assets/textures/ui/play.png",
+            load_image
+        );
+        load_internal_binary_asset!(
+            app,
+            EDIT_BUTTON,
+            "../../../assets/textures/ui/edit.png",
+            load_image
+        );
         load_internal_binary_asset!(
             app,
             DELETE_BUTTON,
-            "../../../assets/ui/delete.png",
+            "../../../assets/textures/ui/delete.png",
             load_image
         );
         load_internal_binary_asset!(
             app,
             LIST_ITEM_TEXTURE,
-            "../../../assets/ui/list_item.png",
+            "../../../assets/textures/ui/list_item.png",
             load_image
         );
         load_internal_binary_asset!(
             app,
             LIST_ITEM_PLACEHOLDER_IMAGE,
-            "../../../assets/ui/vista.png",
+            "../../../assets/textures/ui/vista.png",
             load_image
         );
     }
