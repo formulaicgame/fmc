@@ -1,0 +1,17 @@
+[package]
+name = "fmc_world"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+description = "The fmc world crate"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+bevy.workspace = true
+
+[features]
+default = []
+client = []
+
+[lints]
+workspace = true
