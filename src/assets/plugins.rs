@@ -9,6 +9,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use fmc_protocol::messages;
+use fmc_world::coords::constants::PROTO_CHUNK_SIZE;
 use wasmtime::{
     Engine, Store,
     component::{HasSelf, Linker},
@@ -20,8 +21,9 @@ use crate::{
     models::ModelEntities,
     networking::NetworkClient,
     player::{Head, Player},
+    position::resources::RenderOrigin,
     settings::Settings,
-    world::{Origin, WorldMap},
+    world::WorldMap,
 };
 
 pub struct WasmPlugin;
@@ -413,25 +415,25 @@ impl wit::PluginImports for WasmState {
 
     fn get_block(&mut self, block_position: wit::IVec3) -> Option<wit::BlockId> {
         let world = self.world();
-        let origin = world.get_resource::<Origin>().unwrap();
+        let origin = world.get_resource::<RenderOrigin>().unwrap();
         let world_map = world.get_resource::<WorldMap>().unwrap();
         let block_position = IVec3 {
             x: block_position.x,
             y: block_position.y,
             z: block_position.z,
-        } + origin.0;
+        } + origin.as_ivec3() * i32::from(PROTO_CHUNK_SIZE);
         world_map.get_block(&block_position)
     }
 
     fn get_block_state(&mut self, block_position: wit::IVec3) -> Option<wit::BlockState> {
         let world = self.world();
-        let origin = world.get_resource::<Origin>().unwrap();
+        let origin = world.get_resource::<RenderOrigin>().unwrap();
         let world_map = world.get_resource::<WorldMap>().unwrap();
         let block_position = IVec3 {
             x: block_position.x,
             y: block_position.y,
             z: block_position.z,
-        } + origin.0;
+        } + origin.as_ivec3() * i32::from(PROTO_CHUNK_SIZE);
         world_map.get_block_state(&block_position).map(|b| b.0)
     }
 
