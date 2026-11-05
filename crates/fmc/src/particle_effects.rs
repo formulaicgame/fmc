@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use bevy::prelude::*;
+use bevy::{platform::collections::HashMap, prelude::*};
 
 use crate::assets::AssetSet;
 

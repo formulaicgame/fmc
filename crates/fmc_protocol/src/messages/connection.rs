@@ -1,7 +1,9 @@
-use bevy::prelude::{Message, Resource};
+use bevy::{
+    platform::collections::HashMap,
+    prelude::{Message, Resource},
+};
 use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::BlockId;
 

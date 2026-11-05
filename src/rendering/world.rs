@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
-
 use bevy::{
     asset::RenderAssetUsages,
     mesh::Indices,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::PrimitiveTopology,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},

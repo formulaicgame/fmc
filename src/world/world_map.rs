@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use bevy::prelude::*;
+use bevy::{platform::collections::HashMap, prelude::*};
 
 use crate::{
     blocks::{BlockFace, BlockId, BlockState, Blocks, Friction},
@@ -89,11 +87,11 @@ impl WorldMap {
     }
 
     pub fn contains_chunk(&self, position: &IVec3) -> bool {
-        return self.chunks.contains_key(&position);
+        return self.chunks.contains_key(position);
     }
 
     pub fn get_chunk(&self, position: &IVec3) -> Option<&Chunk> {
-        return self.chunks.get(&position);
+        return self.chunks.get(position);
     }
 
     pub fn get_chunk_mut(&mut self, position: &IVec3) -> Option<&mut Chunk> {

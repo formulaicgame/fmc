@@ -53,7 +53,7 @@ impl Aabb {
     }
 
     /// Transforms the aabb by first rotating and scaling it and then applying the translation.
-    pub fn transform(&self, transform: &Transform) -> Self {
+    pub fn transform(&self, transform: &crate::bevy_extensions::f64_transform::Transform) -> Self {
         let rot_mat = DMat3::from_quat(transform.rotation);
         // If you rotate a square normally, its aabb will grow larger at 45 degrees because the
         // diagonal of the square is longer and pointing in the axis direction. We don't want
@@ -96,7 +96,10 @@ impl Aabb {
 
     // "Slab method" ray intersection test
     /// Returns distance to intersection and which face was intersected with.
-    pub fn ray_intersection(&self, ray_transform: &Transform) -> Option<(f64, BlockFace)> {
+    pub fn ray_intersection(
+        &self,
+        ray_transform: &crate::bevy_extensions::f64_transform::Transform,
+    ) -> Option<(f64, BlockFace)> {
         // let mut t_min = f64::NEG_INFINITY;
         // let mut t_max = f64::INFINITY;
 

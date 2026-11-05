@@ -1,8 +1,9 @@
-use std::{collections::HashMap, ops::Index, time::Duration};
+use std::{ops::Index, time::Duration};
 
 use bevy::{
     app::AppExit,
     math::DVec3,
+    platform::collections::HashMap,
     tasks::{IoTaskPool, futures_lite::future},
     time::common_conditions::on_timer,
 };

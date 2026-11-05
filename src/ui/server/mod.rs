@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use bevy::{
     asset::RenderAssetUsages,
     ecs::system::EntityCommands,
     image::{CompressedImageFormats, ImageSampler},
+    platform::collections::HashMap,
     prelude::*,
 };
 use fmc_protocol::messages;

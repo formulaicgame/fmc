@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
-use bevy::{camera::primitives::Aabb, prelude::*};
+use bevy::{camera::primitives::Aabb, platform::collections::HashMap, prelude::*};
 use fmc_protocol::messages;
 use serde::Deserialize;
 

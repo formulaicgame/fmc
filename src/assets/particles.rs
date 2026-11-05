@@ -1,8 +1,9 @@
-use std::{collections::HashMap, io::prelude::*};
+use std::io::prelude::*;
 
 use bevy::{
     asset::RenderAssetUsages,
     image::{CompressedImageFormats, ImageSampler, ImageType},
+    platform::collections::HashMap,
     prelude::*,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
 };

@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
-
-use bevy::prelude::*;
+use bevy::{
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{

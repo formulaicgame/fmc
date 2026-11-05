@@ -1,6 +1,6 @@
 use bevy::math::DVec3;
+use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
-use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Index, IndexMut, Sub};
 use std::sync::Arc;
 

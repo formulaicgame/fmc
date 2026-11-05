@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
-
-use bevy::math::{DQuat, DVec3};
+use bevy::{
+    math::{DQuat, DVec3},
+    platform::collections::{HashMap, HashSet},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{

@@ -1,7 +1,6 @@
-use bevy::prelude::Message;
+use bevy::{platform::collections::HashMap, prelude::Message};
 use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Change the visibility of an interface
 #[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::blocks::{BlockId, BlockState};
@@ -62,7 +62,7 @@ impl Chunk {
     }
 
     pub fn remove_block_state(&mut self, block_index: &usize) {
-        self.block_state.remove(&block_index);
+        self.block_state.remove(block_index);
     }
 
     pub fn get_block_state(&self, x: usize, y: usize, z: usize) -> Option<BlockState> {

@@ -3,7 +3,6 @@
 //       It should instead emit warnings when configs(and other things it was initialized with) go
 //       missing, and update the database if a config has been changed.
 use std::{
-    collections::{HashMap, HashSet},
     ops::{Add, AddAssign, Sub, SubAssign},
     path::Path,
 };
@@ -11,6 +10,7 @@ use std::{
 use bevy::{
     ecs::system::EntityCommands,
     math::{DQuat, DVec3},
+    platform::collections::{HashMap, HashSet},
 };
 use serde::Deserialize;
 

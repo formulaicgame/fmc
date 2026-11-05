@@ -1,14 +1,15 @@
+use std::collections::HashMap;
+
 use bevy::{
     app::SceneSpawnerSystems,
     asset::{load_internal_asset, uuid_handle},
     mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
+    platform::hash::FixedHasher,
     prelude::*,
     render::render_resource::*,
     shader::ShaderRef,
 };
-
-use std::collections::HashMap;
 
 use crate::{
     assets::BlockTextures, game_state::GameState, rendering::light_texture::LIGHT_TEXTURE,
@@ -42,7 +43,7 @@ impl Plugin for ModelMaterialPlugin {
 }
 
 #[derive(Resource, Deref, DerefMut, Default)]
-struct ModelMaterials(HashMap<Handle<StandardMaterial>, Handle<ModelMaterial>>);
+struct ModelMaterials(HashMap<Handle<StandardMaterial>, Handle<ModelMaterial>, FixedHasher>);
 
 fn cleanup(mut materials: ResMut<ModelMaterials>) {
     materials.clear();

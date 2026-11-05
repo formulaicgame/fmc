@@ -1,9 +1,13 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::RandomState,
-};
+use std::hash::RandomState;
 
-use bevy::{math::DVec3, prelude::*};
+use bevy::{
+    math::DVec3,
+    platform::{
+        collections::{HashMap, HashSet},
+        hash::FixedHasher,
+    },
+    prelude::*,
+};
 use fmc_protocol::messages;
 
 use crate::{
@@ -277,8 +281,8 @@ impl Observers {
 }
 
 enum ObserversIter<'a> {
-    Union(std::collections::hash_set::Union<'a, Entity, RandomState>),
-    Difference(std::collections::hash_set::Difference<'a, Entity, RandomState>),
+    Union(bevy::platform::collections::hash_set::Union<'a, Entity, FixedHasher>),
+    Difference(bevy::platform::collections::hash_set::Difference<'a, Entity, FixedHasher>),
 }
 
 impl<'a> Iterator for ObserversIter<'a> {

@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use bevy::{prelude::*, render::render_resource::Face};
+use bevy::{platform::collections::HashMap, prelude::*, render::render_resource::Face};
 use serde::Deserialize;
 
 use crate::{

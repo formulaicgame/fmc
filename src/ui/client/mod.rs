@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use bevy::{
     asset::{RenderAssetUsages, load_internal_binary_asset, uuid_handle},
     image::{CompressedImageFormats, ImageSampler, ImageType},
+    platform::collections::HashMap,
     prelude::*,
 };
 

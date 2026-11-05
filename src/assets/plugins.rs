@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use bevy::{
     camera::primitives::Aabb,
     ecs::{message::MessageCursor, system::SystemState},
     input::{ButtonState, keyboard::KeyboardInput},
     math::{Mat3A, Vec3A},
+    platform::collections::HashMap,
     prelude::*,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
