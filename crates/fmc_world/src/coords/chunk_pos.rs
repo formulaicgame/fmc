@@ -1,6 +1,8 @@
 use std::ops::{Add, AddAssign, Index, IndexMut};
 
-use bevy::math::{I64Vec3, IVec3};
+use bevy::math::{DVec3, I64Vec3, IVec3};
+
+use crate::coords::constants::PROTO_CHUNK_SIZE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChunkPos(IVec3);
@@ -29,6 +31,16 @@ impl ChunkPos {
     #[must_use]
     pub fn as_i64vec3(self) -> I64Vec3 {
         self.0.as_i64vec3()
+    }
+
+    #[must_use]
+    pub fn as_ivec3(self) -> IVec3 {
+        self.0
+    }
+
+    #[must_use]
+    pub fn corner(self) -> DVec3 {
+        self.0.as_dvec3() * f64::from(PROTO_CHUNK_SIZE)
     }
 }
 

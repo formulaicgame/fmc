@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    coords::{ChunkPos, constants::PROTO_CHUNK_SIZE},
+    coords::{BlockPos, ChunkPos, constants::PROTO_CHUNK_SIZE},
     transform::GlobalVoxelTransform,
 };
 
@@ -50,6 +50,25 @@ impl VoxelTransform {
             rotation: self.rotation,
             scale: self.scale,
         }
+    }
+
+    #[must_use]
+    pub fn block_pos(&self) -> BlockPos {
+        BlockPos::from_i64vec3(
+            self.chunk.as_i64vec3() * PROTO_CHUNK_SIZE as i64 + self.local.floor().as_i64vec3(),
+        )
+    }
+
+    #[must_use]
+    pub fn offset_from(&self, other: &Self) -> Vec3 {
+        (self.chunk.as_ivec3() - other.chunk.as_ivec3())
+            .abs()
+            .as_vec3()
+            + (self.local - other.local).abs()
+    }
+
+    pub fn translated_by(&self, translation: Vec3) -> Self {
+        Self::from_chunk_local(self.chunk, self.local + translation)
     }
 }
 

@@ -1,4 +1,4 @@
-use bevy::math::I64Vec3;
+use bevy::math::{I64Vec3, IVec3};
 
 use crate::coords::{ChunkPos, constants::PROTO_CHUNK_SIZE, local_block_pos::LocalBlockPos};
 
@@ -8,6 +8,11 @@ impl BlockPos {
     #[must_use]
     pub const fn new(x: i64, y: i64, z: i64) -> Self {
         Self(I64Vec3::new(x, y, z))
+    }
+
+    #[must_use]
+    pub const fn from_i64vec3(v: I64Vec3) -> Self {
+        Self(v)
     }
 
     #[must_use]
@@ -44,5 +49,11 @@ impl BlockPos {
             .to_array();
 
         LocalBlockPos::new(x, y, z)
+    }
+
+    #[deprecated]
+    #[must_use]
+    pub fn as_ivec3(self) -> IVec3 {
+        self.0.as_ivec3()
     }
 }

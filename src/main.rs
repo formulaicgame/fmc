@@ -15,6 +15,7 @@ mod models;
 mod networking;
 mod particles;
 mod player;
+mod position;
 mod rendering;
 mod settings;
 mod singleplayer;
@@ -69,6 +70,8 @@ fn main() {
         .add_plugins(player::PlayerPlugin)
         .add_plugins(models::ModelPlugin)
         .add_plugins(world::WorldPlugin)
+        .add_plugins(fmc_world::WorldPlugins)
+        .add_plugins(position::PositionPlugin)
         .add_plugins(ui::UiPlugin)
         .add_plugins(singleplayer::SinglePlayerPlugin)
         .add_systems(Update, fix_keys_not_released_on_focus_loss)

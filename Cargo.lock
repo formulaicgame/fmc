@@ -3050,6 +3050,7 @@ dependencies = [
  "dirs",
  "fmc_noise",
  "fmc_protocol",
+ "fmc_world",
  "junction",
  "nonmax",
  "rusqlite",
