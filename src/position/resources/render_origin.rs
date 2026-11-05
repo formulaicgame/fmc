@@ -1,5 +1,5 @@
 use bevy::{math::DVec3, prelude::*};
-use fmc_world::{coords::ChunkPos, transform::VoxelTransform};
+use fmc_world::coords::ChunkPos;
 
 #[derive(Resource, Default, Clone, Copy, PartialEq, Eq, Debug, Deref, DerefMut)]
 pub struct RenderOrigin(pub ChunkPos);
@@ -11,7 +11,7 @@ impl RenderOrigin {
     }
 
     #[deprecated]
-    pub fn to_global(self, render: Vec3) -> VoxelTransform {
-        VoxelTransform::from_chunk_local(self.0, render)
+    pub fn to_global(self, render: Vec3) -> DVec3 {
+        self.corner() + render.as_dvec3()
     }
 }

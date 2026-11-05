@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub fn update_origin(
-    focus: Single<&VoxelTransform, With<FloatingOrigin>>,
+    focus: Single<&VoxelTransform, (With<FloatingOrigin>, Changed<VoxelTransform>)>,
     mut origin: ResMut<RenderOrigin>,
 ) {
     origin.set_if_neq(RenderOrigin(focus.chunk));

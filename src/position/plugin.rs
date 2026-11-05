@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use fmc_world::transform::VoxelTransformSystems;
 
-use crate::position::{resources::RenderOrigin, systems};
+use crate::{
+    game_state::GameState,
+    position::{resources::RenderOrigin, systems},
+};
 
 pub struct PositionPlugin;
 
@@ -14,7 +17,8 @@ impl Plugin for PositionPlugin {
                     .in_set(VoxelTransformSystems::Origin),
                 systems::sync_transforms.in_set(VoxelTransformSystems::Sync),
                 systems::update_global_voxel.in_set(VoxelTransformSystems::PostPropagate),
-            ),
+            )
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

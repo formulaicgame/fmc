@@ -8,10 +8,12 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
 use fmc_protocol::messages;
+use fmc_world::coords::constants::PROTO_CHUNK_SIZE;
 
 use crate::{
     blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
     game_state::GameState,
+    position::resources::RenderOrigin,
     rendering::materials::BlockMaterial,
     world::{Chunk, NewChunkEvent, Origin, WorldMap},
 };
@@ -83,7 +85,7 @@ struct ChunkMeshTask {
 /// Launches new mesh tasks when chunks change.
 fn mesh_system(
     mut commands: Commands,
-    origin: Res<Origin>,
+    origin: Res<RenderOrigin>,
     world_map: Res<WorldMap>,
     blocks: Res<Blocks>,
     mut mesh_events: MessageReader<ChunkMeshEvent>,
@@ -99,10 +101,11 @@ fn mesh_system(
 
                 let expanded_chunk = world_map.get_expanded_chunk(event.chunk_position);
 
-                let task = if (event.chunk_position - origin.0)
-                    .abs()
-                    .cmple(IVec3::splat(Chunk::SIZE as i32))
-                    .all()
+                let task = if (event.chunk_position / i32::from(PROTO_CHUNK_SIZE)
+                    - origin.as_ivec3())
+                .abs()
+                .cmple(IVec3::splat(Chunk::SIZE as i32))
+                .all()
                 {
                     // Chunks that are close get meshed on main thread to minimize visual latency. A
                     // task can take several frames to execute in scheduling alone.

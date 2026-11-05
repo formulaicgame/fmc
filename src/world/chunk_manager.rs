@@ -1,15 +1,20 @@
 use bevy::prelude::*;
 
 use fmc_protocol::messages;
+use fmc_world::{
+    coords::{ChunkPos, constants::PROTO_CHUNK_SIZE},
+    transform::VoxelTransform,
+};
 
 use crate::{
     blocks::{BlockState, Blocks},
     game_state::GameState,
     networking::NetworkClient,
+    position::resources::RenderOrigin,
     rendering::RenderSet,
     settings::Settings,
     world::{
-        MovesWithOrigin, Origin, WorldMap,
+        WorldMap,
         chunk::{Chunk, ChunkMarker},
     },
 };
@@ -51,7 +56,7 @@ impl Plugin for ChunkManagerPlugin {
                 // kept in Update.
                 PostUpdate,
                 unload_chunks
-                    .run_if(resource_changed::<Origin>.or_else(resource_changed::<Settings>)),
+                    .run_if(resource_changed::<RenderOrigin>.or_else(resource_changed::<Settings>)),
             );
     }
 }
@@ -74,12 +79,12 @@ fn pause_system(mut pause: ResMut<Pause>, keyboard_input: Res<ButtonInput<KeyCod
 // Removes chunks that are outside the render distance of the player.
 fn unload_chunks(
     settings: Res<Settings>,
-    origin: Res<Origin>,
+    origin: Res<RenderOrigin>,
     mut world_map: ResMut<WorldMap>,
     mut commands: Commands,
 ) {
     world_map.chunks.retain(|chunk_pos, chunk| {
-        let distance = (*chunk_pos - origin.0).abs() / IVec3::splat(Chunk::SIZE as i32);
+        let distance = (chunk_pos / i32::from(PROTO_CHUNK_SIZE) - origin.as_ivec3()).abs();
         if distance
             .cmpgt(IVec3::splat(settings.render_distance as i32))
             .any()
@@ -103,7 +108,7 @@ fn unload_chunks(
 // down again, same for the other directions. So if you traverse up a mountain for example, you
 // can't traverse down the other side again, so what's behind it is culled.
 fn occlusion_culling(
-    origin: Res<Origin>,
+    origin: Res<RenderOrigin>,
     settings: Res<Settings>,
     world_map: Res<WorldMap>,
     pause: Res<Pause>,
@@ -132,7 +137,7 @@ fn occlusion_culling(
         (offset.x as usize * width + offset.y as usize) * width + offset.z as usize
     };
     let grid_offset = |chunk_position: IVec3| -> Option<IVec3> {
-        let offset = (chunk_position - origin.0) / Chunk::SIZE as i32 + radius;
+        let offset = (chunk_position / i32::from(PROTO_CHUNK_SIZE) - origin.as_ivec3()) + radius;
         if offset.cmplt(IVec3::ZERO).any() || offset.cmpge(IVec3::splat(width as i32)).any() {
             None
         } else {
@@ -215,7 +220,6 @@ fn handle_new_chunks(
     mut commands: Commands,
     net: Res<NetworkClient>,
     blocks: Res<Blocks>,
-    origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     mut new_chunk_events: MessageWriter<NewChunkEvent>,
     mut received_chunks: MessageReader<messages::Chunk>,
@@ -236,6 +240,12 @@ fn handle_new_chunks(
             position: chunk.position,
         });
 
+        let chunk_pos = ChunkPos::from_ivec3(
+            chunk
+                .position
+                .div_euclid(IVec3::splat(PROTO_CHUNK_SIZE as i32)),
+        );
+
         let entity =
             if chunk.blocks.len() == 1 && blocks.get_config(chunk.blocks[0]).quads.len() == 0 {
                 // Uniform chunks that don't have a renderable block are ignored
@@ -244,9 +254,8 @@ fn handle_new_chunks(
                 Some(
                     commands
                         .spawn((
-                            Transform::from_translation((chunk.position - origin.0).as_vec3()),
+                            VoxelTransform::from_chunk_local(chunk_pos, Vec3::ZERO),
                             Visibility::Visible,
-                            MovesWithOrigin,
                             ChunkMarker,
                         ))
                         .id(),
@@ -279,7 +288,6 @@ pub fn handle_block_updates(
     mut commands: Commands,
     net: Res<NetworkClient>,
     blocks: Res<Blocks>,
-    origin: Res<Origin>,
     mut world_map: ResMut<WorldMap>,
     mut block_updates_events: MessageReader<messages::BlockUpdates>,
 ) {
@@ -301,12 +309,14 @@ pub fn handle_block_updates(
             continue;
         };
 
+        let chunk_position =
+            ChunkPos::from_ivec3(event.chunk_position / i32::from(PROTO_CHUNK_SIZE));
+
         if chunk.is_uniform() {
             let entity = commands
                 .spawn((
-                    Transform::from_translation((event.chunk_position - origin.0).as_vec3()),
+                    VoxelTransform::from_chunk_local(chunk_position, Vec3::ZERO),
                     Visibility::Visible,
-                    MovesWithOrigin,
                     ChunkMarker,
                 ))
                 .id();

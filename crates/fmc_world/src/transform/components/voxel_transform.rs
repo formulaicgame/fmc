@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{math::DVec3, prelude::*};
 
 use crate::{
     coords::{BlockPos, ChunkPos, constants::PROTO_CHUNK_SIZE},
@@ -69,6 +69,18 @@ impl VoxelTransform {
 
     pub fn translated_by(&self, translation: Vec3) -> Self {
         Self::from_chunk_local(self.chunk, self.local + translation)
+    }
+
+    pub fn to_dvec3(&self) -> DVec3 {
+        self.chunk.as_ivec3().as_dvec3() * PROTO_CHUNK_SIZE as f64 + self.local.as_dvec3()
+    }
+
+    pub fn set_from_dvec3(&mut self, p: DVec3) {
+        let chunk = p.div_euclid(DVec3::splat(PROTO_CHUNK_SIZE.into()));
+        let local = p.rem_euclid(DVec3::splat(PROTO_CHUNK_SIZE.into()));
+
+        self.chunk = ChunkPos::from_ivec3(chunk.as_ivec3());
+        self.local = local.as_vec3();
     }
 }
 

@@ -14,6 +14,11 @@ impl ChunkPos {
     }
 
     #[must_use]
+    pub const fn from_ivec3(v: IVec3) -> Self {
+        Self(v)
+    }
+
+    #[must_use]
     pub const fn x(self) -> i32 {
         self.0.x
     }
