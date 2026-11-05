@@ -10,7 +10,8 @@ impl Plugin for PositionPlugin {
         app.init_resource::<RenderOrigin>().add_systems(
             PostUpdate,
             (
-                systems::update_origin.in_set(VoxelTransformSystems::Origin),
+                (systems::update_origin, systems::bridge_origin)
+                    .in_set(VoxelTransformSystems::Origin),
                 systems::sync_transforms.in_set(VoxelTransformSystems::Sync),
                 systems::update_global_voxel.in_set(VoxelTransformSystems::PostPropagate),
             ),

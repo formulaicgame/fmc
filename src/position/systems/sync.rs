@@ -5,13 +5,13 @@ use crate::position::resources::RenderOrigin;
 
 pub fn sync_transforms(
     origin: Res<RenderOrigin>,
-    mut transforms: Query<(&VoxelTransform, &mut Transform), Changed<VoxelTransform>>,
+    mut transforms: Query<(Ref<VoxelTransform>, &mut Transform)>,
 ) {
-    if origin.is_changed() {
-        return;
-    }
+    let origin_moved = origin.is_changed();
 
     for (voxel, mut transform) in &mut transforms {
-        transform.set_if_neq(voxel.to_render(**origin));
+        if origin_moved || voxel.is_changed() {
+            transform.set_if_neq(voxel.to_render(**origin));
+        }
     }
 }

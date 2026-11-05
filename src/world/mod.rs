@@ -1,4 +1,5 @@
 use bevy::{math::DVec3, prelude::*};
+use fmc_world::coords::{ChunkPos, constants::PROTO_CHUNK_SIZE};
 
 use crate::{game_state::GameState, player::Head};
 
@@ -40,6 +41,14 @@ impl Origin {
 
     pub fn to_global(&self, position: Vec3) -> DVec3 {
         self.as_dvec3() + position.as_dvec3()
+    }
+
+    pub fn as_chunk_pos(self) -> ChunkPos {
+        let [x, y, z] = self
+            .div_euclid(IVec3::splat(PROTO_CHUNK_SIZE.into()))
+            .to_array();
+
+        ChunkPos::new(x, y, z)
     }
 }
 
