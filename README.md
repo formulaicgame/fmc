@@ -25,7 +25,7 @@ Ask on [discord](https://discord.gg/VMgFmdsQ6m) if you have questions/problems
 
 ## What is this?
 
-Fmc lets you create and play [block games](https://github.com/awowogei/FMC_173) that are [moddable](examples/docs/server_mod).  
+Fmc lets you create and play [block games](https://github.com/awowogei/FMC_173) that are [moddable](examples/docs/server_mod).
 The aim is to enable modification of any aspect of the game entirely server-side, so that you can play
 different games through the same client.
 

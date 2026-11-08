@@ -313,35 +313,21 @@ pub fn load_blocks(
                         let normal_max =
                             normal.abs().cmpeq(Vec3::splat(normal.abs().max_element()));
 
-                        let mut uvs: [[f32; 2]; 4] = default();
-                        for (i, vertex) in quad.vertices.into_iter().enumerate() {
-                            let uv = if normal_max.x {
-                                Vec3::from_array(vertex).zy()
+                        let uvs = quad.vertices.map(|[x, y, z]| {
+                            if normal_max.x {
+                                if normal.x > 0.0 {
+                                    [1.0 - z, 1.0 - y]
+                                } else {
+                                    [z, 1.0 - y]
+                                }
                             } else if normal_max.y {
-                                Vec3::from_array(vertex).xz()
+                                if normal.y > 0.0 { [x, z] } else { [1.0 - x, z] }
+                            } else if normal.z > 0.0 {
+                                [x, 1.0 - y]
                             } else {
-                                Vec3::from_array(vertex).xy()
-                            };
-
-                            if i == 0 {
-                                uvs[0] = [uv.x - uv.x.floor(), uv.y - uv.y.floor()];
-                            } else if i == 1 {
-                                uvs[1] = [
-                                    // This is just the fraction, but instead of using `f32::fract`
-                                    // we do this so it's inversed for negative numbers. e.g. -0.6
-                                    // yields 0.4, which is what we want because that is the distance
-                                    // from -1.0 to -0.6
-                                    uv.x - uv.x.floor(),
-                                    // Since this is on the high side of the range extracting the fract is harder since it
-                                    // can be a whole number. e.g a position of 1.0 should give a fraction of 1.0, not 0.0.
-                                    uv.y - (uv.y.ceil() - 1.0),
-                                ];
-                            } else if i == 2 {
-                                uvs[2] = [uv.x - (uv.x.ceil() - 1.0), uv.y - uv.y.floor()];
-                            } else if i == 3 {
-                                uvs[3] = [uv.x - (uv.x.ceil() - 1.0), uv.y - (uv.y.ceil() - 1.0)];
+                                [1.0 - x, 1.0 - y]
                             }
-                        }
+                        });
 
                         mesh_primitives.push(QuadPrimitive {
                             vertices: quad.vertices,

@@ -29,10 +29,8 @@ fn cleanup(mut commands: Commands, mut world_map: ResMut<WorldMap>) {
 /// Map of all chunks that have been received from the server.
 #[derive(Resource, Default)]
 pub struct WorldMap {
-    // TODO: Might make sense to make this an array of Chunk::SIZE^3. It would help with lookup
-    // speed when the chunks need to be marked visible for rendering. I really dislike having to
-    // shift all the chunks when passing chunk borders though, even though it might not be very
-    // expensive.
+    // TODO: Might make sense to make this an array. It would help with lookup
+    // speed when the chunks need to be marked visible for rendering.
     pub chunks: HashMap<IVec3, Chunk>,
 }
 
