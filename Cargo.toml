@@ -38,21 +38,6 @@ zstd.workspace = true
 [lints]
 workspace = true
 
-[features]
-dev_native = [
-    "dev",
-    "bevy/file_watcher",
-    "bevy/embedded_watcher",
-]
-
-dev = [
-    "bevy/debug",
-    "bevy/dynamic_linking",
-    "bevy/bevy_dev_tools",
-    "bevy/bevy_ui_debug",
-    "bevy/track_location",
-]
-
 [workspace]
 resolver = "3"
 members = ["crates/*"]
