@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{Handle, load_internal_asset, uuid_handle},
+    asset::Handle,
     image::Image,
     prelude::*,
     reflect::TypePath,
@@ -7,19 +7,12 @@ use bevy::{
     shader::ShaderRef,
 };
 
-const PARTICLE_SHADER: Handle<Shader> = uuid_handle!("d0c4577a-75e0-4794-9355-eb4b7a8a2036");
+const PARTICLE_SHADER: &str = "embedded://fmc/rendering/shaders/particles.wgsl";
 
 pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<ParticleMaterial>::default());
-
-        load_internal_asset!(
-            app,
-            PARTICLE_SHADER,
-            "../shaders/particles.wgsl",
-            Shader::from_wgsl
-        );
     }
 }
 

@@ -1,5 +1,4 @@
 use bevy::{
-    asset::{load_internal_asset, uuid_handle},
     mesh::MeshVertexBufferLayoutRef,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
@@ -7,14 +6,12 @@ use bevy::{
     shader::ShaderRef,
 };
 
-const SKY_SHADER: Handle<Shader> = uuid_handle!("996ffae4-c429-4924-bf5d-ce18f3f93ca8");
+const SKY_SHADER: &str = "embedded://fmc/rendering/shaders/sky.wgsl";
 
 pub struct SkyMaterialPlugin;
 impl Plugin for SkyMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SkyMaterial>::default());
-
-        load_internal_asset!(app, SKY_SHADER, "../shaders/sky.wgsl", Shader::from_wgsl);
     }
 }
 

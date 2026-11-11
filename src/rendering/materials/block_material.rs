@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{Handle, load_internal_asset, uuid_handle},
+    asset::Handle,
     image::Image,
     mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     pbr::{MaterialPipeline, MaterialPipelineKey},
@@ -9,19 +9,12 @@ use bevy::{
     shader::ShaderRef,
 };
 
-const BLOCK_SHADER: Handle<Shader> = uuid_handle!("ec7e9459-fc8b-4c8c-8c07-d1290da4e9de");
+const BLOCK_SHADER: &str = "embedded://fmc/rendering/shaders/blocks.wgsl";
 
 pub struct BlockMaterialPlugin;
 impl Plugin for BlockMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<BlockMaterial>::default());
-
-        load_internal_asset!(
-            app,
-            BLOCK_SHADER,
-            "../shaders/blocks.wgsl",
-            Shader::from_wgsl
-        );
     }
 }
 

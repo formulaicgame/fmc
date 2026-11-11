@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{asset::embedded_asset, prelude::*, shader::load_shader_library};
 
 // TODO: This pub is needed for ExpandedChunk, move the struct to the chunk file and close this off.
 pub mod world;
@@ -12,6 +12,12 @@ mod sky;
 pub struct RenderingPlugin;
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
+        load_shader_library!(app, "shaders/lighting.wgsl");
+        embedded_asset!(app, "shaders/blocks.wgsl");
+        embedded_asset!(app, "shaders/models.wgsl");
+        embedded_asset!(app, "shaders/particles.wgsl");
+        embedded_asset!(app, "shaders/sky.wgsl");
+
         app.add_plugins(materials::MaterialsPlugin)
             .add_plugins(world::ChunkMeshPlugin)
             .add_plugins(lighting::LightingPlugin)

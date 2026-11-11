@@ -132,13 +132,7 @@ fn pass_time(
     let mut moon_transform = moon_query.single_mut().unwrap();
     moon_transform.rotation *= Quat::from_rotation_z(TAU / 5000.0 * time.delta_secs());
 
-    // Max is lower so that the brightness peaks early and fades late
-    let max = 0.2;
-    let min = 0.3;
-    let range: f32 = (angle.sin().min(max).max(-min) + min) / (min + max);
-    // Exponential decay so that the brightness will decrease rapdidly come sunset to warn the
-    // player, and to let the light linger until the halo of the sun is completely gone.
-    ambient_light.brightness = range.powi(4);
+    ambient_light.brightness = angle.sin();
 }
 
 fn cube_mesh() -> Mesh {

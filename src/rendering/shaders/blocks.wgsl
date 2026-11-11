@@ -14,7 +14,7 @@
 
 #import bevy_render::maths::{powsafe, HALF_PI}
 
-#import fmc::lighting::get_light
+#import fmc::lighting::{get_light, fog_color}
 
 #ifdef OIT_ENABLED
     #import bevy_core_pipeline::oit::oit_draw
@@ -193,21 +193,10 @@ fn fragment(
     var fog_copy = fog;
     // TODO: Tinting the rgb of the ambient light at sunrise/sunset could
     // be nice? Or access to the sun position is needed, but we can't have that.
-    let brightness = smoothstep(0.0, 0.10, lights.ambient_color.a);
-    fog_copy.base_color = vec4(fog_copy.base_color.rgb * brightness, fog_copy.base_color.a);
+    fog_copy.base_color = fog_color(fog);
     output_color = apply_fog(fog_copy, output_color, world_position);
     //}
 #endif // DISTANCE_FOG
-
-#ifdef OIT_ENABLED
-    // OIT_ENABLED is only set when the alpha mode is AlphaMode::Blend, but
-    // check anyway in case they change it.
-    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
-    if alpha_mode != pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE {
-        oit_draw(frag_coord, output_color);
-        discard;
-    }
-#endif // OIT_ENABLED
 
 #ifdef TONEMAP_IN_SHADER
     // TODO: Makes it look so bland...
@@ -222,6 +211,17 @@ fn fragment(
     output_color = vec4(output_rgb, output_color.a);
 #endif
 #endif
+
+#ifdef OIT_ENABLED
+    // OIT_ENABLED is only set when the alpha mode is AlphaMode::Blend, but
+    // check anyway in case they change it.
+    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
+    if alpha_mode != pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE {
+        oit_draw(frag_coord, output_color);
+        discard;
+    }
+#endif // OIT_ENABLED
+
 #ifdef PREMULTIPLY_ALPHA
     output_color = premultiply_alpha(material.flags, output_color);
 #endif

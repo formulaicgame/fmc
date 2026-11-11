@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use bevy::{
-    asset::{RenderAssetUsages, load_internal_asset, uuid_handle},
+    asset::{RenderAssetUsages, uuid_handle},
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
     platform::collections::HashMap,
     prelude::*,
@@ -23,19 +23,11 @@ use crate::{
     world::Chunk,
 };
 
-const LIGHTING_SHADER: Handle<Shader> = uuid_handle!("60c95d54-a3b7-4ac1-97d8-3e57f74d4e35");
 pub const LIGHT_TEXTURE: Handle<Image> = uuid_handle!("bff6f429-1757-4e88-8a17-467b935b9911");
 
 pub struct LightTexturePlugin;
 impl Plugin for LightTexturePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            LIGHTING_SHADER,
-            "shaders/lighting.wgsl",
-            Shader::from_wgsl
-        );
-
         app.init_resource::<LightTextureUploads>().add_systems(
             Update,
             (

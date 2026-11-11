@@ -1,7 +1,11 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 
-#import bevy_pbr::mesh_view_bindings::{view, lights};
+#import bevy_pbr::mesh_view_bindings::view;
 #import bevy_pbr::mesh_view_types::{OrderIndependentTransparencySettings, OitFragmentNode, Fog}
+
+#import fmc::lighting::{brightness, VOID_COLOR}
+#import bevy_core_pipeline::tonemapping::screen_space_dither
+#import bevy_render::maths::powsafe
 
 #ifdef OIT_ENABLED
 // TODO: This is a copy of bevy_core_pipeline::oit::oit_draw because it doesn't like
@@ -71,9 +75,12 @@ fn fragment(
     let opacity_exponent = 1.5;
     let opacity = 0.2;
     let alpha = pow(coverage, opacity_exponent) / (1.0/opacity + pow(coverage, opacity_exponent)-1.0);
-    let gradient = smoothstep(0.00, 0.10, lights.ambient_color.a);
+    let gradient = brightness();
     // Night color to day color
-    let color = vec3f(mix(0.01, 0.7, gradient));
+    var color = mix(vec3f(0.0025) + VOID_COLOR, vec3f(0.7), gradient);
+    color = powsafe(color, 1.0 / 2.2);
+    color += screen_space_dither(position.xy);
+    color = powsafe(color, 2.2);
     let cloud_color = vec4f(color, alpha);
 
     let p = vec4f(position.x, position.y, depth, 1.0);

@@ -13,6 +13,8 @@
 
 #import bevy_render::maths::{PI, HALF_PI, powsafe}
 
+#import fmc::lighting::{sun_height, brightness, fog_color, VOID_COLOR}
+
 const HORIZON = -0.05;
 
 struct SkyMaterialUniform {
@@ -46,20 +48,17 @@ fn fragment(
     let sky_color = sky(position);
 
     if material.is_star != 0 {
-        let starlight = mix(vec4(1.0), sky_color, smoothstep(-0.5, -0.1, sin(material.sun_angle)));
+        let starlight = mix(vec4(1.0), sky_color, smoothstep(-0.5, -0.1, sun_height()));
         // Hide stars inside glow of the moon
         output_color = mix(sky_color, starlight, step(celestial_glow(position).a, 0.0));
     } else if material.is_sun != 0 {
-        output_color = output_color * 1.5;
-        // Fade the sun as it sets/rises
-        let t = twilight(position);
-        output_color = blend_colors(output_color, vec4(t.rgb, t.a * 0.5));
+        output_color = output_color * 1.5 * sun_color();
     } else if material.is_moon != 0 {
         // Tints the moon slightly blue
         let emission = vec4(1.0, 1.0, 1.8, 1.0);
         output_color = output_color * emission;
         // Fade the moon as it sets/rises
-        output_color = blend_colors(output_color, sky_color);
+        output_color = mix(sky_color, output_color, moon_visibility());
     } else {
         output_color = sky_color;
     }
@@ -89,21 +88,17 @@ fn sky(position: vec3<f32>) -> vec4<f32> {
     let day_color = vec4(0.1, 0.4, 1.0, 1.0);
     // Important that the alpha is zero here so that the day color will overrule
     // the moon color when blending, but the night color will not.
-    let night_color = vec4(0.0);
+    let night_color = vec4(VOID_COLOR, 0.0);
 
-    let brightness = smoothstep(0.0, 0.10, lights.ambient_color.a);
-    var sky_color = mix(night_color, day_color, brightness);
+    var sky_color = mix(night_color, day_color, brightness());
 
-    let fog_color = blend_colors(sky_color, vec4(
-        fog.base_color.rgb,
-        brightness
-    ));
-    sky_color = mix(fog_color, sky_color, smoothstep(0.01, 0.50, position.y));
+    let void_color = vec4(fog_color(fog).rgb, sky_color.a);
+    sky_color = mix(void_color, sky_color, smoothstep(0.01, 0.50, position.y));
+
+    sky_color = blend_colors(sky_color, twilight(position));
 
     // Apply glow from sun/moon
     sky_color = mix(sky_color, blend_colors(sky_color, celestial_glow(position)), step(HORIZON, position.y));
-
-    sky_color = blend_colors(sky_color, twilight(position));
 
     return sky_color;
 }
@@ -114,28 +109,36 @@ fn celestial_glow(position: vec3<f32>) -> vec4<f32> {
     let sun_dot = dot(position, sun_direction);
     let moon_dot = dot(position, -sun_direction);
 
-    let sun_color = vec4(1.0, 1.0, 0.0, 0.2);
-    let moon_color = vec4(0.4, 0.4, 0.7, 0.04);
-    let color = select(sun_color, moon_color, vec4(moon_dot > sun_dot));
+    let sun_glow = vec4(1.0, 1.0, 0.0, 0.25) * sun_color() * smoothstep(-0.1, 0.0, sun_height());
+    let moon_glow = vec4(0.4, 0.4, 0.7, 0.04) * moon_visibility();
+    let color = select(sun_glow, moon_glow, vec4(moon_dot > sun_dot));
 
     return color * smoothstep(0.96, 1.0, max(sun_dot, moon_dot));
 }
 
-// TODO: Maybe it would look prettier to latch the max color to min(sun_height, max_height) at sunset
-// and max(HORIZON, sun_height) at sunrise? This way it follows the sun
 fn twilight(position: vec3<f32>) -> vec4<f32> {
-    let max_color = vec4(1.0, 0.25, 0.15, 1.0);
+    let max_color = vec4(0.95, 0.25, 0.08, 1.0);
     // Important that the alpha is zero here so that the day color will overrule
     // the moon color when blending, but the night color will not.
     let no_color = vec4(0.0);
 
-    let max_height = 0.35;
-    let above_color = mix(max_color, no_color, smoothstep(HORIZON, max_height, sin(material.sun_angle)));
-    let below_color = mix(no_color, max_color, smoothstep(-max_height, HORIZON, sin(material.sun_angle)));
+    // TODO: Fade point chosen to taste, they don't provide much control. You
+    // set the below low so it will linger long, but now it shows too early for
+    // the sunrise and so for the above color too.
+    //
+    // The midpoint is set so the color will be at its max when the entire sun
+    // is in view but is as close to the horizon as possible. 
+    let midpoint = 0.0;
+    let above_color = mix(max_color, no_color, smoothstep(midpoint, 0.15, sun_height()));
+    let below_color = mix(no_color, max_color, linearstep(-0.2, midpoint, sun_height()));
     var color = min(above_color, below_color);
 
+    // TODO: lock to sun position for stricter follow when below horizon?
+    // let center = min(sun_height(), HORIZON);
+
     // The color is reduced the farther the frament is from the horizon vertically
-    color.a = color.a - max_color.a / max_height * abs(position.y - HORIZON);
+    let height = 0.35; // Max height the color can reach
+    color.a = color.a - max_color.a / height * abs(position.y - HORIZON);
     color.a = color.a - (dot(
         vec2(
             // Invert the cosine because we want it to decrease where the sun isn't
@@ -145,10 +148,23 @@ fn twilight(position: vec3<f32>) -> vec4<f32> {
         normalize(position.xz)) + 1.0);
 
     // Color the fake surface a little as a reflection
-    color = mix(color * 0.5, color, step(HORIZON, position.y));
+    color = mix(color * 0.6, color, step(HORIZON, position.y));
 
     color.a = clamp(color.a, 0.0, 1.0);
     return color;
+}
+
+fn sun_color() -> vec4<f32> {
+    let warm = vec4(1.0, 0.51, 0.21, 1.0);
+    return mix(warm, vec4(1.0), smoothstep(0.0, 0.20, sun_height()));
+}
+
+fn moon_visibility() -> f32 {
+    return 1.0 - smoothstep(-0.15, -0.05, sun_height());
+}
+
+fn linearstep(low: f32, high: f32, x: f32) -> f32 {
+    return saturate((x - low) / (high - low));
 }
 
 fn blend_colors(background: vec4<f32>, foreground: vec4<f32>) -> vec4<f32> {

@@ -1,6 +1,5 @@
 use bevy::{
     app::SceneSpawnerSystems,
-    asset::{load_internal_asset, uuid_handle},
     mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
     prelude::*,
@@ -15,7 +14,7 @@ use crate::{
     world::Origin,
 };
 
-const MODEL_SHADER: Handle<Shader> = uuid_handle!("5271e945-44f0-49e2-9ca1-50225dbb5565");
+const MODEL_SHADER: &str = "embedded://fmc/rendering/shaders/models.wgsl";
 
 pub type ModelMaterial = ExtendedMaterial<StandardMaterial, ModelMaterialExtension>;
 
@@ -31,13 +30,6 @@ impl Plugin for ModelMaterialPlugin {
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnEnter(GameState::Launcher), cleanup);
-
-        load_internal_asset!(
-            app,
-            MODEL_SHADER,
-            "../shaders/models.wgsl",
-            Shader::from_wgsl
-        );
     }
 }
 
