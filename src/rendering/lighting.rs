@@ -27,9 +27,12 @@ impl Plugin for LightingPlugin {
             .add_systems(
                 Update,
                 (
-                    handle_new_chunks,
-                    handle_block_updates.after(handle_new_chunks),
-                    propagate_light.after(handle_block_updates),
+                    // This is done first so any removals are processed before handle_new_chunks
+                    // pulls from adjacent chunks. The pull would be stale if handle_block_updates
+                    // ran after it and removed the light it pulled.
+                    handle_block_updates,
+                    handle_new_chunks.after(handle_block_updates),
+                    propagate_light.after(handle_new_chunks),
                     light_chunk_unloading.run_if(resource_changed::<Origin>),
                 )
                     .in_set(RenderSet::Light)

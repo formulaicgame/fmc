@@ -1,9 +1,5 @@
 use bevy::{
-    asset::Handle,
-    image::Image,
-    prelude::*,
-    reflect::TypePath,
-    render::render_resource::*,
+    asset::Handle, image::Image, prelude::*, reflect::TypePath, render::render_resource::*,
     shader::ShaderRef,
 };
 
