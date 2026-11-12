@@ -9,7 +9,7 @@ use crate::{
     rendering::RenderSet,
     settings::Settings,
     world::{
-        MovesWithOrigin, Origin, WorldMap,
+        ChunkPosition, MovesWithOrigin, Origin, WorldMap,
         chunk::{Chunk, ChunkMarker},
     },
 };
@@ -59,7 +59,7 @@ impl Plugin for ChunkManagerPlugin {
 /// Event sent after a chunk has been added to the world map
 #[derive(Message)]
 pub struct NewChunkEvent {
-    pub position: IVec3,
+    pub position: ChunkPosition,
 }
 
 #[derive(Resource, Default)]
@@ -131,8 +131,8 @@ fn occlusion_culling(
     let grid_index = |offset: IVec3| -> usize {
         (offset.x as usize * width + offset.y as usize) * width + offset.z as usize
     };
-    let grid_offset = |chunk_position: IVec3| -> Option<IVec3> {
-        let offset = (chunk_position - origin.0) / Chunk::SIZE as i32 + radius;
+    let grid_offset = |chunk_position: ChunkPosition| -> Option<IVec3> {
+        let offset = (chunk_position - origin.0).as_ivec3() / Chunk::SIZE as i32 + radius;
         if offset.cmplt(IVec3::ZERO).any() || offset.cmpge(IVec3::splat(width as i32)).any() {
             None
         } else {
@@ -221,6 +221,8 @@ fn handle_new_chunks(
     mut received_chunks: MessageReader<messages::Chunk>,
 ) {
     for chunk in received_chunks.read() {
+        let position = ChunkPosition::from(chunk.position);
+
         // TODO: Need to validate block state too. Server can crash client.
         for block_id in chunk.blocks.iter() {
             if !blocks.contains(*block_id) {
@@ -232,9 +234,7 @@ fn handle_new_chunks(
             }
         }
 
-        new_chunk_events.write(NewChunkEvent {
-            position: chunk.position,
-        });
+        new_chunk_events.write(NewChunkEvent { position });
 
         let entity =
             if chunk.blocks.len() == 1 && blocks.get_config(chunk.blocks[0]).quads.len() == 0 {
@@ -244,7 +244,7 @@ fn handle_new_chunks(
                 Some(
                     commands
                         .spawn((
-                            Transform::from_translation((chunk.position - origin.0).as_vec3()),
+                            Transform::from_translation((position - origin.0).as_vec3()),
                             Visibility::Visible,
                             MovesWithOrigin,
                             ChunkMarker,
@@ -254,7 +254,7 @@ fn handle_new_chunks(
             };
 
         let old_chunk = world_map.insert(
-            chunk.position,
+            position,
             Chunk::new(
                 entity,
                 chunk.blocks.clone(),
@@ -292,7 +292,9 @@ pub fn handle_block_updates(
             return;
         }
 
-        let chunk = if let Some(c) = world_map.get_chunk_mut(&event.chunk_position) {
+        let chunk_position = ChunkPosition::from(event.chunk_position);
+
+        let chunk = if let Some(c) = world_map.get_chunk_mut(&chunk_position) {
             c
         } else {
             // TODO: I'm not sure that this is valid. It sometimes hits this where I'd presume it would
@@ -304,7 +306,7 @@ pub fn handle_block_updates(
         if chunk.is_uniform() {
             let entity = commands
                 .spawn((
-                    Transform::from_translation((event.chunk_position - origin.0).as_vec3()),
+                    Transform::from_translation((chunk_position - origin.0).as_vec3()),
                     Visibility::Visible,
                     MovesWithOrigin,
                     ChunkMarker,

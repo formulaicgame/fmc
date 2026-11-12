@@ -13,7 +13,7 @@ use crate::{
     blocks::{BlockFace, BlockId, BlockState, Blocks, QuadPrimitive},
     game_state::GameState,
     rendering::materials::BlockMaterial,
-    world::{Chunk, NewChunkEvent, Origin, WorldMap},
+    world::{Chunk, ChunkFace, ChunkPosition, NewChunkEvent, Origin, WorldMap},
 };
 
 use super::RenderSet;
@@ -51,15 +51,23 @@ fn send_mesh_events(
     for chunk_position in new_chunks
         .read()
         .map(|event| event.position)
-        .chain(block_updates.read().map(|update| update.chunk_position))
+        .chain(
+            block_updates
+                .read()
+                .map(|update| ChunkPosition::from(update.chunk_position)),
+        )
     {
         positions.insert(chunk_position);
-        positions.insert(chunk_position + IVec3::new(Chunk::SIZE as i32, 0, 0));
-        positions.insert(chunk_position - IVec3::new(Chunk::SIZE as i32, 0, 0));
-        positions.insert(chunk_position + IVec3::new(0, Chunk::SIZE as i32, 0));
-        positions.insert(chunk_position - IVec3::new(0, Chunk::SIZE as i32, 0));
-        positions.insert(chunk_position + IVec3::new(0, 0, Chunk::SIZE as i32));
-        positions.insert(chunk_position - IVec3::new(0, 0, Chunk::SIZE as i32));
+        for face in [
+            ChunkFace::Top,
+            ChunkFace::Bottom,
+            ChunkFace::Right,
+            ChunkFace::Left,
+            ChunkFace::Front,
+            ChunkFace::Back,
+        ] {
+            positions.insert(chunk_position.offset(face));
+        }
     }
 
     for chunk_position in positions {
@@ -71,12 +79,12 @@ fn send_mesh_events(
 #[derive(Message)]
 pub struct ChunkMeshEvent {
     /// Position of the chunk.
-    pub chunk_position: IVec3,
+    pub chunk_position: ChunkPosition,
 }
 
 #[derive(Component)]
 struct ChunkMeshTask {
-    position: IVec3,
+    position: ChunkPosition,
     task: Task<Vec<(Handle<BlockMaterial>, Mesh)>>,
 }
 

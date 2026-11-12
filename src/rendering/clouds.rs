@@ -198,7 +198,7 @@ fn move_clouds(
         let mesh_handle = Mesh3d(meshes.add(mesh));
 
         ecs.with_children(|parent| {
-            for mut transform in Clouds::generate(32.0 * 16.0, origin.0 - clouds.origin_shift) {
+            for mut transform in Clouds::generate(32.0 * 16.0, origin.as_ivec3() - clouds.origin_shift) {
                 parent.spawn((
                     mesh_handle.clone(),
                     transform,

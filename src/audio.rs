@@ -6,7 +6,7 @@ use crate::{
     game_state::GameState,
     player::Player,
     settings::Settings,
-    world::{Origin, WorldMap},
+    world::{BlockPosition, Origin, WorldMap},
 };
 
 const AUDIO_PATH: &str = "server_assets/active/audio/";
@@ -93,7 +93,7 @@ fn play_walking_sound(
     let mut center = aabb.half_extents;
     center.y = -0.05;
     // get block directly under player
-    let block_position = (position + center.as_dvec3()).floor().as_ivec3();
+    let block_position = BlockPosition::from(position + center.as_dvec3());
 
     let Some(block_id) = world_map.get_block(&block_position) else {
         return;

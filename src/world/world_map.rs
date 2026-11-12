@@ -6,8 +6,7 @@ use crate::{
     blocks::{BlockFace, BlockId, BlockState, Blocks, Friction},
     game_state::GameState,
     rendering::world::ExpandedChunk,
-    utils,
-    world::chunk::Chunk,
+    world::{BlockPosition, ChunkFace, ChunkPosition, chunk::Chunk},
 };
 
 pub struct WorldMapPlugin;
@@ -31,7 +30,7 @@ fn cleanup(mut commands: Commands, mut world_map: ResMut<WorldMap>) {
 pub struct WorldMap {
     // TODO: Might make sense to make this an array. It would help with lookup
     // speed when the chunks need to be marked visible for rendering.
-    pub chunks: HashMap<IVec3, Chunk>,
+    pub chunks: HashMap<ChunkPosition, Chunk>,
 }
 
 impl WorldMap {
@@ -82,37 +81,33 @@ impl WorldMap {
     //    dbg!(time.elapsed());
     //}
 
-    pub fn insert(&mut self, position: IVec3, chunk: Chunk) -> Option<Chunk> {
+    pub fn insert(&mut self, position: ChunkPosition, chunk: Chunk) -> Option<Chunk> {
         self.chunks.insert(position, chunk)
     }
 
-    pub fn contains_chunk(&self, position: &IVec3) -> bool {
-        return self.chunks.contains_key(&position);
+    pub fn contains_chunk(&self, position: &ChunkPosition) -> bool {
+        return self.chunks.contains_key(position);
     }
 
-    pub fn get_chunk(&self, position: &IVec3) -> Option<&Chunk> {
-        return self.chunks.get(&position);
+    pub fn get_chunk(&self, position: &ChunkPosition) -> Option<&Chunk> {
+        return self.chunks.get(position);
     }
 
-    pub fn get_chunk_mut(&mut self, position: &IVec3) -> Option<&mut Chunk> {
+    pub fn get_chunk_mut(&mut self, position: &ChunkPosition) -> Option<&mut Chunk> {
         return self.chunks.get_mut(position);
     }
 
-    pub fn get_block(&self, position: &IVec3) -> Option<BlockId> {
-        let chunk_position = utils::world_position_to_chunk_pos(*position);
-        if let Some(chunk) = self.get_chunk(&chunk_position) {
-            let block_position = utils::world_position_to_block_index(*position);
-            return Some(chunk[block_position]);
+    pub fn get_block(&self, position: &BlockPosition) -> Option<BlockId> {
+        if let Some(chunk) = self.get_chunk(&ChunkPosition::from(*position)) {
+            return Some(chunk[*position]);
         } else {
             return None;
         }
     }
 
-    pub fn get_block_state(&self, position: &IVec3) -> Option<BlockState> {
-        let chunk_position = utils::world_position_to_chunk_pos(*position);
-        if let Some(chunk) = self.get_chunk(&chunk_position) {
-            let block_index = utils::world_position_to_block_index(*position);
-            let block_position = utils::block_index_to_position(block_index);
+    pub fn get_block_state(&self, position: &BlockPosition) -> Option<BlockState> {
+        if let Some(chunk) = self.get_chunk(&ChunkPosition::from(*position)) {
+            let block_position = BlockPosition::from(position.as_chunk_index());
             return chunk.get_block_state(
                 block_position.x as usize,
                 block_position.y as usize,
@@ -218,35 +213,17 @@ impl WorldMap {
 
     // Given a chunk position, returns the blocks in that chunk as well as the blocks one past the
     // edge on all sides.
-    pub fn get_expanded_chunk(&self, position: IVec3) -> ExpandedChunk {
-        let center = self.get_chunk(&position).unwrap().clone();
-
-        let top_position = position + IVec3::new(0, Chunk::SIZE as i32, 0);
-        let top = self.get_chunk(&top_position).cloned();
-
-        let bottom_position = position - IVec3::new(0, Chunk::SIZE as i32, 0);
-        let bottom = self.get_chunk(&bottom_position).cloned();
-
-        let right_position = position + IVec3::new(Chunk::SIZE as i32, 0, 0);
-        let right = self.get_chunk(&right_position).cloned();
-
-        let left_position = position - IVec3::new(Chunk::SIZE as i32, 0, 0);
-        let left = self.get_chunk(&left_position).cloned();
-
-        let front_position = position + IVec3::new(0, 0, Chunk::SIZE as i32);
-        let front = self.get_chunk(&front_position).cloned();
-
-        let back_position = position - IVec3::new(0, 0, Chunk::SIZE as i32);
-        let back = self.get_chunk(&back_position).cloned();
+    pub fn get_expanded_chunk(&self, position: ChunkPosition) -> ExpandedChunk {
+        let adjacent = |face| self.get_chunk(&position.offset(face)).cloned();
 
         return ExpandedChunk {
-            center,
-            top,
-            bottom,
-            right,
-            left,
-            front,
-            back,
+            center: self.get_chunk(&position).unwrap().clone(),
+            top: adjacent(ChunkFace::Top),
+            bottom: adjacent(ChunkFace::Bottom),
+            right: adjacent(ChunkFace::Right),
+            left: adjacent(ChunkFace::Left),
+            front: adjacent(ChunkFace::Front),
+            back: adjacent(ChunkFace::Back),
         };
     }
 }

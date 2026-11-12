@@ -21,7 +21,7 @@ use crate::{
     networking::NetworkClient,
     player::{Head, Player},
     settings::Settings,
-    world::{Origin, WorldMap},
+    world::{BlockPosition, Origin, WorldMap},
 };
 
 pub struct WasmPlugin;
@@ -415,11 +415,7 @@ impl wit::PluginImports for WasmState {
         let world = self.world();
         let origin = world.get_resource::<Origin>().unwrap();
         let world_map = world.get_resource::<WorldMap>().unwrap();
-        let block_position = IVec3 {
-            x: block_position.x,
-            y: block_position.y,
-            z: block_position.z,
-        } + origin.0;
+        let block_position = BlockPosition(IVec3::from(block_position) + origin.as_ivec3());
         world_map.get_block(&block_position)
     }
 
@@ -427,11 +423,7 @@ impl wit::PluginImports for WasmState {
         let world = self.world();
         let origin = world.get_resource::<Origin>().unwrap();
         let world_map = world.get_resource::<WorldMap>().unwrap();
-        let block_position = IVec3 {
-            x: block_position.x,
-            y: block_position.y,
-            z: block_position.z,
-        } + origin.0;
+        let block_position = BlockPosition(IVec3::from(block_position) + origin.as_ivec3());
         world_map.get_block_state(&block_position).map(|b| b.0)
     }
 

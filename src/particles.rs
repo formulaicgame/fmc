@@ -10,7 +10,7 @@ use crate::{
     player::{Head, Player},
     rendering::{light_texture::LIGHT_TEXTURE, materials::ParticleMaterial},
     utils,
-    world::{MovesWithOrigin, Origin, WorldMap},
+    world::{BlockPosition, MovesWithOrigin, Origin, WorldMap},
 };
 
 pub struct ParticlePlugin;
@@ -82,7 +82,7 @@ fn handle_particles_from_server(
             random_uv: effect.random_uv.unwrap_or_default(),
             spawn_time: time.elapsed_secs(),
             light_texture: LIGHT_TEXTURE,
-            origin: origin.0,
+            origin: origin.as_ivec3(),
         });
 
         let mesh = asset_server.add(Rectangle::from_length(0.5).mesh().build());
@@ -283,7 +283,7 @@ fn simulate_particle_physics(
             particle_aabb.center += directional_velocity * time.delta_secs();
 
             for block_position in particle_aabb.iter_block_positions() {
-                let world_block_position = origin.0 + block_position;
+                let world_block_position = BlockPosition(origin.as_ivec3() + block_position);
 
                 let block_id = match world_map.get_block(&world_block_position) {
                     Some(id) => id,

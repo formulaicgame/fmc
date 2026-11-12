@@ -20,7 +20,7 @@ use bevy::{
 use crate::{
     rendering::materials::{BlockMaterial, ModelMaterial, ParticleMaterial},
     settings::Settings,
-    world::Chunk,
+    world::{Chunk, ChunkPosition},
 };
 
 pub const LIGHT_TEXTURE: Handle<Image> = uuid_handle!("bff6f429-1757-4e88-8a17-467b935b9911");
@@ -99,7 +99,7 @@ impl LightUpload {
 
 /// Chunk regions waiting to be written into the light texture.
 #[derive(Resource, Default, Deref, DerefMut)]
-pub struct LightTextureUploads(HashMap<IVec3, LightUpload>);
+pub struct LightTextureUploads(HashMap<ChunkPosition, LightUpload>);
 
 fn create_light_texture(
     mut commands: Commands,
@@ -184,7 +184,10 @@ fn upload_light_regions(
     let texture_size = IVec3::splat((light_texture.size * SIZE) as i32);
 
     for (chunk_position, upload) in uploads.drain() {
-        let chunk_origin = chunk_position.rem_euclid(texture_size).as_uvec3();
+        let chunk_origin = chunk_position
+            .as_ivec3()
+            .rem_euclid(texture_size)
+            .as_uvec3();
 
         render_queue.write_texture(
             TexelCopyTextureInfo {

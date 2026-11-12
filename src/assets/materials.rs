@@ -138,7 +138,7 @@ pub fn load_materials(
     mut model_material_assets: ResMut<Assets<ModelMaterial>>,
 ) {
     match load_model_materials(
-        origin.0,
+        origin.as_ivec3(),
         &mut model_material_assets,
         &asset_server,
         &block_textures,
@@ -151,7 +151,7 @@ pub fn load_materials(
     }
 
     match load_block_materials(
-        origin.0,
+        origin.as_ivec3(),
         &mut block_material_assets,
         &asset_server,
         &block_textures,

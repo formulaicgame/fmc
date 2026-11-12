@@ -62,7 +62,7 @@ fn replace_standard_material(
                 extension: ModelMaterialExtension {
                     block_textures: block_textures.handle.clone(),
                     light_texture: LIGHT_TEXTURE,
-                    origin: origin.0,
+                    origin: origin.as_ivec3(),
                 },
             })
         };

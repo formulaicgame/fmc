@@ -4,7 +4,8 @@ use std::ops::{Index, IndexMut};
 use bevy::prelude::*;
 
 use crate::blocks::{BlockId, BlockState};
-use crate::utils;
+
+use super::BlockPosition;
 
 #[derive(Component)]
 pub struct ChunkMarker;
@@ -119,26 +120,24 @@ impl IndexMut<[usize; 3]> for Chunk {
     }
 }
 
-impl Index<IVec3> for Chunk {
+impl Index<BlockPosition> for Chunk {
     type Output = BlockId;
 
-    fn index(&self, idx: IVec3) -> &Self::Output {
+    fn index(&self, idx: BlockPosition) -> &Self::Output {
         if self.is_uniform() {
             return &self.blocks[0];
         } else {
-            let idx = utils::world_position_to_block_index(idx);
-            return &self.blocks[idx];
+            return &self.blocks[idx.as_chunk_index()];
         }
     }
 }
 
-impl IndexMut<IVec3> for Chunk {
-    fn index_mut(&mut self, idx: IVec3) -> &mut Self::Output {
+impl IndexMut<BlockPosition> for Chunk {
+    fn index_mut(&mut self, idx: BlockPosition) -> &mut Self::Output {
         if self.is_uniform() {
             return &mut self.blocks[0];
         } else {
-            let idx = utils::world_position_to_block_index(idx);
-            return &mut self.blocks[idx];
+            return &mut self.blocks[idx.as_chunk_index()];
         }
     }
 }
@@ -166,21 +165,4 @@ impl ChunkFace {
             &ChunkFace::Bottom => ChunkFace::Top,
             &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
         }
-    }
-
-    // TODO: This looks bad. There should be a ChunkPosition struct, it has the method shift(face:
-    // ChunkFace)
-    /// Moves the position a chunk's length in the direction of the face.
-    pub fn shift_position(&self, mut position: IVec3) -> IVec3 {
-        match self {
-            ChunkFace::Front => position.z += Chunk::SIZE as i32,
-            ChunkFace::Back => position.z -= Chunk::SIZE as i32,
-            ChunkFace::Right => position.x += Chunk::SIZE as i32,
-            ChunkFace::Left => position.x -= Chunk::SIZE as i32,
-            ChunkFace::Top => position.y += Chunk::SIZE as i32,
-            ChunkFace::Bottom => position.y -= Chunk::SIZE as i32,
-            ChunkFace::None => {}
-        }
-        return position;
-    }
-}
+    }}

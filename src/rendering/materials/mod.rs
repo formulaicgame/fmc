@@ -35,14 +35,14 @@ fn update_material_origin(
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
 ) {
     for (_, material) in block_materials.iter_mut() {
-        material.origin = origin.0;
+        material.origin = origin.as_ivec3();
     }
 
     for (_, material) in model_materials.iter_mut() {
-        material.extension.origin = origin.0;
+        material.extension.origin = origin.as_ivec3();
     }
 
     for (_, material) in particle_materials.iter_mut() {
-        material.origin = origin.0;
+        material.origin = origin.as_ivec3();
     }
 }

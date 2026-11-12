@@ -10,8 +10,7 @@ use crate::{
     blocks::Blocks,
     game_state::GameState,
     settings::Settings,
-    utils,
-    world::{Chunk, ChunkFace, NewChunkEvent, Origin, WorldMap},
+    world::{BlockPosition, Chunk, ChunkFace, ChunkPosition, NewChunkEvent, Origin, WorldMap},
 };
 
 use super::{
@@ -52,13 +51,13 @@ fn cleanup(mut light_map: ResMut<LightMap>) {
 
 #[derive(Resource, Default)]
 pub struct LightMap {
-    chunks: HashMap<IVec3, LightChunk>,
+    chunks: HashMap<ChunkPosition, LightChunk>,
 }
 
 impl LightMap {
     fn pull_from_adjacent(
         &self,
-        chunk_position: IVec3,
+        chunk_position: ChunkPosition,
         queue: &mut LightUpdateQueue,
         world_map: &WorldMap,
         blocks: &Blocks,
@@ -75,7 +74,7 @@ impl LightMap {
                 continue;
             };
 
-            let adjacent_chunk_position = chunk_face.shift_position(chunk_position);
+            let adjacent_chunk_position = chunk_position.offset(chunk_face);
             let Some(adjacent_light_chunk) = self.chunks.get(&adjacent_chunk_position) else {
                 continue;
             };
@@ -150,7 +149,7 @@ impl LightMap {
 
     fn push_to_adjacent(
         &mut self,
-        chunk_position: IVec3,
+        chunk_position: ChunkPosition,
         light_update_queues: &mut PropagtionQueues,
         chunk: &Chunk,
         blocks: &Blocks,
@@ -165,7 +164,7 @@ impl LightMap {
         ] {
             let light_chunk = self.chunks.get(&chunk_position).unwrap();
 
-            let adjacent_chunk_position = chunk_face.shift_position(chunk_position);
+            let adjacent_chunk_position = chunk_position.offset(chunk_face);
             let Some(adjacent_light_chunk) = self.chunks.get(&adjacent_chunk_position) else {
                 continue;
             };
@@ -418,7 +417,7 @@ impl PartialOrd for LightUpdate {
 }
 
 #[derive(Resource, Default, DerefMut, Deref)]
-struct PropagtionQueues(HashMap<IVec3, LightUpdateQueue>);
+struct PropagtionQueues(HashMap<ChunkPosition, LightUpdateQueue>);
 
 struct LightUpdateQueue {
     // When sunlight gets propagated into a chunk from one of its adjacent chunks(i.e. not from above) a
@@ -514,10 +513,11 @@ fn handle_block_updates(
     mut light_map: ResMut<LightMap>,
     mut light_update_queues: ResMut<PropagtionQueues>,
     mut block_updates_events: MessageReader<messages::BlockUpdates>,
-    mut removal_queues: Local<HashMap<IVec3, BinaryHeap<LightUpdate>>>,
+    mut removal_queues: Local<HashMap<ChunkPosition, BinaryHeap<LightUpdate>>>,
 ) {
     for block_updates in block_updates_events.read() {
-        let Some(mut light_chunk) = light_map.chunks.remove(&block_updates.chunk_position) else {
+        let chunk_position = ChunkPosition::from(block_updates.chunk_position);
+        let Some(mut light_chunk) = light_map.chunks.remove(&chunk_position) else {
             continue;
         };
         for (index, block_id, _) in block_updates.blocks.iter() {
@@ -543,9 +543,7 @@ fn handle_block_updates(
                 continue;
             }
 
-            let queue = removal_queues
-                .entry(block_updates.chunk_position)
-                .or_default();
+            let queue = removal_queues.entry(chunk_position).or_default();
 
             let block_config = blocks.get_config(*block_id);
             if block_config.light_level() > 0 {
@@ -567,9 +565,7 @@ fn handle_block_updates(
             });
         }
 
-        light_map
-            .chunks
-            .insert(block_updates.chunk_position, light_chunk);
+        light_map.chunks.insert(chunk_position, light_chunk);
     }
 
     while let Some(chunk_position) = removal_queues.keys().next().copied() {
@@ -624,11 +620,10 @@ fn handle_block_updates(
                     IVec3::Y,
                     IVec3::NEG_Y,
                 ] {
-                    let (chunk_offset, index) =
-                        utils::world_position_to_chunk_position_and_block_index(
-                            utils::block_index_to_position(removal.index) + block_offset,
-                        );
-                    let adjacent_chunk_position = chunk_position + chunk_offset;
+                    let block_position = BlockPosition::from(removal.index) + block_offset;
+                    let index = block_position.as_chunk_index();
+                    let adjacent_chunk_position =
+                        chunk_position + ChunkPosition::from(block_position);
 
                     let removal_update = LightUpdate {
                         index,
@@ -659,11 +654,10 @@ fn handle_block_updates(
                     IVec3::Z,
                     IVec3::NEG_Z,
                 ] {
-                    let (chunk_offset, index) =
-                        utils::world_position_to_chunk_position_and_block_index(
-                            utils::block_index_to_position(removal.index) + block_offset,
-                        );
-                    let adjacent_chunk_position = chunk_position + chunk_offset;
+                    let block_position = BlockPosition::from(removal.index) + block_offset;
+                    let index = block_position.as_chunk_index();
+                    let adjacent_chunk_position =
+                        chunk_position + ChunkPosition::from(block_position);
 
                     let propagated_light =
                         light.attenuate(attenuation, block_offset == IVec3::NEG_Y);
@@ -712,7 +706,11 @@ fn propagate_light(
     mut light_map: ResMut<LightMap>,
     mut light_texture_uploads: ResMut<LightTextureUploads>,
 ) {
-    for chunk_position in light_update_queues.keys().cloned().collect::<Vec<IVec3>>() {
+    for chunk_position in light_update_queues
+        .keys()
+        .cloned()
+        .collect::<Vec<ChunkPosition>>()
+    {
         let mut update_queue = light_update_queues.remove(&chunk_position).unwrap();
 
         let Some(mut light_chunk) = light_map.chunks.remove(&chunk_position) else {
@@ -872,10 +870,9 @@ fn propagate_light(
                 IVec3::Z,
                 IVec3::NEG_Z,
             ] {
-                let (chunk_offset, index) = utils::world_position_to_chunk_position_and_block_index(
-                    utils::block_index_to_position(propagation.index) + block_offset,
-                );
-                let adjacent_chunk_position = chunk_position + chunk_offset;
+                let block_position = BlockPosition::from(propagation.index) + block_offset;
+                let index = block_position.as_chunk_index();
+                let adjacent_chunk_position = chunk_position + ChunkPosition::from(block_position);
 
                 let propagated_light = light.attenuate(attenuation, block_offset == IVec3::NEG_Y);
 

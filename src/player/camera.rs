@@ -14,7 +14,7 @@ use crate::{
     networking::NetworkClient,
     player::Head,
     settings::Settings,
-    world::{Chunk, Origin, WorldMap},
+    world::{BlockPosition, Chunk, Origin, WorldMap},
 };
 
 pub(super) struct CameraPlugin;
@@ -180,7 +180,7 @@ fn fog(
         // still wrong.
         camera_frustum_near_top.y += near / (angle / 1.5).cos();
 
-        let camera_top_position = (camera_frustum_near_top).as_ivec3() + origin.0;
+        let camera_top_position = BlockPosition::from(origin.to_global(camera_frustum_near_top));
         let Some(block_id) = world_map.get_block(&camera_top_position) else {
             continue;
         };
