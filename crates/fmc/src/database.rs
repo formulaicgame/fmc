@@ -8,7 +8,6 @@ use bevy::prelude::*;
 use crate::{
     blocks::{BlockData, BlockId, BlockState},
     items::ItemId,
-    terminal::Cli,
     world::chunk::Chunk,
 };
 
@@ -17,11 +16,10 @@ pub struct DatabasePlugin;
 
 impl Plugin for DatabasePlugin {
     fn build(&self, app: &mut App) {
-        // If a different database path is desired it may be inserted somewhere else.
-        // MUST be done before this plugin runs.
-        if !app.world().contains_resource::<Database>() {
-            app.insert_resource(Database::default());
-        }
+        assert!(
+            app.world().contains_resource::<Database>(),
+            "A Database resource is required. Insert one with Database::new(path) before adding the fmc plugins."
+        );
     }
 }
 
@@ -59,20 +57,8 @@ pub struct WriteConnection<'a> {
 //    }
 //}
 
-impl Default for Database {
-    fn default() -> Self {
-        if let Some(world_path) = Cli::world_path() {
-            Self::new(world_path.to_owned())
-        } else {
-            Self::new(Self::DEFAULT_PATH.to_owned())
-        }
-    }
-}
-
 // TODO: Extract functions and have them take a connection instead?
 impl Database {
-    pub const DEFAULT_PATH: &str = "./world.sqlite";
-
     fn path(&self) -> &str {
         &self.0.path
     }
