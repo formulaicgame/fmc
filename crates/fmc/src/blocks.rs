@@ -200,6 +200,7 @@ fn load_blocks_to_resource(
                 friction: block_config_json
                     .friction
                     .unwrap_or(Friction::Drag(DVec3::ZERO)),
+                force: block_config_json.force.unwrap_or_default(),
                 hardness: block_config_json.hardness,
                 replaceable: block_config_json.replaceable,
                 tools: block_config_json.tools,
@@ -446,6 +447,7 @@ struct BlockConfigJson {
     name: String,
     // The surface friction or drag.
     friction: Option<Friction>,
+    force: Option<DVec3>,
     // How long it takes to break the block without a tool
     hardness: Option<f32>,
     #[serde(default)]
@@ -541,6 +543,7 @@ pub struct BlockConfig {
     pub model: Option<ModelAssetId>,
     /// The friction of the block's surfaces or its drag.
     pub friction: Friction,
+    pub force: DVec3,
     // TODO: Not needed
     /// How long it takes to break the block without a tool in seconds, None if the block should
     /// not be breakable. e.g. water, air

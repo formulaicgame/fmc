@@ -351,6 +351,8 @@ fn simulate_physics(
         let mut new_position = transform.translation + physics.velocity * delta_time;
         let mut friction = DVec3::ZERO;
         let mut move_back = DVec3::ZERO;
+        let mut force = DVec3::ZERO;
+        let mut force_count = 0;
 
         for velocity in [
             DVec3::new(0.0, physics.velocity.y, 0.0),
@@ -391,6 +393,8 @@ fn simulate_physics(
 
                 if let Some(drag) = block_config.drag() {
                     friction = friction.max(drag);
+                    force += rotation * block_config.force;
+                    force_count += 1;
                     continue;
                 }
 
@@ -413,6 +417,11 @@ fn simulate_physics(
             .any()
         {
             transform.translation = new_position;
+        }
+
+        if force_count > 0 {
+            let acceleration = force / force_count as f64 / physics.mass;
+            physics.velocity += acceleration * time.delta_secs_f64();
         }
 
         physics.velocity =
@@ -574,15 +583,10 @@ fn buoyancy(
             continue;
         };
 
-        // We want to let the object bob a little when it enters the water, but when it has
-        // stabilized
-        //let offset_from_top_of_block = 1.0 - (waterline_position.y - block_position.y as f64);
-        if buoyancy.density < drag.y && waterline_position.y < block_position.y as f64 + 1.0 {
-            //if offset_from_top_of_block < 0.05 {
-            //    acceleration.0 += -GRAVITY;
-            //} else {
+        let surface = block_position.y as f64 + 0.5 + block_config.collider.as_aabb().max().y;
+
+        if buoyancy.density < drag.y && waterline_position.y < surface {
             physics.acceleration += -GRAVITY + DVec3::new(0.0, 1.0, 0.0);
-            //}
         }
     }
 }
