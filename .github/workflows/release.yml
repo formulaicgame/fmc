@@ -174,4 +174,4 @@ jobs:
       - name: Create new release
         run: |
           gh release delete $TAG_NAME --yes --cleanup-tag || true
-          gh release create $TAG_NAME --latest ./artifacts/*/*
+          gh release create "$TAG_NAME" --latest --title "$TAG_NAME" --notes "$TAG_NAME" ./artifacts/*/*
