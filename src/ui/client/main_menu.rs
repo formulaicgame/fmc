@@ -1059,6 +1059,13 @@ fn download_default_game(mut commands: Commands) {
         return;
     }
 
+    if let Err(e) = std::fs::remove_dir_all(server_folder.join("assets"))
+        && e.kind() != ErrorKind::NotFound
+    {
+        error!("Could not remove outdated server assets: {e}");
+        return;
+    }
+
     let url = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/x86_64-unknown-linux-gnu",
         ("windows", "x86_64") => "https://github.com/awowogei/fmc_173/releases/download/nightly/x86_64-pc-windows-msvc.exe",
