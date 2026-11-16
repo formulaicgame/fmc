@@ -165,4 +165,5 @@ impl ChunkFace {
             &ChunkFace::Bottom => ChunkFace::Top,
             &ChunkFace::None => panic!("Can't get opposite of ChunkFace::None"),
         }
-    }}
+    }
+}

@@ -85,10 +85,6 @@ impl Permissions {
         Ok(())
     }
 
-    pub fn has_role(&self, role: &str) -> bool {
-        self.roles.contains_key(role)
-    }
-
     pub fn has_permission(&self, roles: &Roles, permission: &Permission) -> bool {
         for role in roles.iter() {
             let Some(permissions) = self.roles.get(role) else {

@@ -48,15 +48,11 @@ fn send_mesh_events(
 ) {
     let mut positions = HashSet::new();
 
-    for chunk_position in new_chunks
-        .read()
-        .map(|event| event.position)
-        .chain(
-            block_updates
-                .read()
-                .map(|update| ChunkPosition::from(update.chunk_position)),
-        )
-    {
+    for chunk_position in new_chunks.read().map(|event| event.position).chain(
+        block_updates
+            .read()
+            .map(|update| ChunkPosition::from(update.chunk_position)),
+    ) {
         positions.insert(chunk_position);
         for face in [
             ChunkFace::Top,
