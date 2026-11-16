@@ -12,6 +12,7 @@ pub mod items;
 pub mod models;
 pub mod networking;
 pub mod particle_effects;
+pub mod permissions;
 pub mod physics;
 /// Basic player functionality
 pub mod players;
@@ -111,6 +112,7 @@ impl PluginGroup for DefaultPlugins {
             .add(bevy::app::TerminalCtrlCHandlerPlugin)
             .add(assets::AssetPlugin)
             .add(database::DatabasePlugin)
+            .add(permissions::PermissionsPlugin)
             .add(terminal::TuiPlugin)
             .add(networking::ServerPlugin)
             .add(world::WorldPlugin)

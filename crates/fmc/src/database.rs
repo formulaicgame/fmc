@@ -178,6 +178,15 @@ impl Database {
             [],
         )
         .expect("Could not create 'storage' table");
+
+        conn.execute(
+            "create table if not exists roles (
+                name TEXT PRIMARY KEY,
+                roles TEXT NOT NULL
+                )",
+            [],
+        )
+        .expect("Could not create 'roles' table");
     }
 
     // TODO: rusqlite doesn't drop stuff correctly so there's all kinds of errors when you don't
