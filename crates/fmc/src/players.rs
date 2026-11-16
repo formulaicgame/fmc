@@ -6,9 +6,9 @@ use crate::{
     bevy_extensions::f64_transform::{GlobalTransform, Transform},
     blocks::{BlockFace, BlockId, BlockPosition, BlockRotation, BlockState, Blocks},
     interfaces::InterfaceNodes,
-    models::ModelMap,
     networking::{NetworkMessage, Server},
     physics::Collider,
+    visibility::EntityMap,
     world::{RenderDistance, WorldMap, chunk::ChunkPosition},
 };
 
@@ -213,7 +213,7 @@ const ENTITY_HIT_DISTANCE: f64 = 3.0;
 
 fn find_target(
     world_map: Res<WorldMap>,
-    model_map: Res<ModelMap>,
+    entity_map: Res<EntityMap>,
     model_query: Query<(
         Entity,
         Option<&Collider>,
@@ -288,7 +288,7 @@ fn find_target(
         let chunk_position = ChunkPosition::from(transform.translation);
         for chunk_position in chunk_position.neighbourhood() {
             for (entity, maybe_collider, maybe_block, model_transform) in
-                model_query.iter_many(model_map.iter_entities(&chunk_position))
+                model_query.iter_many(entity_map.iter_entities(&chunk_position))
             {
                 if let Some(block_position) = maybe_block {
                     let Some(block_id) = world_map.get_block(*block_position) else {

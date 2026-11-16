@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::RandomState,
-};
+use std::collections::HashMap;
 
 use bevy::{math::DVec3, prelude::*};
 use fmc_protocol::messages;
@@ -13,6 +10,7 @@ use crate::{
     networking::Server,
     physics::Collider,
     players::Player,
+    visibility::{EntityMap, Observers, Visibility, VisibilitySystems},
     world::{ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
 };
 
@@ -26,8 +24,7 @@ pub type ModelAssetId = u32;
 pub struct ModelPlugin;
 impl Plugin for ModelPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ModelMap::default())
-            .add_systems(PreStartup, load_models.in_set(AssetSet::Models))
+        app.add_systems(PreStartup, load_models.in_set(AssetSet::Models))
             .add_systems(
                 PostUpdate,
                 (
@@ -43,7 +40,8 @@ impl Plugin for ModelPlugin {
                         .before(send_animations)
                         .after(TransformSystems::Propagate),
                 )
-                    .in_set(ModelSystems),
+                    .in_set(ModelSystems)
+                    .after(VisibilitySystems),
             );
     }
 }
@@ -215,7 +213,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(ModelVisibility, AnimationPlayer, Transform, ChunkPosition, Observers)]
+#[require(Visibility, AnimationPlayer, Transform, ChunkPosition, Observers)]
 pub enum Model {
     Asset(ModelAssetId),
     Custom {
@@ -238,58 +236,6 @@ pub enum Model {
         /// Render mesh from both sides
         material_double_sided: bool,
     },
-}
-
-/// Limits which players can see a model
-#[derive(Component, Default)]
-pub struct Observers {
-    whitelist: HashSet<Entity>,
-    blacklist: HashSet<Entity>,
-}
-
-impl Observers {
-    pub fn include(&mut self, player: Entity) {
-        self.whitelist.insert(player);
-        self.blacklist.clear();
-    }
-
-    pub fn exclude(&mut self, player: Entity) {
-        if self.whitelist.is_empty() {
-            self.blacklist.insert(player);
-        }
-    }
-
-    pub fn is_included(&self, player: Entity) -> bool {
-        if !self.whitelist.is_empty() {
-            self.whitelist.contains(&player)
-        } else {
-            !self.blacklist.contains(&player)
-        }
-    }
-
-    fn filter<'a>(&'a self, players: &'a HashSet<Entity>) -> ObserversIter<'a> {
-        if !self.whitelist.is_empty() {
-            ObserversIter::Union(self.whitelist.union(players))
-        } else {
-            ObserversIter::Difference(players.difference(&self.blacklist))
-        }
-    }
-}
-
-enum ObserversIter<'a> {
-    Union(std::collections::hash_set::Union<'a, Entity, RandomState>),
-    Difference(std::collections::hash_set::Difference<'a, Entity, RandomState>),
-}
-
-impl<'a> Iterator for ObserversIter<'a> {
-    type Item = &'a Entity;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            ObserversIter::Union(iter) => iter.next(),
-            ObserversIter::Difference(iter) => iter.next(),
-        }
-    }
 }
 
 /// Attach the model to a bone of the parent's model.
@@ -326,19 +272,6 @@ impl ModelColor {
 impl Default for ModelColor {
     fn default() -> Self {
         Self::WHITE
-    }
-}
-
-#[derive(Component, Default)]
-pub enum ModelVisibility {
-    Hidden,
-    #[default]
-    Visible,
-}
-
-impl ModelVisibility {
-    pub fn is_visible(&self) -> bool {
-        matches!(self, Self::Visible)
     }
 }
 
@@ -508,70 +441,19 @@ impl Models {
     }
 }
 
-/// Keeps track of which chunk every entity with a model is currently in.
-#[derive(Default, Resource)]
-pub struct ModelMap {
-    position2entity: HashMap<ChunkPosition, HashSet<Entity>>,
-    entity2position: HashMap<Entity, ChunkPosition>,
-}
-
-impl ModelMap {
-    pub fn iter_entities(&self, chunk_position: &ChunkPosition) -> impl Iterator<Item = Entity> {
-        self.position2entity
-            .get(chunk_position)
-            .into_iter()
-            .flat_map(|entities| entities.iter().cloned())
-    }
-
-    fn insert_or_move(&mut self, chunk_position: ChunkPosition, entity: Entity) {
-        if let Some(current_chunk_pos) = self.entity2position.get(&entity) {
-            // Move model from one chunk to another
-            if current_chunk_pos == &chunk_position {
-                return;
-            } else {
-                self.position2entity
-                    .get_mut(current_chunk_pos)
-                    .unwrap()
-                    .remove(&entity);
-
-                self.position2entity
-                    .entry(chunk_position)
-                    .or_insert(HashSet::new())
-                    .insert(entity);
-
-                self.entity2position.insert(entity, chunk_position);
-            }
-        } else {
-            // First time seeing model, insert it normally
-            self.position2entity
-                .entry(chunk_position)
-                .or_insert(HashSet::new())
-                .insert(entity);
-            self.entity2position.insert(entity, chunk_position);
-        }
-    }
-}
-
 fn remove_models(
     net: Res<Server>,
-    mut model_map: ResMut<ModelMap>,
+    entity_map: Res<EntityMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut deleted_models: RemovedComponents<Model>,
 ) {
     for entity in deleted_models.read() {
-        let Some(chunk_position) = model_map.entity2position.remove(&entity) else {
+        let Some(chunk_position) = entity_map.chunk_position(&entity) else {
             // TODO: This if condition can be removed, I just want to test for a while that I didn't
             // mess up.
-            error!("Despawned model was not entered in the model map, this should never happen.");
+            error!("Despawned model was not entered in the entity map, this should never happen.");
             continue;
         };
-
-        let chunk = model_map.position2entity.get_mut(&chunk_position).unwrap();
-        chunk.remove(&entity);
-
-        if chunk.is_empty() {
-            model_map.position2entity.remove(&chunk_position);
-        }
 
         if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) {
             net.send_many(
@@ -588,13 +470,12 @@ fn remove_models(
 fn send_model_transform(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut model_map: ResMut<ModelMap>,
     model_query: Query<
         (
             Entity,
             &Transform,
             &GlobalTransform,
-            &ModelVisibility,
+            &Visibility,
             Ref<Model>,
         ),
         Changed<Transform>,
@@ -602,8 +483,6 @@ fn send_model_transform(
 ) {
     for (entity, transform, global_transform, visibility, change_tracker) in model_query.iter() {
         let chunk_position = ChunkPosition::from(global_transform.translation());
-
-        model_map.insert_or_move(chunk_position, entity);
 
         if !visibility.is_visible() || change_tracker.is_added() {
             continue;
@@ -686,10 +565,7 @@ fn apply_movement_animations(
 fn update_model_assets(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    model_query: Query<
-        (Entity, Ref<Model>, &Observers, &Transform, &ModelVisibility),
-        Changed<Model>,
-    >,
+    model_query: Query<(Entity, Ref<Model>, &Observers, &Transform, &Visibility), Changed<Model>>,
 ) {
     for (entity, model, observers, transform, visibility) in model_query.iter() {
         if !visibility.is_visible() || model.is_added() {
@@ -726,14 +602,14 @@ fn send_models(
             Entity,
             Option<&ChildOf>,
             &Model,
-            &ModelVisibility,
+            &Visibility,
             &Observers,
             Option<&ModelColor>,
             Option<&BoneAttachment>,
             &Transform,
             &GlobalTransform,
         ),
-        Or<(Changed<ModelVisibility>, Changed<Model>)>,
+        Or<(Changed<Visibility>, Changed<Model>)>,
     >,
 ) {
     for (
@@ -824,20 +700,20 @@ fn send_models(
 
 fn send_models_on_chunk_subscription(
     net: Res<Server>,
-    model_map: Res<ModelMap>,
+    entity_map: Res<EntityMap>,
     model_query: Query<(
         Option<&ChildOf>,
         &Model,
         &Observers,
         &AnimationPlayer,
         &Transform,
-        &ModelVisibility,
+        &Visibility,
         Option<&BoneAttachment>,
     )>,
     mut chunk_sub_events: MessageReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
-        for entity in model_map.iter_entities(&chunk_sub.chunk_position) {
+        for entity in entity_map.iter_entities(&chunk_sub.chunk_position) {
             let Ok((
                 maybe_parent,
                 model,

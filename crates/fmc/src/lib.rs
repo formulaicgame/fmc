@@ -19,6 +19,7 @@ pub mod physics;
 pub mod players;
 pub mod random;
 pub mod terminal;
+pub mod visibility;
 /// The block world
 pub mod world;
 
@@ -119,6 +120,7 @@ impl PluginGroup for DefaultPlugins {
             .add(world::WorldPlugin)
             .add(blocks::BlockPlugin)
             .add(items::ItemPlugin)
+            .add(visibility::VisibilityPlugin)
             .add(models::ModelPlugin)
             .add(particle_effects::ParticleEffectPlugin)
             .add(physics::PhysicsPlugin)
