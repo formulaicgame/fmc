@@ -17,9 +17,8 @@ pub mod permissions;
 pub mod physics;
 /// Basic player functionality
 pub mod players;
-pub mod terminal;
-// TODO: This is just rng now, rename
 pub mod random;
+pub mod terminal;
 /// The block world
 pub mod world;
 
@@ -114,8 +113,8 @@ impl PluginGroup for DefaultPlugins {
             .add(assets::AssetPlugin)
             .add(database::DatabasePlugin)
             .add(permissions::PermissionsPlugin)
-            .add(terminal::TuiPlugin)
             .add(commands::CommandPlugin)
+            .add(terminal::TerminalPlugin)
             .add(networking::ServerPlugin)
             .add(world::WorldPlugin)
             .add(blocks::BlockPlugin)
