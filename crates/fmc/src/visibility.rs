@@ -41,7 +41,7 @@ impl Visibility {
     }
 }
 
-/// Limits which players can see a model
+/// Limits which players can see an entity
 #[derive(Component, Default)]
 pub struct Observers {
     whitelist: HashSet<Entity>,

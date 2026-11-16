@@ -1,7 +1,7 @@
 #import bevy_pbr::{
     mesh_functions,
     view_transformations::position_world_to_clip,
-    mesh_view_bindings::{lights, globals},
+    mesh_view_bindings::{lights, globals, view},
     utils::{
         rand_range_u,
         rand_f
@@ -44,6 +44,14 @@ struct VertexOutput {
 }
 
 
+fn billboard(world_from_local: mat4x4<f32>, vertex_position: vec3<f32>) -> vec4<f32> {
+    let center = world_from_local[3].xyz;
+    let size = length(world_from_local[0].xyz);
+    let right = view.world_from_view[0].xyz;
+    let up = view.world_from_view[1].xyz;
+    return vec4<f32>(center + (right * vertex_position.x + up * vertex_position.y) * size, 1.0);
+}
+
 @vertex
 fn vertex(
     in: VertexInput
@@ -51,7 +59,7 @@ fn vertex(
     var out: VertexOutput;
 
     let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
-    let world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(in.position, 1.0));
+    let world_position = billboard(world_from_local, in.position);
     out.position = position_world_to_clip(world_position.xyz);
     out.world_position = world_position;
 

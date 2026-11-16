@@ -13,8 +13,8 @@ impl Plugin for AssetPlugin {
             (
                 AssetSet::Models,
                 AssetSet::Items,
-                AssetSet::Blocks,
                 AssetSet::ParticleEffects,
+                AssetSet::Blocks,
             )
                 .chain(),
         );

@@ -494,15 +494,22 @@ fn handle_chunk_loading_tasks(
                             if let Some(rotation) = block_state.rotation() {
                                 transform.rotate(rotation.as_quat());
 
-                                if let Some(custom_transform) =
-                                    block_config.placement.rotation_transform
-                                {
+                                if let Some(custom_transform) = block_config.rotation_transform {
                                     transform = transform * custom_transform;
                                 }
                             }
                         }
 
                         entity_commands.insert((Model::Asset(model_id), transform));
+
+                        entity_commands.with_children(|parent| {
+                            for particle_spawner in block_config.particle_spawners.iter() {
+                                parent.spawn((
+                                    particle_spawner.spawner.clone(),
+                                    Transform::from_translation(particle_spawner.offset),
+                                ));
+                            }
+                        });
                     }
 
                     chunk.block_entities.insert(index, entity_commands.id());

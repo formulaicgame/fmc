@@ -24,6 +24,8 @@ pub struct ParticleSpawner {
     pub id: u32,
     /// World position the effect is spawned at
     pub position: DVec3,
+    /// Rotation applied to the effect's local-space positions and velocities
+    pub rotation: Quat,
     /// Asset id of the particle effect to spawn
     pub effect: u32,
     /// Path to the texture, relative to "textures/"

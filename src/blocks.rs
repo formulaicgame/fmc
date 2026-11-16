@@ -5,7 +5,10 @@ use fmc_protocol::messages;
 use serde::Deserialize;
 
 use crate::{
-    assets,
+    assets::{
+        self,
+        particles::{ParticleEffectAssetId, ParticleEffects, ParticleTextures},
+    },
     networking::NetworkClient,
     rendering::materials::{self, BlockMaterial},
     settings::Settings,
@@ -100,6 +103,8 @@ pub fn load_blocks(
     block_textures: Res<assets::BlockTextures>,
     material_handles: Res<assets::Materials<BlockMaterial>>,
     materials: Res<Assets<BlockMaterial>>,
+    particle_effects: Res<ParticleEffects>,
+    particle_textures: Res<ParticleTextures>,
 ) {
     if server_config.block_ids.len() > u16::MAX as usize {
         net.disconnect(&format!(
@@ -191,7 +196,20 @@ pub fn load_blocks(
                 fog,
                 sound,
                 placement,
+                particle_spawners,
             } => {
+                let particle_spawners = match particle_spawners
+                    .into_iter()
+                    .map(|spawner| spawner.resolve(&name, &particle_effects, &particle_textures))
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(spawners) => spawners,
+                    Err(e) => {
+                        net.disconnect(e);
+                        return;
+                    }
+                };
+
                 let material_handle = if let Some(m) = material_handles.get(&material) {
                     m.clone()
                 } else {
@@ -377,6 +395,7 @@ pub fn load_blocks(
                     sound,
                     placement,
                     aabb,
+                    particle_spawners,
                 }
             }
 
@@ -409,6 +428,7 @@ pub fn load_blocks(
                     sound,
                     placement,
                     aabb: Aabb::from_min_max(Vec3::ZERO, Vec3::ONE),
+                    particle_spawners: Vec::new(),
                 }
             }
         };
@@ -490,6 +510,7 @@ pub struct Block {
     placement: BlockPlacement,
     // The bounding box of the block
     aabb: Aabb,
+    particle_spawners: Vec<ParticleSpawnerConfig>,
 }
 
 impl Block {
@@ -566,6 +587,80 @@ impl Block {
 
     pub fn aabb(&self) -> &Aabb {
         &self.aabb
+    }
+
+    pub fn particle_spawners(&self) -> &[ParticleSpawnerConfig] {
+        &self.particle_spawners
+    }
+}
+
+#[derive(Debug)]
+pub struct ParticleSpawnerConfig {
+    pub effect: ParticleEffectAssetId,
+    pub texture: Handle<Image>,
+    pub color: Vec4,
+    pub interval: [f32; 2],
+    pub offset: Vec3,
+}
+
+#[derive(Deserialize)]
+struct ParticleSpawnerJson {
+    effect: String,
+    texture: String,
+    #[serde(default = "ParticleSpawnerJson::default_color")]
+    color: Vec4,
+    interval: [f32; 2],
+    #[serde(default = "ParticleSpawnerJson::default_offset")]
+    offset: Vec3,
+}
+
+impl ParticleSpawnerJson {
+    fn default_color() -> Vec4 {
+        Vec4::ONE
+    }
+
+    fn default_offset() -> Vec3 {
+        Vec3::splat(0.5)
+    }
+
+    fn resolve(
+        self,
+        block_name: &str,
+        particle_effects: &ParticleEffects,
+        particle_textures: &ParticleTextures,
+    ) -> Result<ParticleSpawnerConfig, String> {
+        let Some(effect) = particle_effects.get_id_by_name(&self.effect) else {
+            return Err(format!(
+                "Misconfigured assets: the particle spawner of block '{}' uses the particle \
+                effect '{}', but the effect does not exist.",
+                block_name, self.effect
+            ));
+        };
+
+        let Some(texture) = particle_textures.get(&self.texture).cloned() else {
+            return Err(format!(
+                "Misconfigured assets: the particle spawner of block '{}' uses the texture \
+                '{}', but the texture does not exist.",
+                block_name, self.texture
+            ));
+        };
+
+        let [min, max] = self.interval;
+        if !(min > 0.0 && max >= min) {
+            return Err(format!(
+                "Misconfigured assets: the particle spawner of block '{}' has the interval \
+                [{}, {}], it must be positive and ordered from min to max.",
+                block_name, min, max
+            ));
+        }
+
+        Ok(ParticleSpawnerConfig {
+            effect,
+            texture,
+            color: self.color,
+            interval: self.interval,
+            offset: self.offset,
+        })
     }
 }
 
@@ -694,6 +789,8 @@ enum BlockJson {
         /// Block placement rules
         #[serde(default)]
         placement: BlockPlacement,
+        #[serde(default)]
+        particle_spawners: Vec<ParticleSpawnerJson>,
     },
     Model {
         /// Name of the block, must be unique
@@ -771,9 +868,6 @@ struct BlockPlacement {
     // Set if the block should always be rotated when placed.
     #[serde(default)]
     rotatable: bool,
-    // Set if a transform should be applied when placing on a sideways adjacent block. This will
-    // rotate the block even if 'rotatable' is not set, but only on sides.
-    side_transform: Option<Transform>,
 }
 
 impl Default for BlockPlacement {
@@ -783,7 +877,6 @@ impl Default for BlockPlacement {
             // ceiling: true,
             // sides: true,
             rotatable: false,
-            side_transform: None,
         }
     }
 }

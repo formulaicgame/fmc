@@ -27,6 +27,7 @@ wasmtime = "=50.0.1"
 ureq = "3.3.0"
 nonmax = "0.5.5"
 bitflags = "2.13.0"
+smallvec = "1.16.4"
 
 [target.'cfg(windows)'.dependencies]
 junction = "2.0.0"

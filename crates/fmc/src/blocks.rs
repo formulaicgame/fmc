@@ -19,6 +19,7 @@ use crate::{
     database::Database,
     items::{DropTable, DropTableJson, ItemConfig, ItemId, ItemStack, Items},
     models::{ModelAssetId, Models},
+    particle_effects::{ParticleEffects, ParticleSpawner},
     physics::{Collider, ColliderJson, Friction, shapes::Aabb},
     players::Camera,
     prelude::*,
@@ -57,6 +58,7 @@ fn load_blocks_to_resource(
     database: Res<Database>,
     models: Res<Models>,
     items: Res<Items>,
+    particle_effects: Res<ParticleEffects>,
 ) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
@@ -136,6 +138,41 @@ fn load_blocks_to_resource(
             None
         };
 
+        let particle_spawners: Vec<BlockParticleSpawner> = block_config_json
+            .particle_spawners
+            .iter()
+            .map(|spawner| {
+                let Some(effect) = particle_effects.get_id(&spawner.effect) else {
+                    panic!(
+                        "Failed to read block at: {}\nError: no particle effect by the name: {}",
+                        file_path.display(),
+                        spawner.effect
+                    );
+                };
+
+                let [min, max] = spawner.interval;
+                if !(min > 0.0 && max >= min) {
+                    panic!(
+                        "Failed to read block at: {}\nError: the particle spawner interval \
+                        [{}, {}] must be positive and ordered from min to max",
+                        file_path.display(),
+                        min,
+                        max
+                    );
+                }
+
+                BlockParticleSpawner {
+                    spawner: ParticleSpawner {
+                        effect,
+                        texture: spawner.texture.clone(),
+                        color: spawner.color,
+                        interval: spawner.interval,
+                    },
+                    offset: spawner.offset.as_dvec3() - DVec3::new(0.5, 0.0, 0.5),
+                }
+            })
+            .collect();
+
         // non-model blocks are defined in the 0..1 interval. This makes their collider hard to
         // rotate as they have their center of rotation at Vec3::splat(0.5). We move it to the origin to
         // avoid this. Model blocks don't have this problem as they are defined at the origin.
@@ -210,6 +247,8 @@ fn load_blocks_to_resource(
                     .is_none_or(|material| material.transparency != "opaque"),
                 material,
                 placement: block_config_json.placement,
+                rotation_transform: block_config_json.rotation_transform,
+                particle_spawners,
                 collider,
                 particle_textures,
                 sound: block_config_json.sound,
@@ -471,6 +510,11 @@ struct BlockConfigJson {
     // Rules for how the block can be placed by the player.
     #[serde(default)]
     placement: BlockPlacement,
+    // Transform applied to the model when the block is rotated.
+    rotation_transform: Option<Transform>,
+    // Particle spawners attached to the block.
+    #[serde(default)]
+    particle_spawners: Vec<ParticleSpawnerJson>,
     // Texture used for particle when brekaing the block. Relative to /textures/
     // If not supplied it will be derived from 'faces' if that is supplied.
     particle_texture: Option<String>,
@@ -564,6 +608,10 @@ pub struct BlockConfig {
     pub collider: Collider,
     /// Rules for how the block can be placed by the player.
     pub placement: BlockPlacement,
+    /// Transform applied to the model when the block is rotated.
+    pub rotation_transform: Option<Transform>,
+    /// Particle spawners attached to the block.
+    pub particle_spawners: Vec<BlockParticleSpawner>,
     // TODO: Not needed
     /// Texture path for each face used for particles when breaking blocks
     particle_textures: Option<BlockFaceTextures>,
@@ -583,15 +631,19 @@ impl BlockConfig {
             return None;
         };
 
-        if block_drop.requires_tool
-            && !tool
-                .map(|tool| &tool.name)
-                .is_some_and(|name| self.tools.contains(name))
-        {
-            return None;
-        } else {
+        if !block_drop.requires_tool {
             return Some(block_drop.item);
         }
+
+        if let Some(item) = tool {
+            if let Some(tool) = &item.tool {
+                if self.tools.contains(&tool.name) {
+                    return Some(block_drop.item);
+                }
+            }
+        }
+
+        return None;
     }
 
     pub fn surface_friction(&self, face: BlockFace) -> DVec3 {
@@ -707,8 +759,6 @@ pub struct BlockPlacement {
     /// If 'rotatable' is set, this allows a block to be placed without rotation if it is placed on
     /// the Top or Bottom face of a block.
     pub centered: bool,
-    /// Set if a transform should be applied when rotated.
-    pub rotation_transform: Option<Transform>,
 }
 
 impl Default for BlockPlacement {
@@ -719,8 +769,36 @@ impl Default for BlockPlacement {
             sides: true,
             rotatable: false,
             centered: false,
-            rotation_transform: None,
         }
+    }
+}
+
+/// A particle spawner that is spawned together with a block.
+#[derive(Debug, Clone)]
+pub struct BlockParticleSpawner {
+    pub spawner: ParticleSpawner,
+    /// Position of the spawner relative to the origin of the block's model.
+    pub offset: DVec3,
+}
+
+#[derive(Deserialize, Debug)]
+struct ParticleSpawnerJson {
+    effect: String,
+    texture: String,
+    #[serde(default = "ParticleSpawnerJson::default_color")]
+    color: Vec4,
+    interval: [f32; 2],
+    #[serde(default = "ParticleSpawnerJson::default_offset")]
+    offset: Vec3,
+}
+
+impl ParticleSpawnerJson {
+    fn default_color() -> Vec4 {
+        Vec4::ONE
+    }
+
+    fn default_offset() -> Vec3 {
+        Vec3::splat(0.5)
     }
 }
 

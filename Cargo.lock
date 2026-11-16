@@ -3046,6 +3046,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "smallvec",
  "tar",
  "ureq",
  "wasmtime",

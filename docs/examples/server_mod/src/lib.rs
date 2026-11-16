@@ -1,12 +1,13 @@
-// This is a mod for fmc_vanilla, replace fmc_vanilla with the game you want to mod in Cargo.toml
+// This is a mod for fmc_173, replace fmc_173 with the game you want to mod in Cargo.toml
 // Use the games docs to discover functionality you can modify.
 //
-use fmc_vanilla::{
+use fmc_173::{
     // The 'fmc' module is the core of the game. It takes care of chunk management,
     // networking, physics, etc... Things that are specific to the game are found in
-    // the 'fmc_vanilla' module, mobs, items and the like.
+    // the 'fmc_173' module, mobs, items and the like.
     fmc::{
         networking::Server,
+        particle_effects::ParticleEffects,
         players::{Camera, Player},
         protocol::messages,
     },
@@ -35,22 +36,25 @@ impl Plugin for Mod {
 }
 
 // Spawns a particle effect in front of all players
-fn barf(server: Res<Server>, players: Query<(Entity, &Transform, &Camera), With<Player>>) {
+fn barf(
+    server: Res<Server>,
+    particle_effects: Res<ParticleEffects>,
+    players: Query<(Entity, &Transform, &Camera), With<Player>>,
+) {
     for (player_entity, transform, camera) in players.iter() {
         let camera_position = transform.translation + camera.translation;
         let forward = camera.forward();
 
         let position = camera_position + forward;
-        server.send_one(player_entity, messages::ParticleEffect::Explosion {
-            position,
-            spawn_offset: Vec3::ZERO,
-            size_range: (0.5, 1.0),
-            min_velocity: Vec3::NEG_ONE,
-            max_velocity: Vec3::ONE,
-            texture: Some(String::from("blocks/grass_top.png")),
-            color: None,
-            lifetime: (1.0, 2.0),
-            count: 5,
-        });
+        server.send_one(
+            player_entity,
+            messages::ParticleEffect {
+                id: particle_effects.get_id("barf").unwrap(),
+                position,
+                rotation: Quat::IDENTITY,
+                texture: String::from("blocks/grass_top.png"),
+                color: Vec4::ONE,
+            },
+        );
     }
 }
