@@ -54,6 +54,8 @@ impl Plugin for ClientPlugin {
             .add_message::<messages::EnableClientAudio>()
             .add_message::<messages::Sound>()
             .add_message::<messages::ParticleEffect>()
+            .add_message::<messages::ParticleSpawner>()
+            .add_message::<messages::DeleteParticleSpawner>()
             .add_message::<messages::Plugin>()
             .add_message::<messages::PluginData>()
             .add_systems(OnEnter(GameState::Playing), send_client_ready)
@@ -544,6 +546,8 @@ struct MessageWriters<'w> {
     enable_client_audio: MessageWriter<'w, messages::EnableClientAudio>,
     sound: MessageWriter<'w, messages::Sound>,
     particle_effect: MessageWriter<'w, messages::ParticleEffect>,
+    particle_spawner: MessageWriter<'w, messages::ParticleSpawner>,
+    delete_particle_spawner: MessageWriter<'w, messages::DeleteParticleSpawner>,
     plugin: MessageWriter<'w, messages::Plugin>,
     plugin_data: MessageWriter<'w, messages::PluginData>,
 }
@@ -602,6 +606,8 @@ fn read_messages(net: ResMut<NetworkClient>, mut message_writers: MessageWriters
             EnableClientAudio => receive!(enable_client_audio),
             Sound => receive!(sound),
             ParticleEffect => receive!(particle_effect),
+            ParticleSpawner => receive!(particle_spawner),
+            DeleteParticleSpawner => receive!(delete_particle_spawner),
             Plugin => receive!(plugin),
             PluginData => receive!(plugin_data),
             _ => {
