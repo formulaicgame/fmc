@@ -49,6 +49,7 @@ pub trait Command: Message + Sized {
 
 /// Representation of a command when iterating over commands in the [`CommandRegistry`]
 pub struct RegisteredCommand {
+    pub name: &'static str,
     pub usage: &'static str,
     pub permission: Option<Permission>,
     dispatch: fn(&mut Commands, Entity, &[&str]) -> Result<(), String>,
@@ -76,6 +77,7 @@ impl CommandRegistry {
         let previous = self.commands.insert(
             C::NAME,
             RegisteredCommand {
+                name: C::NAME,
                 usage: C::USAGE,
                 permission: C::PERMISSION,
                 dispatch: dispatch::<C>,
