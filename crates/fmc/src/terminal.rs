@@ -29,7 +29,6 @@ impl Plugin for TerminalPlugin {
         .init_resource::<TerminalCommandRegistry>()
         .add_terminal_command::<HelpCommand>()
         .add_terminal_command::<StopCommand>()
-        .add_systems(Startup, check_for_command_name_conflicts)
         .add_systems(
             Update,
             (
@@ -64,18 +63,6 @@ impl AddTerminalCommand for App {
             .get_resource_or_init::<TerminalCommandRegistry>()
             .insert::<C>();
         self
-    }
-}
-
-fn check_for_command_name_conflicts(
-    terminal_registry: Res<TerminalCommandRegistry>,
-    registry: Res<CommandRegistry>,
-) {
-    for name in terminal_registry.names() {
-        assert!(
-            !registry.contains(name),
-            "The command '{name}' is registered as both a terminal command and a regular command"
-        );
     }
 }
 
@@ -141,8 +128,13 @@ fn handle_help_command(
     for help_command in help_commands.read() {
         let query = help_command.query.as_deref().unwrap_or_default();
 
+        let terminal_commands = terminal_registry.query(query);
+        let other_commands = registry
+            .query(query)
+            .filter(|command| !terminal_registry.contains(command.name));
+
         let mut found = false;
-        for command in terminal_registry.query(query).chain(registry.query(query)) {
+        for command in terminal_commands.chain(other_commands) {
             if !found {
                 println!("\nCommands:");
                 found = true;
