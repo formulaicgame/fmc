@@ -2,6 +2,7 @@
 pub mod assets;
 /// The game's blocks.
 pub mod blocks;
+pub mod commands;
 /// Database connection management
 pub mod database;
 /// UI interaction infrastructure
@@ -114,6 +115,7 @@ impl PluginGroup for DefaultPlugins {
             .add(database::DatabasePlugin)
             .add(permissions::PermissionsPlugin)
             .add(terminal::TuiPlugin)
+            .add(commands::CommandPlugin)
             .add(networking::ServerPlugin)
             .add(world::WorldPlugin)
             .add(blocks::BlockPlugin)

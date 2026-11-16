@@ -17,6 +17,11 @@ impl Plugin for PermissionsPlugin {
     }
 }
 
+// TODO: I have some idea of doing an interning style permission setup. You register each permission
+// to some global, Permission::new can be checked directly from it so you can never create an
+// invalid one. The Command trait would have to have required_permission method. Then maybe
+// arc-mutex roles and share them around and then we don't need to keep 'roles' so close either.
+// Very non-idiomatic but seems like it provides some better patterns maybe.
 #[derive(Resource)]
 pub struct Permissions {
     permissions: HashSet<Permission>,
