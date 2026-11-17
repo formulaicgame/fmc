@@ -39,7 +39,7 @@ impl Default for Permissions {
         );
 
         Self {
-            permissions: HashSet::new(),
+            permissions: HashSet::from([Permission::ADMIN]),
             roles,
         }
     }
@@ -105,6 +105,8 @@ pub struct Permission(&'static str);
 
 impl Permission {
     const WILDCARD: Permission = Permission("*");
+    /// A pre-added convenience permission
+    pub const ADMIN: Permission = Permission("admin");
 
     pub const fn new(name: &'static str) -> Self {
         Self(name)
