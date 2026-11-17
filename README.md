@@ -14,7 +14,7 @@ and connect through multiplayer. @ me if it doesn't work, thanks.
 
 Install, then do to the this to bypass Gatekeeper:  
 ```
-open the app(it will fail) > System Settings > Privacy & Security > scroll to bottom > open anyway
+open the app(blocked) > System Settings > Privacy & Security > scroll to bottom > open anyway
 ```
 Or if you're comfortable in the terminal:  
 ```shell
@@ -40,16 +40,9 @@ Contributions are welcome, please reach out on [discord](https://discord.gg/VMgF
 
 Server mods can be added through the `fmc build` command, see `fmc build --template` for an example.  
 Mods are plain rust crates, and can be found at [crates.io](https://crates.io/search?q=fmc_) by searching for `fmc_`  
-To develop your own mod, see the [example mod](examples/docs/server_mod).
+To develop your own mod, see the [example mod](docs/examples/server_mod).
 
 **Windows users**: Follow these 
 [instructions](https://rust-lang.github.io/rustup/installation/windows-msvc.html#installing-only-the-required-components-optional)
 if you don't already have rust installed. If you are uncomfortable with this you should avoid modding until a way can be found to do it
 automatically.
-
-## Build client from source
-
-```
-git clone https://github.com/formulaicgame/fmc
-cd fmc/client && cargo run --release
-```
