@@ -1,10 +1,13 @@
 #![warn(missing_docs)]
+// f64 is needed for precision in large worlds. This creates a lot of unfortunate mess, bevy might
+// add it in the future, see: https://github.com/bevyengine/bevy/issues/1680
+
 /// The basic components of the transform crate
 mod components;
 mod systems;
 
-use bevy::app::ValidateParentHasComponentPlugin;
-use bevy::prelude::*;
+use bevy_app::{ValidateParentHasComponentPlugin, prelude::*};
+use bevy_ecs::prelude::*;
 pub use components::{GlobalTransform, Transform};
 pub use systems::StaticTransformOptimizations;
 use systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms};
@@ -22,10 +25,6 @@ pub struct TransformPlugin;
 
 impl Plugin for TransformPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<components::Transform>()
-            .register_type::<components::TransformTreeChanged>()
-            .register_type::<components::GlobalTransform>();
-
         app.add_plugins(ValidateParentHasComponentPlugin::<GlobalTransform>::default())
             .init_resource::<StaticTransformOptimizations>()
             // add transform systems to startup so the first update is "correct"
@@ -51,4 +50,13 @@ impl Plugin for TransformPlugin {
                     .in_set(TransformSystems::Propagate),
             );
     }
+}
+
+/// The transform prelude.
+///
+/// This includes the most common types in this crate, re-exported for your convenience.
+#[doc(hidden)]
+pub mod prelude {
+    #[doc(hidden)]
+    pub use super::components::{GlobalTransform, Transform};
 }

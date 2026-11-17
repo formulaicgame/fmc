@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+use bevy_ecs::message::Message;
+use bevy_math::IVec3;
 
 use serde::{Deserialize, Serialize};
 

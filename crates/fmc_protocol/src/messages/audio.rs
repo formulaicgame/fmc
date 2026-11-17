@@ -1,4 +1,5 @@
-use bevy::{math::DVec3, prelude::Message};
+use bevy_ecs::message::Message;
+use bevy_math::DVec3;
 use serde::{Deserialize, Serialize};
 
 use fmc_protocol_derive::ClientBound;

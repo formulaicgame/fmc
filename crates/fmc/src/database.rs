@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use bevy::prelude::*;
+use crate::bevy::prelude::*;
 
 use crate::{
     blocks::{BlockData, BlockId, BlockState},

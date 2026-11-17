@@ -10,9 +10,7 @@ use fmc_protocol::messages;
 use smallvec::SmallVec;
 
 use crate::{
-    assets::particles::{
-        ParticleEffect, ParticleEffectAssetId, ParticleEffects, ParticleTextures,
-    },
+    assets::particles::{ParticleEffect, ParticleEffectAssetId, ParticleEffects, ParticleTextures},
     blocks::{BlockRotation, BlockState, Blocks, ParticleSpawnerConfig},
     game_state::GameState,
     rendering::{light_texture::LIGHT_TEXTURE, materials::ParticleMaterial},
@@ -301,8 +299,7 @@ fn load_block_spawners(
                 continue;
             }
 
-            let block_position =
-                BlockPosition::from(chunk_position) + BlockPosition::from(*index);
+            let block_position = BlockPosition::from(chunk_position) + BlockPosition::from(*index);
             spawners.chunks.entry(chunk_position).or_default().insert(
                 *index,
                 configs

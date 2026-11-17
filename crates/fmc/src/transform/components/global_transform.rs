@@ -1,11 +1,10 @@
 use std::ops::Mul;
 
 use super::Transform;
-use bevy::ecs::{component::Component, reflect::ReflectComponent};
-use bevy::math::{
+use bevy_ecs::component::Component;
+use bevy_math::{
     DAffine3 as Affine3A, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3, DVec3 as Vec3A,
 };
-use bevy::reflect::{Reflect, std_traits::ReflectDefault};
 
 /// Describe the position of an entity relative to the reference frame.
 ///
@@ -33,8 +32,7 @@ use bevy::reflect::{Reflect, std_traits::ReflectDefault};
 /// - [`global_vs_local_translation`]
 ///
 /// [`global_vs_local_translation`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/global_vs_local_translation.rs
-#[derive(Debug, PartialEq, Clone, Copy, Reflect, Component)]
-#[reflect(Component, Default, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy, Component)]
 pub struct GlobalTransform(Affine3A);
 
 macro_rules! impl_local_axis {

@@ -1,10 +1,6 @@
 use super::GlobalTransform;
-use bevy::ecs::{component::Component, reflect::ReflectComponent};
-use bevy::math::{
-    DAffine3 as Affine3A, DMat3 as Mat3, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3,
-};
-use bevy::reflect::Reflect;
-use bevy::reflect::prelude::*;
+use bevy_ecs::component::Component;
+use bevy_math::{DAffine3 as Affine3A, DMat3 as Mat3, DMat4 as Mat4, DQuat as Quat, DVec3 as Vec3};
 use std::ops::Mul;
 
 /// Describe the position of an entity. If the entity has a parent, the position is relative
@@ -36,11 +32,8 @@ use std::ops::Mul;
 ///
 /// [`global_vs_local_translation`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/global_vs_local_translation.rs
 /// [`transform`]: https://github.com/bevyengine/bevy/blob/latest/examples/transforms/transform.rs
-#[derive(
-    Component, Debug, PartialEq, Clone, Copy, Reflect, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Component, Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[require(GlobalTransform, TransformTreeChanged)]
-#[reflect(Component, Default, PartialEq)]
 pub struct Transform {
     /// Position of the entity. In 2d, the last value of the `Vec3` is used for z-ordering.
     ///
@@ -519,6 +512,6 @@ impl Mul<Vec3> for Transform {
 /// mark all entities of the hierarchy as "dirty" if any of their descendants have a changed
 /// `Transform`. If this component is *not* marked `is_changed()`, propagation will halt.
 #[derive(
-    Component, Clone, Copy, Default, Reflect, PartialEq, Debug, serde::Serialize, serde::Deserialize,
+    Component, Clone, Copy, Default, PartialEq, Debug, serde::Serialize, serde::Deserialize,
 )]
 pub struct TransformTreeChanged;

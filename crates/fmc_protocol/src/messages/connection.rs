@@ -1,4 +1,4 @@
-use bevy::prelude::{Message, Resource};
+use bevy_ecs::{message::Message, resource::Resource};
 use fmc_protocol_derive::{ClientBound, ServerBound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

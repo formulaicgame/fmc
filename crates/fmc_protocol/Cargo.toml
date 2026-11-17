@@ -7,7 +7,8 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-bevy.workspace = true
+bevy_ecs = { version = "0.19.1", default-features = false, features = ["std"] }
+bevy_math = { version = "0.19.1", default-features = false, features = ["std", "serialize"] }
 serde.workspace = true
 
 fmc_protocol_derive.workspace = true

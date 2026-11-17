@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ops::Bound};
 
-use bevy::prelude::*;
+use crate::bevy::prelude::*;
 
 use crate::permissions::{Permission, Permissions, Roles};
 

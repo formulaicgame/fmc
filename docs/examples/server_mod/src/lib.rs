@@ -1,6 +1,6 @@
 // This is a mod for fmc_173, replace fmc_173 with the game you want to mod in Cargo.toml
-// Use the games docs to discover functionality you can modify.
-//
+// Use the game's docs to discover functionality you can modify.
+
 use fmc_173::{
     // The 'fmc' module is the core of the game. It takes care of chunk management,
     // networking, physics, etc... Things that are specific to the game are found in

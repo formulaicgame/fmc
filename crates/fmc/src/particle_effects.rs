@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use bevy::{math::DQuat, prelude::*};
+use crate::bevy::{math::DQuat, prelude::*};
 use fmc_protocol::messages;
 
 use crate::{
     assets::AssetSet,
-    bevy_extensions::f64_transform::GlobalTransform,
     networking::Server,
+    transform::GlobalTransform,
     visibility::{EntityMap, Observers, Visibility, VisibilitySystems},
     world::{ChunkSubscriptionEvent, ChunkSubscriptions, chunk::ChunkPosition},
 };

@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hasher};
 
-use bevy::prelude::*;
+use crate::bevy::prelude::*;
 use fmc_protocol::{MessageType, messages};
 
 /// Manages the server's assets

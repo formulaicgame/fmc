@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use bevy::{ecs::system::SystemParam, platform::cell::SyncUnsafeCell};
+use crate::bevy::{ecs::system::SystemParam, platform::cell::SyncUnsafeCell};
 use fmc_protocol::{ClientBound, MessageType, messages};
 use serde::Serialize;
 

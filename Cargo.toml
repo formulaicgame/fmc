@@ -9,7 +9,6 @@ name = "fmc"
 path = "src/main.rs"
 
 [dependencies]
-bevy = { workspace = true, features = ["default", "serialize", "file_watcher"] }
 serde.workspace = true
 serde_json.workspace = true
 bincode.workspace = true
@@ -21,6 +20,7 @@ rusqlite.workspace = true
 fmc_protocol.workspace = true
 fmc_noise.workspace = true
 
+bevy = { version = "0.19.0", default-features = false, features = ["default", "serialize", "file_watcher"] }
 clap = { version = "4.6.1", features = ["derive"] }
 dirs = "6.0.0"
 wasmtime = "=50.0.1"
@@ -53,7 +53,6 @@ type_complexity = "allow"
 too_many_arguments = "allow"
 
 [workspace.dependencies]
-bevy = { version = "0.19.0", default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tar = "0.4.46"

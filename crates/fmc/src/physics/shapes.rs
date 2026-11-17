@@ -1,5 +1,4 @@
-use bevy::math::{DMat3, DVec3};
-use bevy::reflect::Reflect;
+use crate::bevy::math::{DMat3, DVec3};
 use serde::{Deserialize, Serialize};
 
 use crate::blocks::BlockFace;
@@ -12,7 +11,7 @@ pub struct AabbJson {
 }
 
 /// An Axis-Aligned Bounding Box
-#[derive(Copy, Clone, Debug, Default, Reflect, Serialize)]
+#[derive(Copy, Clone, Debug, Default, Serialize)]
 pub struct Aabb {
     pub center: DVec3,
     pub half_extents: DVec3,

@@ -1,5 +1,6 @@
 use super::components::{GlobalTransform, Transform, TransformTreeChanged};
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
+use bevy_utils::{BufferedChannel, Parallel};
 pub use parallel::propagate_parent_transforms;
 // #[cfg(not(feature = "std"))]
 // pub use serial::propagate_parent_transforms;
@@ -76,9 +77,9 @@ pub fn mark_dirty_trees(
     static_optimizations: Res<StaticTransformOptimizations>,
     // Cached allocations for the parallel implementation
     mut shared_bitset: Local<Vec<core::sync::atomic::AtomicU64>>,
-    mut local_bitset: Local<bevy::utils::Parallel<Vec<u64>>>,
-    mut consumer_channels: Local<bevy::utils::BufferedChannel<Entity>>,
-    mut traversal_channels: Local<bevy::utils::BufferedChannel<Entity>>,
+    mut local_bitset: Local<Parallel<Vec<u64>>>,
+    mut consumer_channels: Local<BufferedChannel<Entity>>,
+    mut traversal_channels: Local<BufferedChannel<Entity>>,
 ) {
     if !static_optimizations.is_enabled() {
         return;
@@ -96,7 +97,7 @@ pub fn mark_dirty_trees(
     // pipeline to start working as soon as there is available work to process, instead of running
     // each stage serially with inner parallelism.
     {
-        use bevy::tasks::ComputeTaskPool;
+        use bevy_tasks::ComputeTaskPool;
         use core::sync::atomic::Ordering;
 
         ComputeTaskPool::get().scope(|scope| {
@@ -401,9 +402,9 @@ pub fn mark_dirty_trees(
 mod parallel {
     use super::{GlobalTransform, StaticTransformOptimizations, Transform, TransformTreeChanged};
     // TODO: this implementation could be used in no_std if there are equivalents of these.
-    use bevy::ecs::{entity::UniqueEntitySlice, prelude::*, system::lifetimeless::Read};
-    use bevy::tasks::{ComputeTaskPool, TaskPool};
-    use bevy::utils::Parallel;
+    use bevy_ecs::{entity::UniqueEntitySlice, prelude::*, system::lifetimeless::Read};
+    use bevy_tasks::{ComputeTaskPool, TaskPool};
+    use bevy_utils::Parallel;
     use core::sync::atomic::{AtomicI32, Ordering};
     use std::sync::Arc;
     use std::sync::{
@@ -502,7 +503,7 @@ mod parallel {
         nodes: &NodeQuery,
         static_optimizations: &StaticTransformOptimizations,
     ) {
-        let _span = bevy::log::info_span!("transform propagation worker").entered();
+        let _span = bevy_log::info_span!("transform propagation worker").entered();
 
         let mut outbox = queue.local_queue.borrow_local_mut();
         loop {

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::{
+use crate::bevy::{
     math::DVec3,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };

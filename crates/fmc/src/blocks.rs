@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-use bevy::{
+use crate::bevy::{
     ecs::system::EntityCommands,
     math::{DQuat, DVec3},
 };

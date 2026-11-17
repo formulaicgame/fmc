@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy::platform::collections::HashMap;
+use crate::bevy::platform::collections::HashMap;
 
 use crate::{
     bevy::math::DVec3,

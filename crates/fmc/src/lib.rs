@@ -19,6 +19,8 @@ pub mod physics;
 pub mod players;
 pub mod random;
 pub mod terminal;
+/// f64 transforms
+pub mod transform;
 pub mod visibility;
 /// The block world
 pub mod world;
@@ -30,48 +32,29 @@ pub use fmc_noise as noise;
 #[doc(inline)]
 pub use fmc_protocol as protocol;
 
-mod bevy_extensions;
-
-pub mod bevy {
-    // This is huge. Don't want to put strain on Docs.rs by storing 250mb every time I bump
-    // the version.
-    #[doc(no_inline)]
-    pub use bevy::*;
-
-    // We want f64 transforms so we shadow bevy's transforms
-    pub mod transform {
-        pub use crate::bevy_extensions::f64_transform::GlobalTransform;
-        pub use crate::bevy_extensions::f64_transform::StaticTransformOptimizations;
-        pub use crate::bevy_extensions::f64_transform::Transform;
-        pub use crate::bevy_extensions::f64_transform::TransformPlugin;
-        pub use crate::bevy_extensions::f64_transform::TransformSystems;
-    }
-
-    pub mod prelude {
-        pub use crate::bevy_extensions::f64_transform::GlobalTransform;
-        pub use crate::bevy_extensions::f64_transform::Transform;
-        pub use crate::bevy_extensions::f64_transform::TransformPlugin;
-        pub use crate::bevy_extensions::f64_transform::TransformSystems;
-        // TODO: For some reason when you click this in the docs it doesn't bring you to bevy's
-        // prelude, but the prelude of bevy_internal
-        #[doc(no_inline)]
-        pub use bevy::prelude::*;
-    }
-}
+pub use bevy_app as app;
+pub use bevy_ecs as ecs;
+pub use bevy_math as math;
+pub use bevy_tasks as tasks;
+pub use bevy_time as time;
 
 pub mod prelude {
     // XXX: https://github.com/bevyengine/bevy/issues/9831
+    // This means derive(Resource/Component) can only be used when the prelude is imported
     #[doc(hidden)]
-    pub use bevy::ecs as bevy_ecs;
+    pub use bevy_ecs;
 
-    #[doc(no_inline)]
-    pub use bevy::prelude::*;
-
-    pub use crate::bevy_extensions::f64_transform::GlobalTransform;
-    pub use crate::bevy_extensions::f64_transform::Transform;
+    pub use crate::transform::prelude::*;
+    pub use bevy_app::prelude::*;
+    pub use bevy_derive::{Deref, DerefMut};
+    pub use bevy_ecs::prelude::*;
+    pub use bevy_log::prelude::*;
+    pub use bevy_math::prelude::*;
+    pub use bevy_time::prelude::*;
+    pub use bevy_utils::prelude::*;
 }
 
-use bevy::app::{PluginGroup, PluginGroupBuilder};
+use bevy_app::{PluginGroup, PluginGroupBuilder};
 
 /// Enables all available functionality.
 ///
@@ -102,15 +85,15 @@ impl PluginGroup for DefaultPlugins {
     fn build(self) -> PluginGroupBuilder {
         let group = PluginGroupBuilder::start::<Self>();
         group
-            .add(bevy::app::ScheduleRunnerPlugin::run_loop(
+            .add(crate::app::ScheduleRunnerPlugin::run_loop(
                 // ~60 ticks a second
                 std::time::Duration::from_millis(16),
             ))
-            .add(bevy::app::TaskPoolPlugin::default())
-            .add(bevy::time::TimePlugin::default())
-            .add(bevy::log::LogPlugin::default())
-            .add(bevy::transform::TransformPlugin)
-            .add(bevy::app::TerminalCtrlCHandlerPlugin)
+            .add(bevy_app::TaskPoolPlugin::default())
+            .add(bevy_time::TimePlugin::default())
+            .add(bevy_log::LogPlugin::default())
+            .add(crate::transform::TransformPlugin)
+            .add(bevy_app::TerminalCtrlCHandlerPlugin)
             .add(assets::AssetPlugin)
             .add(database::DatabasePlugin)
             .add(permissions::PermissionsPlugin)
@@ -126,5 +109,25 @@ impl PluginGroup for DefaultPlugins {
             .add(physics::PhysicsPlugin)
             .add(players::PlayersPlugin)
             .add(interfaces::InterfacePlugin)
+    }
+}
+
+/// The bevy crates fmc uses internally, laid out like `bevy` so paths stay familiar.
+mod bevy {
+    pub use bevy_app as app;
+    pub use bevy_ecs as ecs;
+    pub use bevy_math as math;
+    pub use bevy_platform as platform;
+    pub use bevy_tasks as tasks;
+    pub use bevy_time as time;
+
+    pub mod prelude {
+        pub use bevy_app::prelude::*;
+        pub use bevy_derive::{Deref, DerefMut};
+        pub use bevy_ecs::prelude::*;
+        pub use bevy_log::prelude::*;
+        pub use bevy_math::prelude::*;
+        pub use bevy_time::prelude::*;
+        pub use bevy_utils::prelude::*;
     }
 }
