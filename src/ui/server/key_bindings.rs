@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bevy::prelude::*;
+use bevy::{input::keyboard::Key, prelude::*};
 use fmc_protocol::messages;
 use serde::Deserialize;
 
@@ -115,12 +115,16 @@ pub fn load_key_bindings(mut commands: Commands, net: Res<NetworkClient>) {
 fn handle_key_presses(
     net: Res<NetworkClient>,
     input: Res<ButtonInput<KeyCode>>,
+    logical_input: Res<ButtonInput<Key>>,
     key_bindings: Res<KeyBindings>,
     interfaces: Res<Interfaces>,
     mut gui_state: ResMut<NextState<GuiState>>,
     interface_query: Query<(Entity, &Visibility, &InterfaceConfig)>,
     mut interface_events: MessageWriter<InterfaceVisibilityEvent>,
 ) {
+    // Use logical key for escape so it can be rebound by the window manager
+    let escape_pressed = logical_input.just_pressed(Key::Escape);
+
     for pressed_key in input.get_just_pressed() {
         // Any open interface can be closed by pressing "e" or "escape". "e" will only close it if
         // the interface doesn't take keyboard focus.
@@ -128,7 +132,7 @@ fn handle_key_presses(
             if visibility != Visibility::Hidden && interface_config.is_exclusive {
                 if (*pressed_key == KeyCode::KeyE
                     && interface_config.keyboard_focus != KeyboardFocus::Full)
-                    || *pressed_key == KeyCode::Escape
+                    || escape_pressed
                 {
                     interface_events.write(InterfaceVisibilityEvent {
                         interface_entity,
@@ -143,7 +147,7 @@ fn handle_key_presses(
         }
 
         // TODO: This isn't sufficient, the server can spam open interfaces, don't know how to handle it
-        if *pressed_key == KeyCode::Escape {
+        if escape_pressed {
             gui_state.set(GuiState::PauseMenu);
         }
 

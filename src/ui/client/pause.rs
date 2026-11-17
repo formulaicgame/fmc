@@ -1,6 +1,6 @@
 use bevy::{
     audio::{PlaybackSettings, Volume},
-    color::palettes::css::DARK_GRAY,
+    input::keyboard::Key,
     prelude::*,
     window::WindowFocused,
 };
@@ -552,13 +552,9 @@ fn navigation_buttons(
     }
 }
 
-fn escape_key(
-    gui_state: Res<State<GuiState>>,
-    mut next_gui_state: ResMut<NextState<GuiState>>,
-    input: Res<ButtonInput<KeyCode>>,
-) {
-    if input.just_pressed(KeyCode::Escape) {
-        next_gui_state.set(GuiState::None);
+fn escape_key(mut gui_state: ResMut<NextState<GuiState>>, input: Res<ButtonInput<Key>>) {
+    if input.just_pressed(Key::Escape) {
+        gui_state.set(GuiState::None);
     }
 }
 
