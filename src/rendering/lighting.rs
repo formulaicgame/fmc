@@ -543,14 +543,16 @@ fn handle_block_updates(
                 continue;
             }
 
-            let queue = removal_queues.entry(chunk_position).or_default();
-
             let block_config = blocks.get_config(*block_id);
             if block_config.light_level() > 0 {
-                queue.push(LightUpdate {
-                    index: *index,
-                    light: Light::new(0, block_config.light_level()),
-                });
+                light_update_queues
+                    .entry(chunk_position)
+                    .or_insert_with(LightUpdateQueue::new)
+                    .propagation
+                    .push_front(LightUpdate {
+                        index: *index,
+                        light: Light::new(0, block_config.light_level()),
+                    });
             }
 
             // In the event that the light is sunlight = 0, artificial = 0, the removal would
@@ -559,10 +561,13 @@ fn handle_block_updates(
                 *light = Light::new(1, 1);
             }
 
-            queue.push(LightUpdate {
-                index: *index,
-                light: *light,
-            });
+            removal_queues
+                .entry(chunk_position)
+                .or_default()
+                .push(LightUpdate {
+                    index: *index,
+                    light: *light,
+                });
         }
 
         light_map.chunks.insert(chunk_position, light_chunk);
