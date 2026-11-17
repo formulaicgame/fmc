@@ -160,7 +160,7 @@ fn sun_color() -> vec4<f32> {
 }
 
 fn moon_visibility() -> f32 {
-    return 1.0 - smoothstep(-0.15, -0.05, sun_height());
+    return 1.0 - smoothstep(-0.5, -0.05, sun_height());
 }
 
 fn linearstep(low: f32, high: f32, x: f32) -> f32 {
