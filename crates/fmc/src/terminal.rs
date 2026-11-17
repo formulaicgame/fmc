@@ -1,7 +1,9 @@
 use crate::bevy::prelude::*;
 use crossbeam::Receiver;
 
-use crate::commands::{Command, CommandError, CommandEvent, CommandRegistry, CommandSystems};
+use crate::commands::{
+    Command, CommandError, CommandErrorEvent, CommandEvent, CommandRegistry, CommandSystems,
+};
 use crate::permissions::Roles;
 
 pub struct TerminalPlugin;
@@ -71,6 +73,7 @@ fn read_input(
     terminal: Res<Terminal>,
     command_registry: Res<TerminalCommandRegistry>,
     mut command_events: MessageWriter<CommandEvent>,
+    mut errors: MessageWriter<CommandErrorEvent>,
 ) {
     while let Ok(text) = terminal.input.try_recv() {
         let words: Vec<&str> = text.split_whitespace().collect();
@@ -79,6 +82,7 @@ fn read_input(
         };
 
         let Some(command) = command_registry.get(name) else {
+            // Fall through to the player commands
             command_events.write(CommandEvent {
                 source: terminal.entity,
                 text: text.clone(),
@@ -87,15 +91,24 @@ fn read_input(
         };
 
         if let Err(error) = command.run(&mut commands, terminal.entity, args) {
-            error!("{error}");
+            errors.write(CommandErrorEvent {
+                source: terminal.entity,
+                error,
+            });
         }
     }
 }
 
-fn print_errors(terminal: Res<Terminal>, mut errors: MessageReader<CommandError>) {
-    for error in errors.read() {
-        if error.source == terminal.entity {
-            error!("{}", error.text);
+fn print_errors(terminal: Res<Terminal>, mut errors: MessageReader<CommandErrorEvent>) {
+    for event in errors.read() {
+        if event.source == terminal.entity {
+            match &event.error {
+                CommandError::Invalid { name } => {
+                    error!("Unknown command '{name}', type 'help' for a list of commands")
+                }
+                CommandError::Malformed { reason } => error!("Malformed command: {reason}"),
+                CommandError::Failed { reason } => error!("{reason}"),
+            }
         }
     }
 }
@@ -109,13 +122,15 @@ impl Command for HelpCommand {
     const NAME: &'static str = "help";
     const USAGE: &'static str = "help [command] - List the available commands and their usage";
 
-    fn parse(_source: Entity, args: &[&str]) -> Result<Self, String> {
+    fn parse(_source: Entity, args: &[&str]) -> Result<Self, CommandError> {
         match args {
             [] => Ok(Self { query: None }),
             [query] => Ok(Self {
                 query: Some(query.to_string()),
             }),
-            _ => Err(Self::USAGE.to_owned()),
+            _ => Err(CommandError::Malformed {
+                reason: "expected at most one argument".to_owned(),
+            }),
         }
     }
 }
@@ -157,10 +172,12 @@ impl Command for StopCommand {
     const NAME: &'static str = "stop";
     const USAGE: &'static str = "stop - Shut down the server";
 
-    fn parse(_source: Entity, args: &[&str]) -> Result<Self, String> {
+    fn parse(_source: Entity, args: &[&str]) -> Result<Self, CommandError> {
         match args {
             [] => Ok(Self),
-            _ => Err(Self::USAGE.to_owned()),
+            _ => Err(CommandError::Malformed {
+                reason: "expected no arguments".to_owned(),
+            }),
         }
     }
 }

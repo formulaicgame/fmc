@@ -9,7 +9,7 @@ impl Plugin for CommandPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CommandRegistry>()
             .add_message::<CommandEvent>()
-            .add_message::<CommandError>()
+            .add_message::<CommandErrorEvent>()
             .add_systems(Update, dispatch_commands.in_set(CommandSystems::Dispatch));
     }
 }
@@ -28,9 +28,20 @@ pub struct CommandEvent {
 
 /// Response to a server command failing to execute
 #[derive(Message, Clone, Debug)]
-pub struct CommandError {
+pub struct CommandErrorEvent {
     pub source: Entity,
-    pub text: String,
+    pub error: CommandError,
+}
+
+/// The reason a server command failed to execute
+#[derive(Clone, Debug)]
+pub enum CommandError {
+    /// The command does not exist, or the source does not have permission to use it.
+    Invalid { name: String },
+    /// The arguments could not be parsed.
+    Malformed { reason: String },
+    /// The command failed to execute.
+    Failed { reason: String },
 }
 
 /// All server commands must implement this trait. To enable it, it must be registered through [`AddCommand`]
@@ -44,7 +55,7 @@ pub trait Command: Message + Sized {
     /// command, or it will panic at startup!
     const PERMISSION: Option<Permission> = None;
 
-    fn parse(source: Entity, args: &[&str]) -> Result<Self, String>;
+    fn parse(source: Entity, args: &[&str]) -> Result<Self, CommandError>;
 }
 
 /// Representation of a command when iterating over commands in the [`CommandRegistry`]
@@ -52,7 +63,7 @@ pub struct RegisteredCommand {
     pub name: &'static str,
     pub usage: &'static str,
     pub permission: Option<Permission>,
-    dispatch: fn(&mut Commands, Entity, &[&str]) -> Result<(), String>,
+    dispatch: fn(&mut Commands, Entity, &[&str]) -> Result<(), CommandError>,
 }
 
 impl RegisteredCommand {
@@ -61,7 +72,7 @@ impl RegisteredCommand {
         commands: &mut Commands,
         source: Entity,
         args: &[&str],
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         (self.dispatch)(commands, source, args)
     }
 }
@@ -120,7 +131,7 @@ fn dispatch<C: Command>(
     commands: &mut Commands,
     source: Entity,
     args: &[&str],
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     commands.write_message(C::parse(source, args)?);
     Ok(())
 }
@@ -155,7 +166,7 @@ fn dispatch_commands(
     permissions: Res<Permissions>,
     roles_query: Query<&Roles>,
     mut command_events: MessageReader<CommandEvent>,
-    mut errors: MessageWriter<CommandError>,
+    mut errors: MessageWriter<CommandErrorEvent>,
 ) {
     for command_event in command_events.read() {
         let source = command_event.source;
@@ -164,33 +175,22 @@ fn dispatch_commands(
             continue;
         };
 
-        let Some(command) = command_registry.get(name) else {
-            errors.write(CommandError {
-                source,
-                text: format!("Unknown command '{name}'"),
-            });
-            continue;
+        let allowed = |command: &RegisteredCommand| match command.permission {
+            Some(permission) => roles_query
+                .get(source)
+                .is_ok_and(|roles| permissions.has_permission(roles, &permission)),
+            None => true,
         };
 
-        let mut allowed = false;
-        if let Some(permission) = command.permission {
-            if let Ok(roles) = roles_query.get(source) {
-                allowed = permissions.has_permission(roles, &permission);
-            }
-        } else {
-            allowed = true;
-        }
+        let result = match command_registry.get(name) {
+            Some(command) if allowed(command) => command.run(&mut commands, source, args),
+            _ => Err(CommandError::Invalid {
+                name: name.to_owned(),
+            }),
+        };
 
-        if !allowed {
-            errors.write(CommandError {
-                source,
-                text: format!("Unknown command '{name}'"),
-            });
-            continue;
-        }
-
-        if let Err(text) = command.run(&mut commands, source, args) {
-            errors.write(CommandError { source, text });
+        if let Err(error) = result {
+            errors.write(CommandErrorEvent { source, error });
         }
     }
 }
