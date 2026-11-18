@@ -1,27 +1,37 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    assets::AssetSet,
-    blocks::{BlockConfig, BlockId},
-    database::Database,
-    models::{ModelAssetId, Models},
-    random::{Rng, UniformDistribution, WeightedIndex},
-};
+use crate::{assets::AssetSet, database::Database};
+
+pub mod drop_table;
 
 pub type ItemId = u32;
 pub const ITEM_CONFIG_PATH: &str = "assets/client/items/configurations/";
 
+// Items are stored as a static so that ItemStack's can be constructed with only indirect access to
+// the configs through the static.
+static ITEMS: once_cell::sync::OnceCell<Items> = once_cell::sync::OnceCell::new();
+
 pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_items.in_set(AssetSet::Items));
+        app.add_message::<ItemConfigEvent>()
+            .add_systems(PreStartup, load_items.in_set(AssetSet::Items));
     }
 }
 
-fn load_items(mut commands: Commands, models: Res<Models>, database: Res<Database>) {
+/// Contains the parsed json of an item. Use it to extract unique configuration values.
+/// Sent during PreStartup and gone after PostStartup
+#[derive(Message, Clone, Debug)]
+pub struct ItemConfigEvent {
+    pub item_id: ItemId,
+    pub name: String,
+    pub json: serde_json::Value,
+}
+
+fn load_items(database: Res<Database>, mut item_config_events: MessageWriter<ItemConfigEvent>) {
     let mut items = Items {
         configs: HashMap::new(),
         ids: database.load_item_ids(),
@@ -38,7 +48,7 @@ fn load_items(mut commands: Commands, models: Res<Models>, database: Res<Databas
             ),
         };
 
-        let json: ItemConfigJson = match serde_json::from_reader(&file) {
+        let json: serde_json::Value = match serde_json::from_reader(&file) {
             Ok(c) => c,
             Err(e) => panic!(
                 "Couldn't read item config from '{}'\nError: {}",
@@ -46,100 +56,43 @@ fn load_items(mut commands: Commands, models: Res<Models>, database: Res<Databas
             ),
         };
 
-        let blocks = database.load_block_ids();
-        let block = if let Some(block) = json.block {
-            match blocks.get(&block) {
-                Some(block_id) => Some(*block_id),
-                None => panic!(
-                    "Failed to parse item config at: {}\nError: Missing block by the name: {}",
-                    &file_path, &block
-                ),
-            }
-        } else {
-            None
-        };
-
-        let model_id = match models.get_config_by_name(&json.equip_model) {
-            Some(m) => m.id,
-            None => {
-                panic!(
-                    "Failed to parse item config at: {}\nError: Missing model by the name: {}",
-                    &file_path, &json.equip_model
-                );
-            }
+        let config_json = match ItemConfigJson::deserialize(&json) {
+            Ok(c) => c,
+            Err(e) => panic!(
+                "Couldn't read item config from '{}'\nError: {}",
+                &file_path, e
+            ),
         };
 
         items.configs.insert(
             *id,
             ItemConfig {
-                id: *id,
-                name: json.name,
-                block,
-                model_id,
-                max_stack_size: json.stack_size,
-                categories: json.categories,
-                tool: json.tool,
-                properties: json.properties,
+                stack_size: config_json.stack_size,
             },
         );
+
+        item_config_events.write(ItemConfigEvent {
+            item_id: *id,
+            name: filename.clone(),
+            json,
+        });
     }
 
-    commands.insert_resource(items);
+    ITEMS.set(items).ok();
 }
 
-pub struct ItemConfig {
-    /// The id of the item's ItemConfig
-    pub id: ItemId,
-    /// Name shown in interfaces
-    pub name: String,
-    /// Block placed by the item
-    pub block: Option<BlockId>,
-    /// Model used to render the item
-    pub model_id: ModelAssetId,
+pub(crate) struct ItemConfig {
     /// The max amount a stack of this item can store
-    pub max_stack_size: u32,
-    /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in
-    /// interfaces.
-    pub categories: HashSet<String>,
-    /// Present if the item is used as a tool to break blocks
-    pub tool: Option<Tool>,
-    /// Properties unique to the item
-    pub properties: serde_json::Map<String, serde_json::Value>,
-}
-
-impl ItemConfig {
-    pub fn tool_efficiency(&self, block_config: &BlockConfig) -> f32 {
-        if let Some(tool) = &self.tool {
-            block_config
-                .tools
-                .contains(&tool.name)
-                .then_some(tool.efficiency)
-                .unwrap_or(1.0)
-        } else {
-            1.0
-        }
-    }
+    pub stack_size: u32,
 }
 
 #[derive(Deserialize)]
 struct ItemConfigJson {
-    name: String,
-    /// Block name of the block this item can place.
-    block: Option<String>,
-    // TODO: Should just be "model"
-    /// Item model filename
-    equip_model: String,
     stack_size: u32,
-    #[serde(default)]
-    categories: HashSet<String>,
-    tool: Option<Tool>,
-    #[serde(flatten)]
-    properties: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Names and configs of all the items in the game.
-#[derive(Resource)]
-pub struct Items {
+pub(crate) struct Items {
     configs: HashMap<ItemId, ItemConfig>,
     // Map from filename/item name to item id.
     ids: HashMap<String, ItemId>,
@@ -147,13 +100,13 @@ pub struct Items {
 
 impl Items {
     #[track_caller]
-    pub fn get_config(&self, item_id: &ItemId) -> &ItemConfig {
-        return self.configs.get(item_id).unwrap();
+    pub fn get() -> &'static Self {
+        ITEMS.get().unwrap()
     }
 
-    pub fn get_config_by_name(&self, item_name: &str) -> Option<&ItemConfig> {
-        let id = self.ids.get(item_name)?;
-        return self.configs.get(id);
+    #[track_caller]
+    pub fn get_config(&self, item_id: &ItemId) -> &ItemConfig {
+        return self.configs.get(item_id).unwrap();
     }
 
     pub fn get_id(&self, name: &str) -> Option<ItemId> {
@@ -167,7 +120,6 @@ impl Items {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Item {
-    /// Id of item in [`Items`]
     pub id: ItemId,
     /// Unique properties of the item. Separate from the shared properties of the ItemConfig.
     pub properties: serde_json::Value,
@@ -204,11 +156,15 @@ pub struct ItemStack {
 }
 
 impl ItemStack {
-    pub fn new(item_config: &ItemConfig, size: u32) -> Self {
+    #[track_caller]
+    pub fn new(item_id: ItemId, size: u32) -> Self {
+        assert!(size != 0, "Item stacks can't be created with a size of 0");
+
+        let item_config = Items::get().get_config(&item_id);
         return Self {
-            capacity: item_config.max_stack_size,
+            capacity: item_config.stack_size,
             custom_capacity: None,
-            item: Some(Item::new(item_config.id)),
+            item: Some(Item::new(item_id)),
             size,
         };
     }
@@ -284,6 +240,14 @@ impl ItemStack {
         taken
     }
 
+    pub fn pop(&mut self) -> Option<ItemStack> {
+        if self.is_empty() {
+            return None;
+        }
+
+        return Some(self.take(1));
+    }
+
     /// Move items from this stack into another, if the items do not match, swap them.
     pub fn transfer_to(&mut self, other: &mut ItemStack, amount: u32) {
         if self.is_empty() {
@@ -310,101 +274,5 @@ impl ItemStack {
 
     pub fn is_empty(&self) -> bool {
         return self.item.is_none();
-    }
-}
-
-#[derive(Deserialize)]
-pub struct Tool {
-    pub name: String,
-    pub efficiency: f32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DropTableJson {
-    probability: f32,
-    weights: Vec<f32>,
-    drops: Vec<DropJson>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DropJson {
-    item_name: String,
-    min: u32,
-    max: u32,
-}
-
-#[derive(Clone, Debug)]
-pub struct DropTable {
-    probability: f32,
-    weights: WeightedIndex<f32>,
-    drops: Vec<(ItemId, UniformDistribution<u32>)>,
-}
-
-impl DropTable {
-    pub fn empty() -> Self {
-        Self {
-            probability: 0.0,
-            weights: WeightedIndex::new(Vec::new()).unwrap(),
-            drops: Vec::new(),
-        }
-    }
-
-    pub fn new(
-        // probability to hit the drop table
-        probability: f32,
-        // Item, weight, min amount, max amount
-        drops: &[(ItemId, f32, u32, u32)],
-    ) -> Result<Self, String> {
-        if drops.is_empty() {
-            return Err("'drops' cannot be empty".to_owned());
-        }
-
-        let weights = match WeightedIndex::new(drops.iter().map(|d| &d.1)) {
-            Ok(w) => w,
-            Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
-        };
-
-        let drops = drops
-            .iter()
-            .map(|(item_id, _weight, min, max)| (*item_id, UniformDistribution::new(*min, *max)))
-            .collect();
-
-        Ok(Self {
-            probability: probability.max(0.0).min(1.0),
-            weights,
-            drops,
-        })
-    }
-
-    pub fn from_json(json: &DropTableJson, items: &Items) -> Result<DropTable, String> {
-        let mut drops = Vec::with_capacity(json.drops.len());
-        for drop in json.drops.iter() {
-            if let Some(item_id) = items.get_id(&drop.item_name) {
-                drops.push((item_id, UniformDistribution::new(drop.min, drop.max)));
-            } else {
-                return Err(format!("No item by the name '{}'", drop.item_name));
-            }
-        }
-
-        let weights = match WeightedIndex::new(&json.weights) {
-            Ok(w) => w,
-            Err(_) => return Err("Weights must be positive and above zero.".to_owned()),
-        };
-
-        Ok(Self {
-            probability: json.probability.max(0.0).min(1.0),
-            weights,
-            drops,
-        })
-    }
-
-    pub fn drop(&self, mut rng: &mut Rng) -> Option<(ItemId, u32)> {
-        if rng.next_f32() > self.probability {
-            return None;
-        }
-
-        let (item_id, distribution) = &self.drops[self.weights.sample(&mut rng)];
-        let count = distribution.sample(&mut rng);
-        return Some((*item_id, count));
     }
 }

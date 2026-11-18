@@ -52,7 +52,7 @@ pub struct ItemConfig {
     /// Image shown in the interface
     pub image_path: String,
     /// Model that is displayed when the item is equipped
-    pub equip_model: ModelAssetId,
+    pub model: ModelAssetId,
     /// The max amount of an item stack of this type
     pub stack_size: u32,
     /// Names used to categorize the item, e.g "helmet". Used to restrict item placement in ui's.
@@ -65,7 +65,7 @@ pub struct ItemConfig {
 struct ItemConfigJson {
     name: String,
     image: String,
-    equip_model: String,
+    model: String,
     stack_size: u32,
     categories: Option<HashSet<String>>,
     block: Option<String>,
@@ -129,7 +129,7 @@ pub fn load_items(
             }
         };
 
-        let equip_model = match models.get_id_by_filename(&json_config.equip_model) {
+        let model = match models.get_id_by_filename(&json_config.model) {
             Some(id) => id,
             None => {
                 //Server didn't send the correct set of model ids, this should never happen,
@@ -162,7 +162,7 @@ pub fn load_items(
         let config = ItemConfig {
             name: json_config.name,
             image_path: ITEM_IMAGE_PATH.to_owned() + &json_config.image,
-            equip_model,
+            model,
             stack_size: json_config.stack_size,
             categories: json_config.categories,
             block: block_id,

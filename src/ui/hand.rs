@@ -147,13 +147,13 @@ fn equip_item(
             // This prevents triggering the equip animation when switching between the same items.
             // The server also sends a full interface update anytime an item is picked up that is
             // caught by this.
-            if hand.equipped == Some(item.equip_model) {
+            if hand.equipped == Some(item.model) {
                 // If switching between two stacks of the same item it should do nothing.
                 continue;
-            } else if hand.being_unequipped == Some(item.equip_model) {
+            } else if hand.being_unequipped == Some(item.model) {
                 // If the item that was just equipped is the same as the one being unequipped, just
                 // revert the animation.
-                let model = models.get_config(&item.equip_model).unwrap();
+                let model = models.get_config(&item.model).unwrap();
                 animation_player
                     .play(model.named_animations["equip"])
                     .set_speed(1.0);
@@ -174,13 +174,13 @@ fn equip_item(
 
             hand.in_equip_animation = true;
 
-            let model = models.get_config(&item.equip_model).unwrap();
+            let model = models.get_config(&item.model).unwrap();
             if !model.named_animations.contains_key("equip") {
                 warn!("Missing equip animation, can't equip item");
                 continue;
             };
 
-            hand.equipped = Some(item.equip_model);
+            hand.equipped = Some(item.model);
         } else {
             if hand.being_unequipped.is_none() {
                 if let Some(equipped) = hand.equipped.take() {

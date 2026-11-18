@@ -382,7 +382,6 @@ struct ServerConfig<'w> {
     render_distance: Res<'w, MaxRenderDistance>,
     assets: Res<'w, Assets>,
     models: Res<'w, Models>,
-    items: Res<'w, Items>,
     particle_effects: Res<'w, ParticleEffects>,
 }
 
@@ -392,7 +391,7 @@ impl ServerConfig<'_> {
             assets_hash: self.assets.hash,
             block_ids: Blocks::get().ids().clone(),
             model_ids: self.models.ids().clone(),
-            item_ids: self.items.ids().clone(),
+            item_ids: Items::get().ids().clone(),
             particle_effect_ids: self.particle_effects.ids().clone(),
             render_distance: self.render_distance.chunks,
         };

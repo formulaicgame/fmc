@@ -7,7 +7,7 @@ use crate::bevy::{
 use fmc_protocol::messages;
 
 use crate::{
-    blocks::{BlockPosition, Blocks},
+    blocks::{BlockPosition, BlockSpawnFunctions, Blocks},
     database::Database,
     models::Model,
     networking::{NetworkEvent, Server},
@@ -380,6 +380,7 @@ fn traversal_subscriber(
 fn handle_chunk_loading_tasks(
     mut commands: Commands,
     net: Res<Server>,
+    spawn_functions: Res<BlockSpawnFunctions>,
     mut world_map: ResMut<WorldMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
     mut subscription_triggers: Query<&mut SubscriptionTrigger>,
@@ -470,14 +471,15 @@ fn handle_chunk_loading_tasks(
             let blocks = Blocks::get();
             for (index, block_id) in chunk.blocks.iter().enumerate() {
                 let block_config = blocks.get_config(block_id);
-                if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
+                let spawn_function = spawn_functions.get(block_id);
+                if spawn_function.is_some() || block_config.model.is_some() {
                     let mut entity_commands = commands.spawn_empty();
 
                     let block_position =
                         BlockPosition::from(new_chunk_position) + BlockPosition::from(index);
                     entity_commands.insert(block_position);
 
-                    if let Some(function) = block_config.spawn_entity_fn {
+                    if let Some(function) = spawn_function {
                         let block_data = chunk.block_data.remove(&index);
                         (function)(&mut entity_commands, block_data.as_ref());
 

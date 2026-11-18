@@ -10,7 +10,9 @@ use chunk::ChunkPosition;
 use fmc_protocol::messages;
 
 use crate::{
-    blocks::{BlockData, BlockFace, BlockId, BlockPosition, BlockState, Blocks},
+    blocks::{
+        BlockData, BlockFace, BlockId, BlockPosition, BlockSpawnFunctions, BlockState, Blocks,
+    },
     database::Database,
     models::Model,
     networking::{NetworkMessage, Server},
@@ -204,6 +206,7 @@ pub enum BlockUpdate {
 fn handle_block_updates(
     mut commands: Commands,
     net: Res<Server>,
+    spawn_functions: Res<BlockSpawnFunctions>,
     mut world_map: ResMut<WorldMap>,
     chunk_subsriptions: Res<chunk_manager::ChunkSubscriptions>,
     mut block_events: ResMut<Messages<BlockUpdate>>,
@@ -242,10 +245,11 @@ fn handle_block_updates(
                     }
 
                     let block_config = Blocks::get().get_config(&block_id);
-                    if block_config.spawn_entity_fn.is_some() || block_config.model.is_some() {
+                    let spawn_function = spawn_functions.get(&block_id);
+                    if spawn_function.is_some() || block_config.model.is_some() {
                         let mut entity_commands = commands.spawn(position);
 
-                        if let Some(spawn_fn) = block_config.spawn_entity_fn {
+                        if let Some(spawn_fn) = spawn_function {
                             (spawn_fn)(&mut entity_commands, block_data.as_ref());
                         }
 

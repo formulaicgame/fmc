@@ -3,7 +3,7 @@
 //       It should instead emit warnings when configs(and other things it was initialized with) go
 //       missing, and update the database if a config has been changed.
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::{Add, AddAssign, Sub, SubAssign},
     path::Path,
 };
@@ -17,13 +17,11 @@ use serde::Deserialize;
 use crate::{
     assets::AssetSet,
     database::Database,
-    items::{DropTable, DropTableJson, ItemConfig, ItemId, ItemStack, Items},
     models::{ModelAssetId, Models},
     particle_effects::{ParticleEffects, ParticleSpawner},
     physics::{Collider, ColliderJson, Friction, shapes::Aabb},
     players::Camera,
     prelude::*,
-    random::{Rng, WeightedIndex},
     world::chunk::{Chunk, ChunkPosition},
 };
 
@@ -35,30 +33,50 @@ pub const BLOCK_CONFIG_PATH: &str = "./assets/client/blocks/";
 /// The relative path to the game's rendering materials
 pub const BLOCK_MATERIAL_PATH: &str = "./assets/client/materials/block";
 
-// TODO: Regretting this, just make it a resource with an Arc inside so it can be cloned for
-// terrain generation.
-//
-// For convenience Blocks are made available as a static. It takes some extra effort to setup.
-// The static is not available til after startup. It can be accessed through a resource
-// though. The blocks exist there in an unfinished state, waiting to be modified with
-// functionality, but can safely be used to extract ids and data from.
+// TODO: Blocks needs to be a static because it is used during Chunk::load, which is part of the
+// public api, so we can't pass a private struct to it as an argument. Not the end of the world
+// and it mirrors Items which does the same for a different reason, but it is not pretty.
 static BLOCKS: once_cell::sync::OnceCell<Blocks> = once_cell::sync::OnceCell::new();
 
 /// Handles loading block from their configuration files
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_blocks_to_resource.in_set(AssetSet::Blocks))
-            .add_systems(PostStartup, move_blocks_resource_to_static);
+        app.add_message::<BlockConfigEvent>()
+            .add_systems(PreStartup, load_blocks.in_set(AssetSet::Blocks));
     }
 }
 
-fn load_blocks_to_resource(
+/// Contains the parsed json of a block. Use it to extract unique configuration values.
+/// Sent during PreStartup and gone after PostStartup
+#[derive(Message, Clone, Debug)]
+pub struct BlockConfigEvent {
+    pub block_id: BlockId,
+    pub name: String,
+    pub json: serde_json::Value,
+}
+
+type SpawnFunction = fn(&mut EntityCommands, Option<&BlockData>);
+
+#[derive(Resource)]
+pub struct BlockSpawnFunctions(Vec<Option<SpawnFunction>>);
+
+impl BlockSpawnFunctions {
+    pub fn set(&mut self, block_id: BlockId, function: SpawnFunction) {
+        self.0[block_id as usize] = Some(function);
+    }
+
+    pub(crate) fn get(&self, block_id: &BlockId) -> Option<SpawnFunction> {
+        return self.0[*block_id as usize];
+    }
+}
+
+fn load_blocks(
     mut commands: Commands,
     database: Res<Database>,
     models: Res<Models>,
-    items: Res<Items>,
     particle_effects: Res<ParticleEffects>,
+    mut block_config_events: MessageWriter<BlockConfigEvent>,
 ) {
     fn walk_dir<P: AsRef<std::path::Path>>(dir: P) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
@@ -95,26 +113,18 @@ fn load_blocks_to_resource(
     let block_materials = load_block_materials();
 
     for file_path in walk_dir(&BLOCK_CONFIG_PATH) {
-        let block_config_json = match BlockConfigJson::from_file(&file_path) {
-            Some(b) => b,
-            None => continue,
+        let Some(json) = read_block_json(&file_path) else {
+            continue;
         };
 
-        let drop = match block_config_json.drop {
-            Some(drop) => {
-                let Some(item) = items.get_id(&drop.item) else {
-                    panic!(
-                        "Failed to read 'drop' field for block at: {}\nError: No item by the name {}",
-                        file_path.display(),
-                        &drop.item
-                    );
-                };
-                Some(BlockDrop {
-                    requires_tool: drop.requires_tool,
-                    item,
-                })
-            }
-            None => None,
+        // TODO: When this fails, theres no way to know which field made it panic.
+        let block_config_json = match BlockConfigJson::deserialize(&json) {
+            Ok(b) => b,
+            Err(e) => panic!(
+                "Failed to read block config at {}: {}",
+                file_path.display(),
+                e
+            ),
         };
 
         let material = if let Some(material_name) = &block_config_json.material {
@@ -173,89 +183,38 @@ fn load_blocks_to_resource(
             })
             .collect();
 
-        // non-model blocks are defined in the 0..1 interval. This makes their collider hard to
-        // rotate as they have their center of rotation at Vec3::splat(0.5). We move it to the origin to
-        // avoid this. Model blocks don't have this problem as they are defined at the origin.
-        let collider = if let Some(hitbox) = block_config_json.hitbox {
-            match hitbox {
-                ColliderJson::Single(aabb) => {
-                    Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5)
-                }
-                ColliderJson::Vec(aabbs) => Collider::Multi(
-                    aabbs
-                        .into_iter()
-                        .map(|aabb| Aabb::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
-                        .collect(),
-                ),
-            }
-        } else if let Some(model_id) = model_id {
-            let model_config = models.get_config(&model_id);
-            model_config.collider.clone()
-        } else if let Some(quads) = &block_config_json.quads {
-            let mut min = Vec3::MAX;
-            let mut max = Vec3::MIN;
-            for quad in quads {
-                for vertex in quad.vertices.map(Vec3::from) {
-                    min = min.min(vertex);
-                    max = max.max(vertex);
-                }
-            }
-            Collider::from_min_max(min.as_dvec3() - 0.5, max.as_dvec3() - 0.5)
-        } else {
-            Collider::from_min_max(DVec3::splat(-0.5), DVec3::splat(0.5))
-        };
-
-        let particle_textures = if let Some(particle_texture) = block_config_json.particle_texture {
-            Some(BlockFaceTextures {
-                top: particle_texture.clone(),
-                bottom: particle_texture.clone(),
-                right: particle_texture.clone(),
-                left: particle_texture.clone(),
-                front: particle_texture.clone(),
-                back: particle_texture,
-            })
-        } else if let Some(faces) = block_config_json.faces {
-            // The path must be relative to /textures/ but faces are specified relative to
-            // /textures/blocks
-            let path = "blocks/";
-            Some(BlockFaceTextures {
-                top: path.to_owned() + &faces.top,
-                bottom: path.to_owned() + &faces.bottom,
-                right: path.to_owned() + &faces.right,
-                left: path.to_owned() + &faces.left,
-                front: path.to_owned() + &faces.front,
-                back: path.to_owned() + &faces.back,
-            })
-        } else {
-            None
+        let collider = match Collider::from_block_json(&json, &models) {
+            Ok(c) => c,
+            Err(e) => panic!(
+                "Failed to read block at: {}\nError: {}",
+                file_path.display(),
+                e
+            ),
         };
 
         if let Some(block_id) = block_ids.remove(&block_config_json.name) {
-            let block_config = BlockConfig {
+            block_config_events.write(BlockConfigEvent {
+                block_id,
                 name: block_config_json.name,
+                json,
+            });
+
+            let block_config = BlockConfig {
                 model: model_id,
                 friction: block_config_json
                     .friction
                     .unwrap_or(Friction::Drag(DVec3::ZERO)),
                 force: block_config_json.force.unwrap_or_default(),
-                hardness: block_config_json.hardness,
                 replaceable: block_config_json.replaceable,
-                tools: block_config_json.tools,
-                drop,
                 transparent: material
                     .as_ref()
                     .is_none_or(|material| material.transparency != "opaque"),
-                material,
-                placement: block_config_json.placement,
                 rotation_transform: block_config_json.rotation_transform,
                 particle_spawners,
                 collider,
-                particle_textures,
-                sound: block_config_json.sound,
-                quads: block_config_json.quads,
             };
 
-            maybe_blocks[block_id as usize] = Some(Block::new(block_config));
+            maybe_blocks[block_id as usize] = Some(block_config);
         }
     }
 
@@ -268,13 +227,11 @@ fn load_blocks_to_resource(
 
     blocks.blocks = maybe_blocks.into_iter().flatten().collect();
 
-    commands.insert_resource(blocks);
-}
+    commands.insert_resource(BlockSpawnFunctions(
+        blocks.blocks.iter().map(|_| None).collect(),
+    ));
 
-fn move_blocks_resource_to_static(mut commands: Commands, mut blocks: ResMut<Blocks>) {
-    let blocks = std::mem::replace(&mut *blocks, Blocks::default());
     BLOCKS.set(blocks).ok();
-    commands.remove_resource::<Blocks>();
 }
 
 // TODO: Loading needs to be done when validating the assets too. Store them?
@@ -322,162 +279,39 @@ fn load_block_materials() -> HashMap<String, BlockMaterial> {
     return materials;
 }
 
-// TODO: This wraps BlockConfig for no good reason? Include spawn_entity_fn in BlockConfig. The
-// name can be used for { BlockId, Option<BlockState> }?
+// TODO: The original intention was to make this public so consumers wouldn't have to worry about
+// parsing the blocks, but all the ways I can come up with for parsing arbitrary fields are bad.
+// This might still be useful for "infrastructure" plugins, in which case it would have to be made
+// public under some different name so it doesn't collide, BlockRegistry perhaps.
 //
-/// A block's configuration and the optional function that will be called when the block is spawned.
-#[derive(Deref)]
-pub struct Block {
-    #[deref]
-    pub config: BlockConfig,
-    // This function is used to set up the ecs entity for the block if it should have
-    // functionality. e.g. a furnace would need ui components and its internal smelting state.
-    pub spawn_entity_fn:
-        Option<fn(entity_commands: &mut EntityCommands, block_data: Option<&BlockData>)>,
-}
-
-impl std::fmt::Debug for Block {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-        f.debug_struct("Block")
-            .field("config", &self.config)
-            .finish()
-    }
-}
-
-impl Block {
-    fn new(config: BlockConfig) -> Self {
-        return Self {
-            config,
-            spawn_entity_fn: None,
-        };
-    }
-
-    pub fn set_spawn_function(&mut self, function: fn(&mut EntityCommands, Option<&BlockData>)) {
-        self.spawn_entity_fn = Some(function);
-    }
-}
-
 /// The configurations and ids of the blocks in the game.
-#[derive(Resource, Debug, Default)]
-pub struct Blocks {
+#[derive(Debug)]
+pub(crate) struct Blocks {
     // block id -> block config
-    blocks: Vec<Block>,
+    blocks: Vec<BlockConfig>,
     // block name -> block id
     ids: HashMap<String, BlockId>,
 }
 
 impl Blocks {
-    /// WARN: Panics if used during startup. If you need it during startup, use the Resource
-    /// instead.
     #[track_caller]
     pub fn get() -> &'static Self {
         BLOCKS.get().unwrap()
     }
 
     // TODO: Better ergonomics if this doesn't take a reference?
-    pub fn get_config(&self, block_id: &BlockId) -> &Block {
+    pub fn get_config(&self, block_id: &BlockId) -> &BlockConfig {
         return &self.blocks[*block_id as usize];
-    }
-
-    pub fn get_config_mut(&mut self, block_id: &BlockId) -> &mut Block {
-        return &mut self.blocks[*block_id as usize];
-    }
-
-    #[track_caller]
-    pub fn get_id(&self, block_name: &str) -> BlockId {
-        match self.ids.get(block_name) {
-            Some(b) => *b,
-            None => panic!("No block with name '{}'", block_name),
-        }
-    }
-
-    pub fn contains_block(&self, block_name: &str) -> bool {
-        return self.ids.contains_key(block_name);
     }
 
     pub fn ids(&self) -> &HashMap<String, BlockId> {
         return &self.ids;
     }
-
-    pub fn configs(&self) -> &Vec<Block> {
-        return &self.blocks;
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockDropJson {
-    #[serde(default)]
-    requires_tool: bool,
-    item: String,
-}
-
-#[derive(Debug, Clone)]
-struct BlockDrop {
-    requires_tool: bool,
-    item: ItemId,
-}
-
-// Paths to textures used by a cube, relative to /textures/
-#[derive(Debug, Deserialize, Clone)]
-struct BlockFaceTextures {
-    top: String,
-    bottom: String,
-    left: String,
-    right: String,
-    front: String,
-    back: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BlockQuad {
     pub vertices: [[f32; 3]; 4],
-}
-
-/// Interaction sounds
-#[derive(Debug, Deserialize, Default)]
-pub struct Sounds {
-    #[serde(default)]
-    place: Vec<String>,
-    #[serde(default)]
-    step: Vec<String>,
-    #[serde(default)]
-    hit: Vec<String>,
-    #[serde(default)]
-    destroy: Vec<String>,
-}
-
-impl Sounds {
-    pub fn step(&self, rng: &mut Rng) -> Option<&str> {
-        if self.step.len() == 0 {
-            return None;
-        }
-
-        Some(&self.step[rng.next_u32() as usize % self.step.len()])
-    }
-
-    pub fn hit(&self, rng: &mut Rng) -> Option<&str> {
-        if self.hit.len() == 0 {
-            return None;
-        }
-
-        Some(&self.hit[rng.next_u32() as usize % self.hit.len()])
-    }
-
-    pub fn destroy(&self, rng: &mut Rng) -> Option<&str> {
-        if self.destroy.len() == 0 {
-            return None;
-        }
-
-        Some(&self.destroy[rng.next_u32() as usize % self.destroy.len()])
-    }
-
-    pub fn place(&self, rng: &mut Rng) -> Option<&str> {
-        if self.place.len() == 0 {
-            return None;
-        }
-
-        Some(&self.place[rng.next_u32() as usize % self.place.len()])
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -487,163 +321,140 @@ struct BlockConfigJson {
     // The surface friction or drag.
     friction: Option<Friction>,
     force: Option<DVec3>,
-    // How long it takes to break the block without a tool
-    hardness: Option<f32>,
     #[serde(default)]
     replaceable: bool,
-    // Which tool categories will break this block faster.
-    #[serde(default)]
-    tools: HashSet<String>,
-    // Which item(s) the block drops
-    drop: Option<BlockDropJson>,
     // Renderding material name, used to get the transparency.
     // None if it's a model block and the transparency is set to true.
     material: Option<String>,
-    // Collider used for physics/hit detection.
-    hitbox: Option<ColliderJson>,
-    // These are the three ways you can define a block. We use them to generate the hitbox when it
-    // is not explicitly defined. 'model' is a gltf model, 'quads' is a set of vertices and 'faces' is
-    // the six faces of a cube.
     model: Option<String>,
-    quads: Option<Vec<BlockQuad>>,
-    faces: Option<BlockFaceTextures>,
-    // Rules for how the block can be placed by the player.
-    #[serde(default)]
-    placement: BlockPlacement,
     // Transform applied to the model when the block is rotated.
     rotation_transform: Option<Transform>,
     // Particle spawners attached to the block.
     #[serde(default)]
     particle_spawners: Vec<ParticleSpawnerJson>,
-    // Texture used for particle when brekaing the block. Relative to /textures/
-    // If not supplied it will be derived from 'faces' if that is supplied.
-    particle_texture: Option<String>,
-    #[serde(default)]
-    sound: Sounds,
 }
 
-impl BlockConfigJson {
-    fn from_file(path: &Path) -> Option<Self> {
-        fn read_as_json_value(
-            path: &std::path::Path,
-        ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-            let contents = std::fs::read_to_string(&path)?;
+fn read_block_json(path: &Path) -> Option<serde_json::Value> {
+    fn read_as_json_value(
+        path: &std::path::Path,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let contents = std::fs::read_to_string(&path)?;
 
-            let mut config: serde_json::Value = serde_json::from_str(&contents)?;
+        let mut config: serde_json::Value = serde_json::from_str(&contents)?;
 
-            // recursively read parent configs
-            if let Some(parent) = config["parent"].as_str() {
-                let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
-                let mut parent: serde_json::Value = match read_as_json_value(&parent_path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        return Err(format!(
-                            "Failed to read parent block config at {}: {}",
-                            parent_path.display(),
-                            e
-                        )
-                        .into());
-                    }
-                };
-                parent
-                    .as_object_mut()
-                    .unwrap()
-                    .append(&mut config.as_object_mut().unwrap());
-
-                config = parent;
-            }
-
-            Ok(config)
-        }
-
-        let json = match read_as_json_value(path) {
-            Ok(j) => j,
-            Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
-        };
-
-        // Filter out parent configs
-        if json.get("name").is_some_and(|name| name.is_string()) {
-            // TODO: When this fails, theres no way to know which field made it panic.
-            return match serde_json::from_value(json) {
-                Ok(b) => Some(b),
-                Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
+        // recursively read parent configs
+        if let Some(parent) = config["parent"].as_str() {
+            let parent_path = std::path::Path::new(BLOCK_CONFIG_PATH).join(parent);
+            let mut parent: serde_json::Value = match read_as_json_value(&parent_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to read parent block config at {}: {}",
+                        parent_path.display(),
+                        e
+                    )
+                    .into());
+                }
             };
-        } else {
-            return None;
+            parent
+                .as_object_mut()
+                .unwrap()
+                .append(&mut config.as_object_mut().unwrap());
+
+            config = parent;
         }
+
+        Ok(config)
+    }
+
+    let json = match read_as_json_value(path) {
+        Ok(j) => j,
+        Err(e) => panic!("Failed to read block config at {}: {}", path.display(), e),
+    };
+
+    // Filter out parent configs
+    if json.get("name").is_some_and(|name| name.is_string()) {
+        return Some(json);
+    } else {
+        return None;
     }
 }
 
-// TODO: 'hardness' 'tools' 'drop' 'particle_textures' are too specific. They should be handled
-// outside of library. Add a new field 'properties' with serde(flatten) on it to capture everything
-// not needed. The server implementer should then make their own 'BlockExtras' and read from it.
-//
+impl Collider {
+    pub fn from_block_json(json: &serde_json::Value, models: &Models) -> Result<Collider, String> {
+        #[derive(Deserialize)]
+        struct ColliderSource {
+            hitbox: Option<ColliderJson>,
+            model: Option<String>,
+            quads: Option<Vec<BlockQuad>>,
+        }
+
+        let source = match ColliderSource::deserialize(json) {
+            Ok(s) => s,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        // non-model blocks are defined in the 0..1 interval. This makes their collider hard to
+        // rotate as they have their center of rotation at Vec3::splat(0.5). We move it to the origin to
+        // avoid this. Model blocks don't have this problem as they are defined at the origin.
+        let collider = if let Some(hitbox) = source.hitbox {
+            match hitbox {
+                ColliderJson::Single(aabb) => {
+                    Collider::from_min_max(aabb.min - 0.5, aabb.max - 0.5)
+                }
+                ColliderJson::Vec(aabbs) => Collider::Multi(
+                    aabbs
+                        .into_iter()
+                        .map(|aabb| Aabb::from_min_max(aabb.min - 0.5, aabb.max - 0.5))
+                        .collect(),
+                ),
+            }
+        } else if let Some(model_name) = &source.model {
+            match models.get_config_by_name(model_name) {
+                Some(model_config) => model_config.collider.clone(),
+                None => return Err(format!("no model by the name: {}", model_name)),
+            }
+        } else if let Some(quads) = &source.quads {
+            let mut min = Vec3::MAX;
+            let mut max = Vec3::MIN;
+            for quad in quads {
+                for vertex in quad.vertices.map(Vec3::from) {
+                    min = min.min(vertex);
+                    max = max.max(vertex);
+                }
+            }
+            Collider::from_min_max(min.as_dvec3() - 0.5, max.as_dvec3() - 0.5)
+        } else {
+            Collider::from_min_max(DVec3::splat(-0.5), DVec3::splat(0.5))
+        };
+
+        return Ok(collider);
+    }
+}
+
 /// The configuration values of a block
 #[derive(Debug)]
-pub struct BlockConfig {
-    /// Name of the block
-    pub name: String,
+pub(crate) struct BlockConfig {
     /// If a model is used to represent this block, this contains its model id
     pub model: Option<ModelAssetId>,
     /// The friction of the block's surfaces or its drag.
     pub friction: Friction,
     pub force: DVec3,
-    // TODO: Not needed
-    /// How long it takes to break the block without a tool in seconds, None if the block should
-    /// not be breakable. e.g. water, air
-    pub hardness: Option<f32>,
     /// Makes it possible to replace the block by placing another in its position.
     pub replaceable: bool,
-    // TODO: Not needed
-    // Which tool categories will break this block faster.
-    pub tools: HashSet<String>,
-    // TODO: Not needed
-    // Which item(s) the block drops.
-    drop: Option<BlockDrop>,
-    // The rendering material for the block, if it uses one.
-    material: Option<BlockMaterial>,
     // Whether the block can be seen through, derived from the material.
     transparent: bool,
     /// Collider used for physics and hit detection.
     pub collider: Collider,
-    /// Rules for how the block can be placed by the player.
-    pub placement: BlockPlacement,
     /// Transform applied to the model when the block is rotated.
     pub rotation_transform: Option<Transform>,
     /// Particle spawners attached to the block.
     pub particle_spawners: Vec<BlockParticleSpawner>,
-    // TODO: Not needed
-    /// Texture path for each face used for particles when breaking blocks
-    particle_textures: Option<BlockFaceTextures>,
-    // TODO: Not needed
-    /// Sound files associated with the block
-    pub sound: Sounds,
-    pub quads: Option<Vec<BlockQuad>>,
 }
 
 impl BlockConfig {
     pub fn is_transparent(&self) -> bool {
         return self.transparent;
-    }
-
-    pub fn drop(&self, tool: Option<&ItemConfig>) -> Option<ItemId> {
-        let Some(block_drop) = &self.drop else {
-            return None;
-        };
-
-        if !block_drop.requires_tool {
-            return Some(block_drop.item);
-        }
-
-        if let Some(item) = tool {
-            if let Some(tool) = &item.tool {
-                if self.tools.contains(&tool.name) {
-                    return Some(block_drop.item);
-                }
-            }
-        }
-
-        return None;
     }
 
     pub fn surface_friction(&self, face: BlockFace) -> DVec3 {
@@ -656,91 +467,6 @@ impl BlockConfig {
 
     pub fn is_solid(&self) -> bool {
         matches!(self.friction, Friction::Surface { .. })
-    }
-
-    pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {
-        match against_block_face {
-            BlockFace::Bottom if self.placement.ceiling => true,
-            BlockFace::Top if self.placement.floor => true,
-            BlockFace::Right | BlockFace::Left | BlockFace::Front | BlockFace::Back
-                if self.placement.sides =>
-            {
-                true
-            }
-
-            _ => false,
-        }
-    }
-
-    pub fn placement_rotation(
-        &self,
-        against_block_face: BlockFace,
-        camera: &Camera,
-    ) -> Option<BlockState> {
-        if !self.is_placeable(against_block_face) {
-            return None;
-        }
-
-        if !self.placement.rotatable {
-            return None;
-        }
-
-        let mut block_state = BlockState::new();
-
-        if against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top {
-            if self.placement.centered {
-                block_state.set_centered(true);
-            } else {
-                let facing = camera.forward().xz().as_vec2();
-                let rotation = if facing.dot(Vec2::X).abs() > facing.dot(Vec2::Y).abs() {
-                    if facing.x.is_sign_positive() {
-                        BlockRotation::Left
-                    } else {
-                        BlockRotation::Right
-                    }
-                } else {
-                    if facing.y.is_sign_positive() {
-                        BlockRotation::Back
-                    } else {
-                        BlockRotation::Front
-                    }
-                };
-                block_state.set_rotation(rotation);
-            }
-        } else {
-            block_state.set_rotation(against_block_face.to_block_rotation());
-        }
-
-        return Some(block_state);
-    }
-
-    pub fn particle_texture(&self, block_face: BlockFace) -> Option<&str> {
-        if let Some(paths) = &self.particle_textures {
-            let path = match block_face {
-                BlockFace::Top => &paths.top,
-                BlockFace::Bottom => &paths.bottom,
-                BlockFace::Right => &paths.right,
-                BlockFace::Left => &paths.left,
-                BlockFace::Front => &paths.front,
-                BlockFace::Back => &paths.back,
-            };
-            Some(path)
-        } else {
-            None
-        }
-    }
-
-    pub fn particle_color(&self) -> Option<Vec4> {
-        let Some(material) = &self.material else {
-            return None;
-        };
-
-        return Some(Vec4::new(
-            material.base_color.red,
-            material.base_color.green,
-            material.base_color.blue,
-            material.base_color.alpha,
-        ));
     }
 }
 
@@ -770,6 +496,64 @@ impl Default for BlockPlacement {
             rotatable: false,
             centered: false,
         }
+    }
+}
+
+impl BlockPlacement {
+    pub fn is_placeable(&self, against_block_face: BlockFace) -> bool {
+        match against_block_face {
+            BlockFace::Bottom if self.ceiling => true,
+            BlockFace::Top if self.floor => true,
+            BlockFace::Right | BlockFace::Left | BlockFace::Front | BlockFace::Back
+                if self.sides =>
+            {
+                true
+            }
+
+            _ => false,
+        }
+    }
+
+    pub fn placement_rotation(
+        &self,
+        against_block_face: BlockFace,
+        camera: &Camera,
+    ) -> Option<BlockState> {
+        if !self.is_placeable(against_block_face) {
+            return None;
+        }
+
+        if !self.rotatable {
+            return None;
+        }
+
+        let mut block_state = BlockState::new();
+
+        if against_block_face == BlockFace::Bottom || against_block_face == BlockFace::Top {
+            if self.centered {
+                block_state.set_centered(true);
+            } else {
+                let facing = camera.forward().xz().as_vec2();
+                let rotation = if facing.dot(Vec2::X).abs() > facing.dot(Vec2::Y).abs() {
+                    if facing.x.is_sign_positive() {
+                        BlockRotation::Left
+                    } else {
+                        BlockRotation::Right
+                    }
+                } else {
+                    if facing.y.is_sign_positive() {
+                        BlockRotation::Back
+                    } else {
+                        BlockRotation::Front
+                    }
+                };
+                block_state.set_rotation(rotation);
+            }
+        } else {
+            block_state.set_rotation(against_block_face.to_block_rotation());
+        }
+
+        return Some(block_state);
     }
 }
 
@@ -1083,29 +867,14 @@ impl BlockRotation {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-struct Color {
-    red: f32,
-    green: f32,
-    blue: f32,
-    alpha: f32,
-}
-
-#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 struct BlockMaterial {
-    base_color: Color,
     transparency: String,
 }
 
 impl Default for BlockMaterial {
     fn default() -> Self {
         Self {
-            base_color: Color {
-                red: 1.0,
-                green: 1.0,
-                blue: 1.0,
-                alpha: 1.0,
-            },
             transparency: "opaque".to_owned(),
         }
     }
