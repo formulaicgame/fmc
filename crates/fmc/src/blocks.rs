@@ -47,6 +47,12 @@ impl Plugin for BlockPlugin {
     }
 }
 
+// TODO: These events don't arrive ordered, but doing so is a headache. Mapping the name
+// stored in the database to a filename is a roundabout thing. There's parenting to take into
+// account, nested folder strucutures, and for some reason I've managed to store the "name" field as
+// the name in the database instead of the file stem. There's another note over in assets.rs about
+// compiling the assets, which would fix this entirely.
+//
 /// Contains the parsed json of a block. Use it to extract unique configuration values.
 /// Sent during PreStartup and gone after PostStartup
 #[derive(Message, Clone, Debug)]

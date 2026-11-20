@@ -38,6 +38,10 @@ pub struct Assets {
     pub asset_message: Vec<u8>,
 }
 
+// TODO: Compile item/block json into a single file that's sorted by id. Maybe other things? Would
+// improve loading time by a lot, especially as the assets grow in size + the code for loading these
+// is convoluted as a consequence of having to deal with navigating the files on both server
+// and client end.
 fn compress_assets(mut commands: Commands) {
     let mut archive = tar::Builder::new(Vec::new());
     archive.append_dir_all(".", "assets/client").unwrap();
