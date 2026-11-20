@@ -841,29 +841,49 @@ fn play_animations(
     }
 }
 
+#[derive(Component)]
+struct OwnedMaterial;
+
 fn handle_model_color(
+    mut commands: Commands,
     net: Res<NetworkClient>,
     children_query: Query<&Children>,
-    material_query: Query<&MeshMaterial3d<ModelMaterial>>,
+    material_query: Query<(&MeshMaterial3d<ModelMaterial>, Has<OwnedMaterial>)>,
     model_entities: Res<ModelEntities>,
     mut materials: ResMut<Assets<ModelMaterial>>,
     mut color_updates: MessageReader<messages::ModelColor>,
 ) {
     fn change_color(
+        commands: &mut Commands,
         color: Color,
         entity: Entity,
-        material_query: &Query<&MeshMaterial3d<ModelMaterial>>,
+        material_query: &Query<(&MeshMaterial3d<ModelMaterial>, Has<OwnedMaterial>)>,
         children_query: &Query<&Children>,
         materials: &mut Assets<ModelMaterial>,
     ) {
-        if let Ok(material_handle) = material_query.get(entity) {
-            let mut material = materials.get_mut(material_handle).unwrap();
-            material.base.base_color = color;
+        if let Ok((material_handle, owned)) = material_query.get(entity) {
+            if owned {
+                let mut material = materials.get_mut(material_handle).unwrap();
+                material.base.base_color = color;
+            } else {
+                let mut material = materials.get(material_handle).unwrap().clone();
+                material.base.base_color = color;
+                commands
+                    .entity(entity)
+                    .insert((MeshMaterial3d(materials.add(material)), OwnedMaterial));
+            }
         };
 
         if let Ok(children) = children_query.get(entity) {
             for child in children {
-                change_color(color, *child, material_query, children_query, materials);
+                change_color(
+                    commands,
+                    color,
+                    *child,
+                    material_query,
+                    children_query,
+                    materials,
+                );
             }
         }
     }
@@ -875,6 +895,7 @@ fn handle_model_color(
         };
 
         change_color(
+            &mut commands,
             Srgba::from_vec4(message.color).into(),
             model_entity,
             &material_query,

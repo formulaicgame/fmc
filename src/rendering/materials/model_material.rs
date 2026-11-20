@@ -42,7 +42,7 @@ fn cleanup(mut materials: ResMut<ModelMaterials>) {
 
 fn replace_standard_material(
     mut commands: Commands,
-    model_materials: Res<ModelMaterials>,
+    mut model_materials: ResMut<ModelMaterials>,
     origin: Res<Origin>,
     material_query: Query<
         (Entity, &MeshMaterial3d<StandardMaterial>),
@@ -57,14 +57,16 @@ fn replace_standard_material(
             model_material.clone()
         } else {
             let standard_material = standard_material_assets.get(standard_handle).unwrap();
-            model_material_assets.add(ExtendedMaterial {
+            let model_material = model_material_assets.add(ExtendedMaterial {
                 base: standard_material.clone(),
                 extension: ModelMaterialExtension {
                     block_textures: block_textures.handle.clone(),
                     light_texture: LIGHT_TEXTURE,
                     origin: origin.as_ivec3(),
                 },
-            })
+            });
+            model_materials.insert(standard_handle.0.clone(), model_material.clone());
+            model_material
         };
 
         let mut entity_commands = commands.entity(entity);
