@@ -96,11 +96,6 @@ impl DropTable {
             return None;
         }
 
-        let mut item_stack = ItemStack::new(*item_id, count);
-        if count > item_stack.capacity() {
-            item_stack.set_capacity(count);
-        }
-
-        return Some(item_stack);
+        return Some(ItemStack::new(*item_id, count));
     }
 }

@@ -4,7 +4,7 @@ use crate::bevy::prelude::*;
 use fmc_protocol::messages;
 
 use crate::{
-    items::ItemStack,
+    items::{Item, ItemStack},
     networking::{NetworkMessage, Server},
     players::Player,
 };
@@ -40,9 +40,9 @@ pub enum InterfaceSystems {
 }
 
 /// The item stack currently held by the cursor
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component)]
 pub struct HeldInterfaceStack {
-    pub item_stack: ItemStack,
+    item_stack: ItemStack,
 }
 
 impl HeldInterfaceStack {
@@ -59,7 +59,7 @@ impl HeldInterfaceStack {
                 let Some(item_stack) = item_stacks.get_mut(*index as usize) else {
                     return;
                 };
-                item_stack.transfer_to(&mut self.item_stack, *quantity);
+                self.take(item_stack, *quantity);
             }
             messages::InterfaceInteraction::PlaceItem {
                 index, quantity, ..
@@ -67,9 +67,39 @@ impl HeldInterfaceStack {
                 let Some(item_stack) = item_stacks.get_mut(*index as usize) else {
                     return;
                 };
-                self.item_stack.transfer_to(item_stack, *quantity);
+                self.place(item_stack, *quantity);
             }
             messages::InterfaceInteraction::Button { .. } => (),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.item_stack.is_empty()
+    }
+
+    pub fn item(&self) -> Option<&Item> {
+        self.item_stack.item()
+    }
+
+    pub fn remaining_capacity(&self) -> u32 {
+        self.item_stack.remaining_capacity()
+    }
+
+    pub fn discard(&mut self, amount: u32) -> ItemStack {
+        self.item_stack.take(amount)
+    }
+
+    pub fn take(&mut self, item_stack: &mut ItemStack, amount: u32) {
+        item_stack.put(&mut self.item_stack, amount);
+    }
+
+    pub fn place(&mut self, item_stack: &mut ItemStack, amount: u32) {
+        if self.item_stack.is_empty() {
+            return;
+        } else if item_stack.is_empty() || item_stack.item() == self.item_stack.item() {
+            self.item_stack.put(item_stack, amount);
+        } else if item_stack.size() <= item_stack.capacity() {
+            std::mem::swap(&mut self.item_stack, item_stack);
         }
     }
 }

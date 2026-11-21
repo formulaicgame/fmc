@@ -151,8 +151,6 @@ pub struct ItemStack {
     size: u32,
     // Maximum amount storable in the stack.
     capacity: u32,
-    // Override the capacity set by the item's ItemConfig
-    custom_capacity: Option<u32>,
 }
 
 impl ItemStack {
@@ -163,7 +161,6 @@ impl ItemStack {
         let item_config = Items::get().get_config(&item_id);
         return Self {
             capacity: item_config.stack_size,
-            custom_capacity: None,
             item: Some(Item::new(item_id)),
             size,
         };
@@ -175,15 +172,12 @@ impl ItemStack {
 
     /// Returns the total capacity minus its current size
     pub fn remaining_capacity(&self) -> u32 {
-        return self
-            .custom_capacity
-            .unwrap_or(self.capacity)
-            .saturating_sub(self.size);
+        return self.capacity.saturating_sub(self.size);
     }
 
     /// Return the total capacity
     pub fn capacity(&self) -> u32 {
-        return self.custom_capacity.unwrap_or(self.capacity);
+        return self.capacity;
     }
 
     pub fn size(&self) -> u32 {
@@ -198,46 +192,35 @@ impl ItemStack {
         self
     }
 
-    /// Set a custom capacity. The item stack's initial capacity will be preserved if transfered to
-    /// an empty stack.
-    pub fn set_capacity(&mut self, capacity: u32) -> &mut Self {
-        self.custom_capacity = Some(capacity);
-        self
-    }
-
-    /// Combine two item stacks, returns the leftover
-    ///
-    /// # Panics
-    ///
-    /// Panics if the two stacks don't contain the same item
-    #[track_caller]
-    pub fn add(&mut self, mut other: ItemStack) -> ItemStack {
-        if self.item != other.item {
-            panic!();
-        }
-
-        let amount = other.size.min(self.remaining_capacity());
-        self.size += amount;
-        other.take(amount);
-
-        return other;
-    }
-
     /// Take the given amount of items out of the item stack
     pub fn take(&mut self, amount: u32) -> ItemStack {
+        let size = amount.min(self.size).min(self.capacity);
+        if size == 0 {
+            return ItemStack::default();
+        }
+
         let taken = ItemStack {
             item: self.item.clone(),
-            size: amount.min(self.size),
+            size,
             capacity: self.capacity,
-            custom_capacity: None,
         };
 
-        self.size -= taken.size;
+        self.size -= size;
         if self.size == 0 {
             *self = ItemStack::default();
         }
 
         taken
+    }
+
+    /// Put items from this stack into another, if the items do not match, nothing is moved.
+    pub fn put(&mut self, other: &mut ItemStack, amount: u32) {
+        if other.is_empty() {
+            *other = self.take(amount);
+        } else if self.item == other.item {
+            let taken = self.take(amount.min(other.remaining_capacity()));
+            other.size += taken.size;
+        }
     }
 
     pub fn pop(&mut self) -> Option<ItemStack> {
@@ -246,30 +229,6 @@ impl ItemStack {
         }
 
         return Some(self.take(1));
-    }
-
-    /// Move items from this stack into another, if the items do not match, swap them.
-    pub fn transfer_to(&mut self, other: &mut ItemStack, amount: u32) {
-        if self.is_empty() {
-            return;
-        } else if &self.item == &other.item {
-            // Take out the requested amount if that many are available
-            let to_transfer = self.take(amount);
-            // Add as much as other can hold
-            let mut leftover = other.add(to_transfer);
-            // Transfer what's left back
-            if !leftover.is_empty() {
-                leftover.transfer_to(self, leftover.size());
-            }
-        } else if other.is_empty() {
-            *other = self.take(amount);
-        } else {
-            self.swap(other);
-        }
-    }
-
-    pub fn swap(&mut self, other: &mut ItemStack) {
-        std::mem::swap(self, other);
     }
 
     pub fn is_empty(&self) -> bool {

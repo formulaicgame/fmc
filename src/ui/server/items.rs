@@ -210,13 +210,18 @@ impl ItemStack {
     }
 
     pub fn take(&mut self, amount: u32) -> ItemStack {
+        let size = amount.min(self.size).min(self.max_size.unwrap_or(0));
+        if size == 0 {
+            return ItemStack::default();
+        }
+
         let taken = ItemStack {
             item: self.item.clone(),
-            size: amount.min(self.size),
+            size,
             max_size: self.max_size,
         };
 
-        self.size -= taken.size;
+        self.size -= size;
         if self.size == 0 {
             *self = ItemStack::default();
         }
@@ -228,42 +233,21 @@ impl ItemStack {
         self.size
     }
 
-    fn add(&mut self, amount: u32) {
-        self.size += amount;
+    fn remaining_capacity(&self) -> u32 {
+        self.max_size.unwrap_or(0).saturating_sub(self.size)
     }
 
-    fn subtract(&mut self, amount: u32) {
-        self.size -= amount;
-        if self.size == 0 {
-            self.item = None;
-            self.max_size = None;
-        }
-    }
-
-    /// Move items from this stack. If the stack's items don't match, they will be swapped.
-    #[track_caller]
-    pub fn transfer_to(&mut self, other: &mut ItemStack, mut amount: u32) -> u32 {
-        if self.is_empty() {
-            panic!(
-                "Tried to transfer from a stack that is empty, this should be asserted by the caller"
-            );
-        } else if &self.item == &other.item {
-            amount = std::cmp::min(amount, other.max_size.unwrap() - other.size);
-            other.add(amount);
-            self.subtract(amount);
-            return amount;
-        } else if other.is_empty() {
-            other.item = self.item.clone();
-            other.max_size = self.max_size.clone();
-
-            amount = std::cmp::min(amount, self.size);
-
-            other.add(amount);
-            self.subtract(amount);
-            return amount;
+    /// Move items from this stack into another, if the items do not match, nothing is moved.
+    pub fn put(&mut self, other: &mut ItemStack, amount: u32) -> u32 {
+        if other.is_empty() {
+            *other = self.take(amount);
+            other.size
+        } else if self.item == other.item {
+            let taken = self.take(amount.min(other.remaining_capacity()));
+            other.size += taken.size;
+            taken.size
         } else {
-            std::mem::swap(self, other);
-            return other.size;
+            0
         }
     }
 
@@ -299,6 +283,27 @@ pub struct CursorItemBox {
 impl CursorItemBox {
     fn is_empty(&self) -> bool {
         self.item_stack.is_empty()
+    }
+
+    fn discard(&mut self, amount: u32) -> ItemStack {
+        self.item_stack.take(amount)
+    }
+
+    fn take(&mut self, item_stack: &mut ItemStack, amount: u32) -> u32 {
+        item_stack.put(&mut self.item_stack, amount)
+    }
+
+    fn place(&mut self, item_stack: &mut ItemStack, amount: u32) -> u32 {
+        if self.item_stack.is_empty() {
+            0
+        } else if item_stack.is_empty() || item_stack.item == self.item_stack.item {
+            self.item_stack.put(item_stack, amount)
+        } else if item_stack.size <= item_stack.max_size.unwrap_or(0) {
+            std::mem::swap(&mut self.item_stack, item_stack);
+            item_stack.size
+        } else {
+            0
+        }
     }
 }
 
@@ -583,9 +588,8 @@ fn left_click_item_box(
                 // Take item from box
                 let item_config = items.get(&item_box.item_stack.item.unwrap());
 
-                let transfered = item_box
-                    .item_stack
-                    .transfer_to(&mut cursor_box.item_stack, item_config.stack_size);
+                let transfered =
+                    cursor_box.take(&mut item_box.item_stack, item_config.stack_size);
 
                 net.send_message(messages::InterfaceInteraction::TakeItem {
                     interface_path: interface_node.path.clone(),
@@ -602,9 +606,7 @@ fn left_click_item_box(
                 // TODO: When used directly in the function the borrow checker say bad, even though
                 // good
                 let size = cursor_box.item_stack.size;
-                let transfered = cursor_box
-                    .item_stack
-                    .transfer_to(&mut item_box.item_stack, size);
+                let transfered = cursor_box.place(&mut item_box.item_stack, size);
 
                 net.send_message(messages::InterfaceInteraction::PlaceItem {
                     interface_path: interface_node.path.clone(),
@@ -677,15 +679,11 @@ fn right_click_item_box(
             .is_some_and(|allowed_types| allowed_types.is_empty())
         {
             let size = item_box.item_stack.size;
-            item_box
-                .item_stack
-                .transfer_to(&mut cursor_box.item_stack, size)
+            cursor_box.take(&mut item_box.item_stack, size)
         } else {
             // If even, take half, if odd take half + 1
             let size = (item_box.item_stack.size + 1) / 2;
-            item_box
-                .item_stack
-                .transfer_to(&mut cursor_box.item_stack, size)
+            cursor_box.take(&mut item_box.item_stack, size)
         };
 
         net.send_message(messages::InterfaceInteraction::TakeItem {
@@ -704,9 +702,7 @@ fn right_click_item_box(
             && cursor_box.item_stack.item == item_box.item_stack.item
         {
             let size = item_box.item_stack.size;
-            let transfered = item_box
-                .item_stack
-                .transfer_to(&mut cursor_box.item_stack, size);
+            let transfered = cursor_box.take(&mut item_box.item_stack, size);
 
             net.send_message(messages::InterfaceInteraction::TakeItem {
                 interface_path: interface_node.path.clone(),
@@ -718,9 +714,7 @@ fn right_click_item_box(
                 return;
             }
 
-            let transfered = cursor_box
-                .item_stack
-                .transfer_to(&mut item_box.item_stack, 1);
+            let transfered = cursor_box.place(&mut item_box.item_stack, 1);
 
             net.send_message(messages::InterfaceInteraction::PlaceItem {
                 interface_path: interface_node.path.clone(),
@@ -891,8 +885,8 @@ fn discard_items(
 
     for mouse_button in mouse_button_input.get_just_pressed() {
         let discarded = match mouse_button {
-            MouseButton::Left => cursor_box.item_stack.take(u32::MAX),
-            MouseButton::Right => cursor_box.item_stack.take(1),
+            MouseButton::Left => cursor_box.discard(u32::MAX),
+            MouseButton::Right => cursor_box.discard(1),
             _ => continue,
         };
 
