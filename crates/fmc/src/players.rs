@@ -220,11 +220,11 @@ fn find_target(
         Option<&BlockPosition>,
         &GlobalTransform,
     )>,
-    mut player_query: Query<(&mut Targets, &Camera, &Transform)>,
+    mut player_query: Query<(Entity, &mut Targets, &Camera, &Transform)>,
 ) {
     let blocks = Blocks::get();
 
-    for (mut targets, camera, transform) in player_query.iter_mut() {
+    for (player_entity, mut targets, camera, transform) in player_query.iter_mut() {
         targets.clear();
 
         let camera_transform = Transform {
@@ -290,6 +290,10 @@ fn find_target(
             for (entity, maybe_collider, maybe_block, model_transform) in
                 model_query.iter_many(entity_map.iter_entities(&chunk_position))
             {
+                if entity == player_entity {
+                    continue;
+                }
+
                 if let Some(block_position) = maybe_block {
                     let Some(block_id) = world_map.get_block(*block_position) else {
                         continue;
