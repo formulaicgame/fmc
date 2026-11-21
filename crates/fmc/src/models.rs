@@ -213,7 +213,7 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(Visibility, AnimationPlayer, Transform, ChunkPosition, Observers)]
+#[require(Visibility, AnimationPlayer, Transform, ChunkPosition, Observers, ModelColor)]
 pub enum Model {
     Asset(ModelAssetId),
     Custom {
@@ -244,34 +244,38 @@ pub struct BoneAttachment {
     pub bone_id: usize,
 }
 
-#[derive(Component, PartialEq)]
+#[derive(Component)]
 pub struct ModelColor {
-    red: f32,
-    green: f32,
-    blue: f32,
-    alpha: f32,
+    layers: HashMap<&'static str, Vec4>,
+    sent: Vec4,
 }
 
 impl ModelColor {
-    pub const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
-
-    pub const fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
-        Self {
-            red,
-            green,
-            blue,
-            alpha,
-        }
+    pub fn get(&self, layer: &'static str) -> Option<Vec4> {
+        self.layers.get(layer).copied()
     }
 
-    fn to_vec4(&self) -> Vec4 {
-        Vec4::new(self.red, self.green, self.blue, self.alpha)
+    pub fn set(&mut self, layer: &'static str, color: Vec4) {
+        self.layers.insert(layer, color);
+    }
+
+    pub fn remove(&mut self, layer: &'static str) {
+        self.layers.remove(layer);
+    }
+
+    fn combined(&self) -> Vec4 {
+        self.layers
+            .values()
+            .fold(Vec4::ONE, |combined, color| combined * *color)
     }
 }
 
 impl Default for ModelColor {
     fn default() -> Self {
-        Self::WHITE
+        Self {
+            layers: HashMap::new(),
+            sent: Vec4::ONE,
+        }
     }
 }
 
@@ -604,7 +608,7 @@ fn send_models(
             &Model,
             &Visibility,
             &Observers,
-            Option<&ModelColor>,
+            &ModelColor,
             Option<&BoneAttachment>,
             &Transform,
             &GlobalTransform,
@@ -618,7 +622,7 @@ fn send_models(
         model,
         visibility,
         observers,
-        maybe_color,
+        color,
         maybe_bone,
         transform,
         global_transform,
@@ -678,12 +682,12 @@ fn send_models(
                 ),
             }
 
-            if let Some(color) = maybe_color {
+            if color.combined() != Vec4::ONE {
                 net.send_many(
                     observers.filter(subs),
                     messages::ModelColor {
                         model_id: entity.index_u32(),
-                        color: color.to_vec4(),
+                        color: color.combined(),
                     },
                 );
             }
@@ -835,9 +839,15 @@ fn send_animations(
 fn send_color(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    color_query: Query<(Entity, &ModelColor, &GlobalTransform), Changed<ModelColor>>,
+    mut color_query: Query<(Entity, &mut ModelColor, &GlobalTransform), Changed<ModelColor>>,
 ) {
-    for (entity, color, transform) in color_query.iter() {
+    for (entity, mut color, transform) in color_query.iter_mut() {
+        let combined = color.combined();
+        if combined == color.sent {
+            continue;
+        }
+        color.sent = combined;
+
         let chunk_position = ChunkPosition::from(transform.translation());
 
         let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
@@ -848,7 +858,7 @@ fn send_color(
             subs,
             messages::ModelColor {
                 model_id: entity.index_u32(),
-                color: color.to_vec4(),
+                color: combined,
             },
         )
     }
