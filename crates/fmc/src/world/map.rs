@@ -80,6 +80,8 @@ pub struct WorldMapRayCast<'a> {
     forward: DVec3,
     current_distance: f64,
     current_block_position: BlockPosition,
+    next_distance: f64,
+    next_block_position: BlockPosition,
     distance_to_next: DVec3,
     distance_increment: DVec3,
     step: IVec3,
@@ -116,6 +118,8 @@ impl<'a> WorldMapRayCast<'a> {
             forward,
             current_distance: 0.0,
             current_block_position,
+            next_distance: 0.0,
+            next_block_position: current_block_position,
             distance_to_next,
             distance_increment,
             step,
@@ -131,20 +135,22 @@ impl<'a> WorldMapRayCast<'a> {
     }
 
     pub fn next_block(&mut self) -> Option<BlockId> {
-        self.current_distance = self.distance_to_next.min_element();
-
-        if self.current_distance > self.max_distance {
+        if self.next_distance > self.max_distance {
             return None;
         }
 
-        if self.distance_to_next.x == self.current_distance {
-            self.current_block_position.x += self.step.x;
+        self.current_block_position = self.next_block_position;
+        self.current_distance = self.next_distance;
+
+        self.next_distance = self.distance_to_next.min_element();
+        if self.distance_to_next.x == self.next_distance {
+            self.next_block_position.x += self.step.x;
             self.distance_to_next.x += self.distance_increment.x;
-        } else if self.distance_to_next.z == self.current_distance {
-            self.current_block_position.z += self.step.z;
+        } else if self.distance_to_next.z == self.next_distance {
+            self.next_block_position.z += self.step.z;
             self.distance_to_next.z += self.distance_increment.z;
         } else {
-            self.current_block_position.y += self.step.y;
+            self.next_block_position.y += self.step.y;
             self.distance_to_next.y += self.distance_increment.y;
         }
 

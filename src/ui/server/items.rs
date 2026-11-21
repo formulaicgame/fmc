@@ -588,8 +588,7 @@ fn left_click_item_box(
                 // Take item from box
                 let item_config = items.get(&item_box.item_stack.item.unwrap());
 
-                let transfered =
-                    cursor_box.take(&mut item_box.item_stack, item_config.stack_size);
+                let transfered = cursor_box.take(&mut item_box.item_stack, item_config.stack_size);
 
                 net.send_message(messages::InterfaceInteraction::TakeItem {
                     interface_path: interface_node.path.clone(),

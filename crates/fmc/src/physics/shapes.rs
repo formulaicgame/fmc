@@ -116,7 +116,8 @@ impl Aabb {
         //    t_max = t_max.min(t1.max(t2));
         //}
 
-        if t_min < 0.0 {
+        // Collider is behind ray
+        if t_max < 0.0 {
             return None;
         }
 
@@ -130,7 +131,8 @@ impl Aabb {
             // aabb was of equal side lengths. The axis with the highest absolute value will then
             // be the axis of the face that was intersected. Since the aabb is at the origin we can
             // use the sign to determine which of the two faces it was.
-            let point = ray_transform.translation + ray_transform.forward() * t_min;
+            let hit_distance = if t_min < 0.0 { t_max } else { t_min };
+            let point = ray_transform.translation + ray_transform.forward() * hit_distance;
             let normalized = (point - self.center) / self.half_extents;
             let abs = normalized.abs();
             let axis = abs.cmpeq(DVec3::splat(abs.max_element()));
@@ -140,7 +142,8 @@ impl Aabb {
             let index_2 = normalized[index_1].is_sign_negative() as usize;
             let face = FACES[index_1][index_2];
 
-            return Some((t_min, face));
+            // The checks for t_min being below 0 is for when the ray starts inside the collider.
+            return Some((t_min.max(0.0), face));
         } else {
             return None;
         }
