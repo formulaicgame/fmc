@@ -54,7 +54,8 @@ impl<'w> AudioPlayer<'w> {
         let Some(subscribers) = self.chunk_subscriptions.get_subscribers(&chunk_position) else {
             return;
         };
-        self.net.send_many(subscribers, sound.to_message(Some(position)));
+        self.net
+            .send_many(subscribers, sound.to_message(Some(position)));
     }
 
     pub fn play_for(&self, player_entity: Entity, sound: Sound) {

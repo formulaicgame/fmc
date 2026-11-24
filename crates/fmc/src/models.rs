@@ -213,7 +213,14 @@ pub(crate) fn load_models(mut commands: Commands, database: Res<Database>) {
 // added.
 // TODO: With "custom" this is almost 200 bytes per model
 #[derive(Component)]
-#[require(Visibility, AnimationPlayer, Transform, ChunkPosition, Observers, ModelColor)]
+#[require(
+    Visibility,
+    AnimationPlayer,
+    Transform,
+    ChunkPosition,
+    Observers,
+    ModelColor
+)]
 pub enum Model {
     Asset(ModelAssetId),
     Custom {

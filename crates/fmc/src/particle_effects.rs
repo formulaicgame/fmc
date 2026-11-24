@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::bevy::{math::DQuat, prelude::*};
+use crate::bevy::{
+    ecs::system::SystemParam,
+    math::{DQuat, DVec3},
+    prelude::*,
+};
 use fmc_protocol::messages;
 
 use crate::{
@@ -73,6 +77,69 @@ impl ParticleEffects {
 
     pub fn ids(&self) -> &HashMap<String, ParticleEffectId> {
         &self.ids
+    }
+}
+
+/// Only for use with the [ParticleSpawner] SystemParam
+#[derive(Clone, Debug)]
+pub struct ParticleEffect {
+    name: String,
+    texture: String,
+    rotation: Quat,
+    color: Vec4,
+}
+
+impl ParticleEffect {
+    pub fn new(name: impl Into<String>, texture: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            texture: texture.into(),
+            rotation: Quat::IDENTITY,
+            color: Vec4::ONE,
+        }
+    }
+
+    pub fn with_rotation(mut self, rotation: Quat) -> Self {
+        self.rotation = rotation;
+        self
+    }
+
+    pub fn with_color(mut self, color: Vec4) -> Self {
+        self.color = color;
+        self
+    }
+}
+
+/// Convenience SystemParam for easily spawning particle effects
+#[derive(SystemParam)]
+pub struct ParticleSpawner<'w> {
+    net: Res<'w, Server>,
+    chunk_subscriptions: Res<'w, ChunkSubscriptions>,
+    effects: Res<'w, ParticleEffects>,
+}
+
+impl<'w> ParticleSpawner<'w> {
+    pub fn spawn(&self, position: DVec3, effect: ParticleEffect) {
+        let Some(id) = self.effects.get_id(&effect.name) else {
+            warn!("Tried to spawn unknown particle effect '{}'", effect.name);
+            return;
+        };
+        let Some(subscribers) = self
+            .chunk_subscriptions
+            .get_subscribers(&ChunkPosition::from(position))
+        else {
+            return;
+        };
+        self.net.send_many(
+            subscribers,
+            messages::ParticleEffect {
+                id,
+                position,
+                rotation: effect.rotation,
+                texture: effect.texture,
+                color: effect.color,
+            },
+        );
     }
 }
 

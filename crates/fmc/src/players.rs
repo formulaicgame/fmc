@@ -257,9 +257,10 @@ fn find_target(
                 ..default()
             };
 
-            if let Some((distance, block_face)) = block_config
-                .collider
-                .ray_intersection(&block_transform, &camera_transform, true)
+            if let Some((distance, block_face)) =
+                block_config
+                    .collider
+                    .ray_intersection(&block_transform, &camera_transform, true)
             {
                 // TODO: it will add blocks with entities twice if the model is hit
                 let chunk_position = ChunkPosition::from(block_position);
@@ -301,14 +302,11 @@ fn find_target(
 
                     let block_config = blocks.get_config(&block_id);
 
-                    if let Some((distance, block_face)) = block_config
-                        .collider
-                        .ray_intersection(
-                            &model_transform.compute_transform(),
-                            &camera_transform,
-                            true,
-                        )
-                        && distance < distance_to_solid_block
+                    if let Some((distance, block_face)) = block_config.collider.ray_intersection(
+                        &model_transform.compute_transform(),
+                        &camera_transform,
+                        true,
+                    ) && distance < distance_to_solid_block
                         && distance < BLOCK_HIT_DISTANCE
                     {
                         targets.push(Target::Block {
@@ -321,13 +319,11 @@ fn find_target(
                         distance_to_solid_block = distance;
                     }
                 } else if let Some(collider) = maybe_collider {
-                    if let Some((distance, face)) = collider
-                        .ray_intersection(
-                            &model_transform.compute_transform(),
-                            &camera_transform,
-                            true,
-                        )
-                        && distance < ENTITY_HIT_DISTANCE
+                    if let Some((distance, face)) = collider.ray_intersection(
+                        &model_transform.compute_transform(),
+                        &camera_transform,
+                        true,
+                    ) && distance < ENTITY_HIT_DISTANCE
                         && distance < distance_to_solid_block
                     {
                         targets.push(Target::Entity {
