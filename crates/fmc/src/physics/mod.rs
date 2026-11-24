@@ -127,18 +127,21 @@ impl Collider {
         &self,
         self_transform: &Transform,
         ray_transform: &Transform,
+        // If true, a ray that starts inside the collider counts as an intersection.
+        // If false, only rays entering the collider from the outside count.
+        inclusive: bool,
     ) -> Option<(f64, BlockFace)> {
         match self {
             Self::Single(aabb) => aabb
                 .transform(self_transform)
-                .ray_intersection(ray_transform),
+                .ray_intersection(ray_transform, inclusive),
             Self::Multi(aabbs) => {
                 let mut distance = f64::MAX;
                 let mut face = BlockFace::Top;
                 for aabb in aabbs {
                     if let Some((new_distance, new_face)) = aabb
                         .transform(self_transform)
-                        .ray_intersection(ray_transform)
+                        .ray_intersection(ray_transform, inclusive)
                     {
                         if new_distance < distance {
                             distance = new_distance;

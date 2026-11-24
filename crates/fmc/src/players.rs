@@ -259,7 +259,7 @@ fn find_target(
 
             if let Some((distance, block_face)) = block_config
                 .collider
-                .ray_intersection(&block_transform, &camera_transform)
+                .ray_intersection(&block_transform, &camera_transform, true)
             {
                 // TODO: it will add blocks with entities twice if the model is hit
                 let chunk_position = ChunkPosition::from(block_position);
@@ -303,7 +303,11 @@ fn find_target(
 
                     if let Some((distance, block_face)) = block_config
                         .collider
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                        .ray_intersection(
+                            &model_transform.compute_transform(),
+                            &camera_transform,
+                            true,
+                        )
                         && distance < distance_to_solid_block
                         && distance < BLOCK_HIT_DISTANCE
                     {
@@ -318,7 +322,11 @@ fn find_target(
                     }
                 } else if let Some(collider) = maybe_collider {
                     if let Some((distance, face)) = collider
-                        .ray_intersection(&model_transform.compute_transform(), &camera_transform)
+                        .ray_intersection(
+                            &model_transform.compute_transform(),
+                            &camera_transform,
+                            true,
+                        )
                         && distance < ENTITY_HIT_DISTANCE
                         && distance < distance_to_solid_block
                     {

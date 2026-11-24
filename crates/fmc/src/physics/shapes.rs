@@ -95,7 +95,13 @@ impl Aabb {
 
     // "Slab method" ray intersection test
     /// Returns distance to intersection and which face was intersected with.
-    pub fn ray_intersection(&self, ray_transform: &Transform) -> Option<(f64, BlockFace)> {
+    pub fn ray_intersection(
+        &self,
+        ray_transform: &Transform,
+        // If true, a ray that starts inside the aabb counts as an intersection.
+        // If false, only rays entering the aabb from the outside count.
+        inclusive: bool,
+    ) -> Option<(f64, BlockFace)> {
         // let mut t_min = f64::NEG_INFINITY;
         // let mut t_max = f64::INFINITY;
 
@@ -117,7 +123,7 @@ impl Aabb {
         //}
 
         // Collider is behind ray
-        if t_max < 0.0 {
+        if t_max < 0.0 || (!inclusive && t_min < 0.0) {
             return None;
         }
 
