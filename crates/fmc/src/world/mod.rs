@@ -272,10 +272,10 @@ fn handle_block_updates(
                             entity_commands.insert((Model::Asset(model_id), transform));
 
                             entity_commands.with_children(|parent| {
-                                for particle_spawner in block_config.particle_spawners.iter() {
+                                for particle_emitter in block_config.particle_emitters.iter() {
                                     parent.spawn((
-                                        particle_spawner.spawner.clone(),
-                                        Transform::from_translation(particle_spawner.offset),
+                                        particle_emitter.emitter.clone(),
+                                        Transform::from_translation(particle_emitter.offset),
                                     ));
                                 }
                             });

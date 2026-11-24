@@ -25,9 +25,9 @@ impl Plugin for ParticleEffectPlugin {
         .add_systems(
             PostUpdate,
             (
-                send_spawners,
-                send_spawners_on_chunk_subscription,
-                remove_spawners,
+                send_emitters,
+                send_emitters_on_chunk_subscription,
+                remove_emitters,
             )
                 .after(VisibilitySystems),
         );
@@ -79,7 +79,7 @@ impl ParticleEffects {
 /// Repeatedly spawns a particle effect at the position of the entity.
 #[derive(Component, Clone, Debug)]
 #[require(Visibility, Observers)]
-pub struct ParticleSpawner {
+pub struct ParticleEmitter {
     /// Id of the particle effect to spawn
     pub effect: ParticleEffectId,
     /// Path to the texture, relative to "textures/"
@@ -90,12 +90,12 @@ pub struct ParticleSpawner {
     pub interval: [f32; 2],
 }
 
-impl ParticleSpawner {
+impl ParticleEmitter {
     fn to_message(
         &self,
         entity: Entity,
         global_transform: &GlobalTransform,
-    ) -> messages::ParticleSpawner {
+    ) -> messages::ParticleEmitter {
         // XXX: Only the rotation around the y axis is sent. This might not be completely correct,
         // but it serves my purposes of rotating block models, change if needed.
         let mut rotation = global_transform.rotation();
@@ -107,7 +107,7 @@ impl ParticleSpawner {
             DQuat::IDENTITY
         };
 
-        messages::ParticleSpawner {
+        messages::ParticleEmitter {
             id: entity.index_u32(),
             position: global_transform.translation(),
             rotation: rotation.as_quat(),
@@ -119,21 +119,21 @@ impl ParticleSpawner {
     }
 }
 
-fn send_spawners(
+fn send_emitters(
     net: Res<Server>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    spawner_query: Query<
+    emitter_query: Query<
         (
             Entity,
-            &ParticleSpawner,
+            &ParticleEmitter,
             &Visibility,
             &Observers,
             &GlobalTransform,
         ),
-        Or<(Changed<ParticleSpawner>, Changed<Visibility>)>,
+        Or<(Changed<ParticleEmitter>, Changed<Visibility>)>,
     >,
 ) {
-    for (entity, spawner, visibility, observers, global_transform) in spawner_query.iter() {
+    for (entity, emitter, visibility, observers, global_transform) in emitter_query.iter() {
         let chunk_position = ChunkPosition::from(global_transform.translation());
         let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) else {
             continue;
@@ -142,12 +142,12 @@ fn send_spawners(
         if visibility.is_visible() {
             net.send_many(
                 observers.filter(subs),
-                spawner.to_message(entity, global_transform),
+                emitter.to_message(entity, global_transform),
             );
         } else {
             net.send_many(
                 observers.filter(subs),
-                messages::DeleteParticleSpawner {
+                messages::DeleteParticleEmitter {
                     id: entity.index_u32(),
                 },
             );
@@ -155,15 +155,15 @@ fn send_spawners(
     }
 }
 
-fn send_spawners_on_chunk_subscription(
+fn send_emitters_on_chunk_subscription(
     net: Res<Server>,
     entity_map: Res<EntityMap>,
-    spawner_query: Query<(&ParticleSpawner, &Visibility, &Observers, &GlobalTransform)>,
+    emitter_query: Query<(&ParticleEmitter, &Visibility, &Observers, &GlobalTransform)>,
     mut chunk_sub_events: MessageReader<ChunkSubscriptionEvent>,
 ) {
     for chunk_sub in chunk_sub_events.read() {
         for entity in entity_map.iter_entities(&chunk_sub.chunk_position) {
-            let Ok((spawner, visibility, observers, global_transform)) = spawner_query.get(entity)
+            let Ok((emitter, visibility, observers, global_transform)) = emitter_query.get(entity)
             else {
                 continue;
             };
@@ -174,19 +174,19 @@ fn send_spawners_on_chunk_subscription(
 
             net.send_one(
                 chunk_sub.player_entity,
-                spawner.to_message(entity, global_transform),
+                emitter.to_message(entity, global_transform),
             );
         }
     }
 }
 
-fn remove_spawners(
+fn remove_emitters(
     net: Res<Server>,
     entity_map: Res<EntityMap>,
     chunk_subscriptions: Res<ChunkSubscriptions>,
-    mut removed_spawners: RemovedComponents<ParticleSpawner>,
+    mut removed_emitters: RemovedComponents<ParticleEmitter>,
 ) {
-    for entity in removed_spawners.read() {
+    for entity in removed_emitters.read() {
         let Some(chunk_position) = entity_map.chunk_position(&entity) else {
             continue;
         };
@@ -194,7 +194,7 @@ fn remove_spawners(
         if let Some(subs) = chunk_subscriptions.get_subscribers(&chunk_position) {
             net.send_many(
                 subs,
-                messages::DeleteParticleSpawner {
+                messages::DeleteParticleEmitter {
                     id: entity.index_u32(),
                 },
             );

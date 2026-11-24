@@ -38,7 +38,7 @@ mod audio;
 pub use audio::{EnableClientAudio, Sound};
 
 mod particles;
-pub use particles::{DeleteParticleSpawner, ParticleEffect, ParticleSpawner};
+pub use particles::{DeleteParticleEmitter, ParticleEffect, ParticleEmitter};
 
 mod plugins;
 pub use plugins::{Plugin, PluginData};

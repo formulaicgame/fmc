@@ -11,7 +11,7 @@ use smallvec::SmallVec;
 
 use crate::{
     assets::particles::{ParticleEffect, ParticleEffectAssetId, ParticleEffects, ParticleTextures},
-    blocks::{BlockRotation, BlockState, Blocks, ParticleSpawnerConfig},
+    blocks::{BlockRotation, BlockState, Blocks, ParticleEmitterConfig},
     game_state::GameState,
     rendering::{light_texture::LIGHT_TEXTURE, materials::ParticleMaterial},
     settings::Settings,
@@ -21,14 +21,14 @@ use crate::{
     },
 };
 
-const SPAWNER_DISTANCE: i32 = 2;
+const EMITTER_DISTANCE: i32 = 2;
 
 pub struct ParticlePlugin;
 impl Plugin for ParticlePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<BlockParticleSpawners>()
-            .init_resource::<ServerParticleSpawners>()
-            .add_systems(OnEnter(GameState::Launcher), clear_spawners)
+        app.init_resource::<BlockParticleEmitters>()
+            .init_resource::<ServerParticleEmitters>()
+            .add_systems(OnEnter(GameState::Launcher), clear_emitters)
             .add_systems(
                 FixedUpdate,
                 simulate_particle_physics.run_if(in_state(GameState::Playing)),
@@ -38,9 +38,9 @@ impl Plugin for ParticlePlugin {
                 (
                     handle_particles_from_server,
                     (
-                        (load_block_spawners, unload_block_spawners).chain(),
-                        (handle_server_spawners, unload_server_spawners).chain(),
-                        emit_from_spawners,
+                        (load_block_emitters, unload_block_emitters).chain(),
+                        (handle_server_emitters, unload_server_emitters).chain(),
+                        emit_from_emitters,
                     )
                         .chain(),
                     despawn_particles,
@@ -177,14 +177,14 @@ fn spawn_effect(
 }
 
 #[derive(Resource, Default)]
-struct BlockParticleSpawners {
-    chunks: HashMap<ChunkPosition, HashMap<usize, SmallVec<[ParticleSpawner; 2]>>>,
+struct BlockParticleEmitters {
+    chunks: HashMap<ChunkPosition, HashMap<usize, SmallVec<[ParticleEmitter; 2]>>>,
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-struct ServerParticleSpawners(HashMap<u32, ParticleSpawner>);
+struct ServerParticleEmitters(HashMap<u32, ParticleEmitter>);
 
-struct ParticleSpawner {
+struct ParticleEmitter {
     effect: ParticleEffectAssetId,
     position: DVec3,
     rotation: Quat,
@@ -194,11 +194,11 @@ struct ParticleSpawner {
     timer: f32,
 }
 
-impl ParticleSpawner {
+impl ParticleEmitter {
     fn from_block(
         block_position: BlockPosition,
         state: Option<BlockState>,
-        config: &ParticleSpawnerConfig,
+        config: &ParticleEmitterConfig,
         rng: &mut utils::Rng,
     ) -> Self {
         let rotation = state
@@ -219,24 +219,24 @@ impl ParticleSpawner {
     }
 }
 
-fn clear_spawners(
-    mut block_spawners: ResMut<BlockParticleSpawners>,
-    mut server_spawners: ResMut<ServerParticleSpawners>,
+fn clear_emitters(
+    mut block_emitters: ResMut<BlockParticleEmitters>,
+    mut server_emitters: ResMut<ServerParticleEmitters>,
 ) {
-    block_spawners.chunks.clear();
-    server_spawners.clear();
+    block_emitters.chunks.clear();
+    server_emitters.clear();
 }
 
-fn load_block_spawners(
+fn load_block_emitters(
     blocks: Res<Blocks>,
     world_map: Res<WorldMap>,
-    mut spawners: ResMut<BlockParticleSpawners>,
+    mut emitters: ResMut<BlockParticleEmitters>,
     mut new_chunks: MessageReader<NewChunkEvent>,
     mut block_updates: MessageReader<messages::BlockUpdates>,
     mut rng: Local<utils::Rng>,
 ) {
     for event in new_chunks.read() {
-        spawners.chunks.remove(&event.position);
+        emitters.chunks.remove(&event.position);
 
         let Some(chunk) = world_map.get_chunk(&event.position) else {
             continue;
@@ -246,9 +246,9 @@ fn load_block_spawners(
             continue;
         }
 
-        let mut chunk_spawners = HashMap::new();
+        let mut chunk_emitters = HashMap::new();
         for (index, block_id) in chunk.iter_blocks() {
-            let configs = blocks.get_config(*block_id).particle_spawners();
+            let configs = blocks.get_config(*block_id).particle_emitters();
             if configs.is_empty() {
                 continue;
             }
@@ -260,19 +260,19 @@ fn load_block_spawners(
                 position.z as usize,
             );
             let block_position = BlockPosition::from(event.position) + position;
-            chunk_spawners.insert(
+            chunk_emitters.insert(
                 index,
                 configs
                     .iter()
                     .map(|config| {
-                        ParticleSpawner::from_block(block_position, state, config, &mut rng)
+                        ParticleEmitter::from_block(block_position, state, config, &mut rng)
                     })
                     .collect(),
             );
         }
 
-        if !chunk_spawners.is_empty() {
-            spawners.chunks.insert(event.position, chunk_spawners);
+        if !chunk_emitters.is_empty() {
+            emitters.chunks.insert(event.position, chunk_emitters);
         }
     }
 
@@ -283,10 +283,10 @@ fn load_block_spawners(
         }
 
         for (index, block_id, state) in event.blocks.iter() {
-            if let Some(chunk_spawners) = spawners.chunks.get_mut(&chunk_position) {
-                chunk_spawners.remove(index);
-                if chunk_spawners.is_empty() {
-                    spawners.chunks.remove(&chunk_position);
+            if let Some(chunk_emitters) = emitters.chunks.get_mut(&chunk_position) {
+                chunk_emitters.remove(index);
+                if chunk_emitters.is_empty() {
+                    emitters.chunks.remove(&chunk_position);
                 }
             }
 
@@ -294,18 +294,18 @@ fn load_block_spawners(
                 continue;
             }
 
-            let configs = blocks.get_config(*block_id).particle_spawners();
+            let configs = blocks.get_config(*block_id).particle_emitters();
             if configs.is_empty() {
                 continue;
             }
 
             let block_position = BlockPosition::from(chunk_position) + BlockPosition::from(*index);
-            spawners.chunks.entry(chunk_position).or_default().insert(
+            emitters.chunks.entry(chunk_position).or_default().insert(
                 *index,
                 configs
                     .iter()
                     .map(|config| {
-                        ParticleSpawner::from_block(
+                        ParticleEmitter::from_block(
                             block_position,
                             state.map(BlockState),
                             config,
@@ -318,51 +318,51 @@ fn load_block_spawners(
     }
 }
 
-fn unload_block_spawners(world_map: Res<WorldMap>, mut spawners: ResMut<BlockParticleSpawners>) {
-    if spawners.chunks.is_empty() {
+fn unload_block_emitters(world_map: Res<WorldMap>, mut emitters: ResMut<BlockParticleEmitters>) {
+    if emitters.chunks.is_empty() {
         return;
     }
 
-    spawners
+    emitters
         .chunks
         .retain(|position, _| world_map.contains_chunk(position));
 }
 
-fn emit_from_spawners(
+fn emit_from_emitters(
     mut commands: Commands,
     time: Res<Time>,
     origin: Res<Origin>,
     asset_server: Res<AssetServer>,
     particle_effects: Res<ParticleEffects>,
-    mut block_spawners: ResMut<BlockParticleSpawners>,
-    mut server_spawners: ResMut<ServerParticleSpawners>,
+    mut block_emitters: ResMut<BlockParticleEmitters>,
+    mut server_emitters: ResMut<ServerParticleEmitters>,
     mut rng: Local<utils::Rng>,
 ) {
     let in_range = |chunk_position: ChunkPosition| {
         let distance = (chunk_position - origin.0).abs() / IVec3::splat(Chunk::SIZE as i32);
-        distance.max_element() <= SPAWNER_DISTANCE
+        distance.max_element() <= EMITTER_DISTANCE
     };
 
-    let block_spawners = block_spawners
+    let block_emitters = block_emitters
         .chunks
         .iter_mut()
         .filter(|(chunk_position, _)| in_range(**chunk_position))
-        .flat_map(|(_, chunk_spawners)| chunk_spawners.values_mut().flatten());
+        .flat_map(|(_, chunk_emitters)| chunk_emitters.values_mut().flatten());
 
-    let server_spawners = server_spawners
+    let server_emitters = server_emitters
         .values_mut()
-        .filter(|spawner| in_range(ChunkPosition::from(spawner.position)));
+        .filter(|emitter| in_range(ChunkPosition::from(emitter.position)));
 
-    for spawner in block_spawners.chain(server_spawners) {
-        spawner.timer -= time.delta_secs();
-        if spawner.timer > 0.0 {
+    for emitter in block_emitters.chain(server_emitters) {
+        emitter.timer -= time.delta_secs();
+        if emitter.timer > 0.0 {
             continue;
         }
 
-        let [min, max] = spawner.interval;
-        spawner.timer = min + (max - min) * rng.next_f32();
+        let [min, max] = emitter.interval;
+        emitter.timer = min + (max - min) * rng.next_f32();
 
-        let Some(effect) = particle_effects.get(&spawner.effect) else {
+        let Some(effect) = particle_effects.get(&emitter.effect) else {
             continue;
         };
 
@@ -371,71 +371,71 @@ fn emit_from_spawners(
             &asset_server,
             &mut rng,
             effect,
-            spawner.texture.clone(),
-            spawner.color,
+            emitter.texture.clone(),
+            emitter.color,
             time.elapsed_secs_wrapped(),
             origin.as_ivec3(),
-            origin.to_local(spawner.position),
-            spawner.rotation,
+            origin.to_local(emitter.position),
+            emitter.rotation,
         );
     }
 }
 
-fn handle_server_spawners(
+fn handle_server_emitters(
     particle_effects: Res<ParticleEffects>,
     particle_textures: Res<ParticleTextures>,
-    mut spawners: ResMut<ServerParticleSpawners>,
-    mut deleted_spawners: MessageReader<messages::DeleteParticleSpawner>,
-    mut new_spawners: MessageReader<messages::ParticleSpawner>,
+    mut emitters: ResMut<ServerParticleEmitters>,
+    mut deleted_emitters: MessageReader<messages::DeleteParticleEmitter>,
+    mut new_emitters: MessageReader<messages::ParticleEmitter>,
     mut rng: Local<utils::Rng>,
 ) {
-    for deleted_spawner in deleted_spawners.read() {
-        spawners.remove(&deleted_spawner.id);
+    for deleted_emitter in deleted_emitters.read() {
+        emitters.remove(&deleted_emitter.id);
     }
 
-    for new_spawner in new_spawners.read() {
-        if particle_effects.get(&new_spawner.effect).is_none() {
+    for new_emitter in new_emitters.read() {
+        if particle_effects.get(&new_emitter.effect).is_none() {
             warn!(
                 "Received invalid particle effect id: {}",
-                new_spawner.effect
+                new_emitter.effect
             );
             continue;
         }
 
-        let Some(texture) = particle_textures.get(&new_spawner.texture).cloned() else {
+        let Some(texture) = particle_textures.get(&new_emitter.texture).cloned() else {
             warn!(
                 "Received invalid particle texture, no texture at: {}",
-                new_spawner.texture
+                new_emitter.texture
             );
             continue;
         };
 
-        spawners.insert(
-            new_spawner.id,
-            ParticleSpawner {
-                effect: new_spawner.effect,
-                position: new_spawner.position,
-                rotation: new_spawner.rotation,
+        emitters.insert(
+            new_emitter.id,
+            ParticleEmitter {
+                effect: new_emitter.effect,
+                position: new_emitter.position,
+                rotation: new_emitter.rotation,
                 texture,
-                color: new_spawner.color,
-                interval: new_spawner.interval,
-                timer: rng.next_f32() * new_spawner.interval[1],
+                color: new_emitter.color,
+                interval: new_emitter.interval,
+                timer: rng.next_f32() * new_emitter.interval[1],
             },
         );
     }
 }
 
-fn unload_server_spawners(
+fn unload_server_emitters(
     origin: Res<Origin>,
     settings: Res<Settings>,
-    mut spawners: ResMut<ServerParticleSpawners>,
+    mut emitters: ResMut<ServerParticleEmitters>,
 ) {
     if !origin.is_changed() && !settings.is_changed() {
         return;
     }
 
-    spawners.retain(|_, spawner| {
-        let chunk_offset = ChunkPosition::from(spawner.position) - origin.0;
+    emitters.retain(|_, emitter| {
+        let chunk_offset = ChunkPosition::from(emitter.position) - origin.0;
         let distance = chunk_offset.abs() / IVec3::splat(Chunk::SIZE as i32);
         distance.max_element() <= settings.render_distance as i32
     });

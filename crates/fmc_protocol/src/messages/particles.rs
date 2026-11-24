@@ -17,10 +17,10 @@ pub struct ParticleEffect {
     pub color: Vec4,
 }
 
-/// Spawn a particle spawner that repeatedly spawns a particle effect.
+/// Spawn a particle emitter that repeatedly spawns a particle effect.
 #[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
-pub struct ParticleSpawner {
-    /// Id used to reference the spawner. If the same id is sent twice, the old spawner will be
+pub struct ParticleEmitter {
+    /// Id used to reference the emitter. If the same id is sent twice, the old emitter will be
     /// replaced.
     pub id: u32,
     /// World position the effect is spawned at
@@ -37,9 +37,9 @@ pub struct ParticleSpawner {
     pub interval: [f32; 2],
 }
 
-/// Delete an existing particle spawner.
+/// Delete an existing particle emitter.
 #[derive(ClientBound, Message, Serialize, Deserialize, Debug, Clone)]
-pub struct DeleteParticleSpawner {
-    /// Id of the particle spawner
+pub struct DeleteParticleEmitter {
+    /// Id of the particle emitter
     pub id: u32,
 }

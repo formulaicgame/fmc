@@ -196,14 +196,14 @@ pub fn load_blocks(
                 fog,
                 sound,
                 placement,
-                particle_spawners,
+                particle_emitters,
             } => {
-                let particle_spawners = match particle_spawners
+                let particle_emitters = match particle_emitters
                     .into_iter()
-                    .map(|spawner| spawner.resolve(&name, &particle_effects, &particle_textures))
+                    .map(|emitter| emitter.resolve(&name, &particle_effects, &particle_textures))
                     .collect::<Result<Vec<_>, _>>()
                 {
-                    Ok(spawners) => spawners,
+                    Ok(emitters) => emitters,
                     Err(e) => {
                         net.disconnect(e);
                         return;
@@ -395,7 +395,7 @@ pub fn load_blocks(
                     sound,
                     placement,
                     aabb,
-                    particle_spawners,
+                    particle_emitters,
                 }
             }
 
@@ -428,7 +428,7 @@ pub fn load_blocks(
                     sound,
                     placement,
                     aabb: Aabb::from_min_max(Vec3::ZERO, Vec3::ONE),
-                    particle_spawners: Vec::new(),
+                    particle_emitters: Vec::new(),
                 }
             }
         };
@@ -510,7 +510,7 @@ pub struct Block {
     placement: BlockPlacement,
     // The bounding box of the block
     aabb: Aabb,
-    particle_spawners: Vec<ParticleSpawnerConfig>,
+    particle_emitters: Vec<ParticleEmitterConfig>,
 }
 
 impl Block {
@@ -589,13 +589,13 @@ impl Block {
         &self.aabb
     }
 
-    pub fn particle_spawners(&self) -> &[ParticleSpawnerConfig] {
-        &self.particle_spawners
+    pub fn particle_emitters(&self) -> &[ParticleEmitterConfig] {
+        &self.particle_emitters
     }
 }
 
 #[derive(Debug)]
-pub struct ParticleSpawnerConfig {
+pub struct ParticleEmitterConfig {
     pub effect: ParticleEffectAssetId,
     pub texture: Handle<Image>,
     pub color: Vec4,
@@ -604,17 +604,17 @@ pub struct ParticleSpawnerConfig {
 }
 
 #[derive(Deserialize)]
-struct ParticleSpawnerJson {
+struct ParticleEmitterJson {
     effect: String,
     texture: String,
-    #[serde(default = "ParticleSpawnerJson::default_color")]
+    #[serde(default = "ParticleEmitterJson::default_color")]
     color: Vec4,
     interval: [f32; 2],
-    #[serde(default = "ParticleSpawnerJson::default_offset")]
+    #[serde(default = "ParticleEmitterJson::default_offset")]
     offset: Vec3,
 }
 
-impl ParticleSpawnerJson {
+impl ParticleEmitterJson {
     fn default_color() -> Vec4 {
         Vec4::ONE
     }
@@ -628,10 +628,10 @@ impl ParticleSpawnerJson {
         block_name: &str,
         particle_effects: &ParticleEffects,
         particle_textures: &ParticleTextures,
-    ) -> Result<ParticleSpawnerConfig, String> {
+    ) -> Result<ParticleEmitterConfig, String> {
         let Some(effect) = particle_effects.get_id_by_name(&self.effect) else {
             return Err(format!(
-                "Misconfigured assets: the particle spawner of block '{}' uses the particle \
+                "Misconfigured assets: the particle emitter of block '{}' uses the particle \
                 effect '{}', but the effect does not exist.",
                 block_name, self.effect
             ));
@@ -639,7 +639,7 @@ impl ParticleSpawnerJson {
 
         let Some(texture) = particle_textures.get(&self.texture).cloned() else {
             return Err(format!(
-                "Misconfigured assets: the particle spawner of block '{}' uses the texture \
+                "Misconfigured assets: the particle emitter of block '{}' uses the texture \
                 '{}', but the texture does not exist.",
                 block_name, self.texture
             ));
@@ -648,13 +648,13 @@ impl ParticleSpawnerJson {
         let [min, max] = self.interval;
         if !(min > 0.0 && max >= min) {
             return Err(format!(
-                "Misconfigured assets: the particle spawner of block '{}' has the interval \
+                "Misconfigured assets: the particle emitter of block '{}' has the interval \
                 [{}, {}], it must be positive and ordered from min to max.",
                 block_name, min, max
             ));
         }
 
-        Ok(ParticleSpawnerConfig {
+        Ok(ParticleEmitterConfig {
             effect,
             texture,
             color: self.color,
@@ -790,7 +790,7 @@ enum BlockJson {
         #[serde(default)]
         placement: BlockPlacement,
         #[serde(default)]
-        particle_spawners: Vec<ParticleSpawnerJson>,
+        particle_emitters: Vec<ParticleEmitterJson>,
     },
     Model {
         /// Name of the block, must be unique

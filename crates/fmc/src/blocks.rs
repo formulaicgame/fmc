@@ -18,7 +18,7 @@ use crate::{
     assets::AssetSet,
     database::Database,
     models::{ModelAssetId, Models},
-    particle_effects::{ParticleEffects, ParticleSpawner},
+    particle_effects::{ParticleEffects, ParticleEmitter},
     physics::{Collider, ColliderJson, Friction, shapes::Aabb},
     players::Camera,
     prelude::*,
@@ -154,22 +154,22 @@ fn load_blocks(
             None
         };
 
-        let particle_spawners: Vec<BlockParticleSpawner> = block_config_json
-            .particle_spawners
+        let particle_emitters: Vec<BlockParticleEmitter> = block_config_json
+            .particle_emitters
             .iter()
-            .map(|spawner| {
-                let Some(effect) = particle_effects.get_id(&spawner.effect) else {
+            .map(|emitter| {
+                let Some(effect) = particle_effects.get_id(&emitter.effect) else {
                     panic!(
                         "Failed to read block at: {}\nError: no particle effect by the name: {}",
                         file_path.display(),
-                        spawner.effect
+                        emitter.effect
                     );
                 };
 
-                let [min, max] = spawner.interval;
+                let [min, max] = emitter.interval;
                 if !(min > 0.0 && max >= min) {
                     panic!(
-                        "Failed to read block at: {}\nError: the particle spawner interval \
+                        "Failed to read block at: {}\nError: the particle emitter interval \
                         [{}, {}] must be positive and ordered from min to max",
                         file_path.display(),
                         min,
@@ -177,14 +177,14 @@ fn load_blocks(
                     );
                 }
 
-                BlockParticleSpawner {
-                    spawner: ParticleSpawner {
+                BlockParticleEmitter {
+                    emitter: ParticleEmitter {
                         effect,
-                        texture: spawner.texture.clone(),
-                        color: spawner.color,
-                        interval: spawner.interval,
+                        texture: emitter.texture.clone(),
+                        color: emitter.color,
+                        interval: emitter.interval,
                     },
-                    offset: spawner.offset.as_dvec3() - DVec3::new(0.5, 0.0, 0.5),
+                    offset: emitter.offset.as_dvec3() - DVec3::new(0.5, 0.0, 0.5),
                 }
             })
             .collect();
@@ -216,7 +216,7 @@ fn load_blocks(
                     .as_ref()
                     .is_none_or(|material| material.transparency != "opaque"),
                 rotation_transform: block_config_json.rotation_transform,
-                particle_spawners,
+                particle_emitters,
                 collider,
             };
 
@@ -335,9 +335,9 @@ struct BlockConfigJson {
     model: Option<String>,
     // Transform applied to the model when the block is rotated.
     rotation_transform: Option<Transform>,
-    // Particle spawners attached to the block.
+    // Particle emitters attached to the block.
     #[serde(default)]
-    particle_spawners: Vec<ParticleSpawnerJson>,
+    particle_emitters: Vec<ParticleEmitterJson>,
 }
 
 fn read_block_json(path: &Path) -> Option<serde_json::Value> {
@@ -454,8 +454,8 @@ pub(crate) struct BlockConfig {
     pub collider: Collider,
     /// Transform applied to the model when the block is rotated.
     pub rotation_transform: Option<Transform>,
-    /// Particle spawners attached to the block.
-    pub particle_spawners: Vec<BlockParticleSpawner>,
+    /// Particle emitters attached to the block.
+    pub particle_emitters: Vec<BlockParticleEmitter>,
 }
 
 impl BlockConfig {
@@ -563,26 +563,26 @@ impl BlockPlacement {
     }
 }
 
-/// A particle spawner that is spawned together with a block.
+/// A particle emitter that is spawned together with a block.
 #[derive(Debug, Clone)]
-pub struct BlockParticleSpawner {
-    pub spawner: ParticleSpawner,
-    /// Position of the spawner relative to the origin of the block's model.
+pub struct BlockParticleEmitter {
+    pub emitter: ParticleEmitter,
+    /// Position of the emitter relative to the origin of the block's model.
     pub offset: DVec3,
 }
 
 #[derive(Deserialize, Debug)]
-struct ParticleSpawnerJson {
+struct ParticleEmitterJson {
     effect: String,
     texture: String,
-    #[serde(default = "ParticleSpawnerJson::default_color")]
+    #[serde(default = "ParticleEmitterJson::default_color")]
     color: Vec4,
     interval: [f32; 2],
-    #[serde(default = "ParticleSpawnerJson::default_offset")]
+    #[serde(default = "ParticleEmitterJson::default_offset")]
     offset: Vec3,
 }
 
-impl ParticleSpawnerJson {
+impl ParticleEmitterJson {
     fn default_color() -> Vec4 {
         Vec4::ONE
     }

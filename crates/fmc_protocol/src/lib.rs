@@ -43,8 +43,8 @@ pub enum MessageType {
     EnableClientAudio,
     Sound,
     ParticleEffect,
-    ParticleSpawner,
-    DeleteParticleSpawner,
+    ParticleEmitter,
+    DeleteParticleEmitter,
     Plugin,
     PluginData,
     // XXX: Always keep this at the bottom, occupies highest discriminant spot, so that when you
