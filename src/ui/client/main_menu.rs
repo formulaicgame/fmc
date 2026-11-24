@@ -1083,7 +1083,7 @@ fn download_default_game(mut commands: Commands) {
 }
 
 fn is_server_up_to_date(server_path: &Path) -> bool {
-    let Ok(server_modified) = std::fs::metadata(server_path).and_then(|m| m.modified()) else {
+    let Ok(server_installed) = std::fs::metadata(server_path).and_then(|m| install_time(&m)) else {
         return false;
     };
 
@@ -1091,14 +1091,27 @@ fn is_server_up_to_date(server_path: &Path) -> bool {
         return true;
     }
 
-    let Ok(client_modified) = std::env::current_exe()
+    let Ok(client_installed) = std::env::current_exe()
         .and_then(std::fs::metadata)
-        .and_then(|m| m.modified())
+        .and_then(|m| install_time(&m))
     else {
         return true;
     };
 
-    server_modified >= client_modified
+    server_installed >= client_installed
+}
+
+fn install_time(metadata: &std::fs::Metadata) -> std::io::Result<std::time::SystemTime> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32))
+    }
+    #[cfg(not(unix))]
+    {
+        metadata.created()
+    }
 }
 
 async fn download_game(url: String, download_folder: PathBuf, reporter: Sender<DownloadStatus>) {
