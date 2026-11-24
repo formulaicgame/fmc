@@ -1,5 +1,6 @@
 /// Asset management
 pub mod assets;
+pub mod audio;
 /// The game's blocks.
 pub mod blocks;
 pub mod commands;
