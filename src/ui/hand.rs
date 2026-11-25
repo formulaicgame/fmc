@@ -2,7 +2,7 @@ use bevy::{
     camera::visibility::RenderLayers,
     gltf::Gltf,
     prelude::*,
-    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowFocused},
     world_serialization::WorldInstanceReady,
 };
 use fmc_protocol::messages;
@@ -441,21 +441,30 @@ fn send_clicks(
     net: Res<NetworkClient>,
     cursor: Single<&CursorOptions, With<PrimaryWindow>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
+    mut focus_events: MessageReader<WindowFocused>,
+    mut left_pressed: Local<bool>,
+    mut right_pressed: Local<bool>,
 ) {
-    if cursor.grab_mode != CursorGrabMode::None {
-        if mouse_button_input.pressed(MouseButton::Left) {
-            net.send_message(messages::LeftClick::Press);
-        } else if mouse_button_input.just_released(MouseButton::Left) {
-            net.send_message(messages::LeftClick::Release);
-        } else if mouse_button_input.just_pressed(MouseButton::Right) {
-            net.send_message(messages::RightClick::Press);
-        }
-        // TODO: Full right clicks don't work for interfaces. If you open an interface on the down
-        // press the cursor won't be locked anymore, so it won't send the release event.
-        // else if mouse_button_input.just_released(MouseButton::Right) {
-        //     dbg!("send release");
-        //     net.send_message(messages::RightClick::Release);
-        // }
+    let cursor_locked = cursor.grab_mode != CursorGrabMode::None;
+    let focus_lost = focus_events.read().any(|event| !event.focused);
+    let interrupted = focus_lost || !cursor_locked;
+
+    if cursor_locked && !*left_pressed && mouse_button_input.just_pressed(MouseButton::Left) {
+        net.send_message(messages::LeftClick::Press);
+        *left_pressed = true;
+    }
+    if *left_pressed && (mouse_button_input.just_released(MouseButton::Left) || interrupted) {
+        net.send_message(messages::LeftClick::Release);
+        *left_pressed = false;
+    }
+
+    if cursor_locked && !*right_pressed && mouse_button_input.just_pressed(MouseButton::Right) {
+        net.send_message(messages::RightClick::Press);
+        *right_pressed = true;
+    }
+    if *right_pressed && (mouse_button_input.just_released(MouseButton::Right) || interrupted) {
+        net.send_message(messages::RightClick::Release);
+        *right_pressed = false;
     }
 }
 
