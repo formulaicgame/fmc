@@ -5,6 +5,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowResized},
     winit::WINIT_WINDOWS,
 };
+use serde::Deserialize;
 
 use crate::settings::Settings;
 
@@ -42,7 +43,8 @@ impl Plugin for UiPlugin {
         );
 
         app.init_state::<UiState>()
-            .insert_resource(CursorVisibility::default());
+            .insert_resource(CursorVisibility::default())
+            .init_resource::<KeyboardFocus>();
 
         // TODO: It would be nice to overwrite bevy's default handle instead, so it never has to be
         // specified by an entity, but doing it increases compile time by a lot. Maybe because it
@@ -63,6 +65,15 @@ enum UiState {
     Gui,
     // The interfaces provided by the server are shown
     ServerInterfaces,
+}
+
+#[derive(Resource, Deserialize, Default, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum KeyboardFocus {
+    // Keyboard focus is not taken
+    #[default]
+    None,
+    // Keyboard focus taken by an interface or the gui
+    Full,
 }
 
 #[derive(Resource)]

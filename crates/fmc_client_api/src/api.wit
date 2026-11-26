@@ -49,23 +49,20 @@ world plugin {
 
     // TODO: The client can map keys, is it best to handle this only host side? Eventually the wasm
     // should handle the interfaces which means it needs complete access to the keyboard anyways.
-    enum key {
-       key-w, 
-       key-a, 
-       key-s, 
-       key-d, 
+    flags keys {
+       key-w,
+       key-a,
+       key-s,
+       key-d,
        shift,
        control,
        space
     }
 
-    record keyboard-key {
-        /// Physical key code
-        key: key,
-        /// True if it was released, false if pressed
-        released: bool,
-        /// If the button has been held down for some OS specified period
-        repeat: bool
+    record keyboard {
+        pressed: keys,
+        just-pressed: keys,
+        just-released: keys
     }
 
     export init-plugin: func();
@@ -83,7 +80,7 @@ world plugin {
     import set-player-transform: func(transform: transform);
     import set-camera-transform: func(transform: transform);
 
-    import keyboard-input: func() -> list<keyboard-key>;
+    import get-keyboard: func() -> keyboard;
 
     /// Get the id of a block in the world map
     import get-block: func(block-position: i-vec3) -> option<block-id>;

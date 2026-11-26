@@ -41,8 +41,6 @@ fn plugin() -> &'static mut dyn Plugin {
 }
 
 mod wit {
-    use std::hash::{Hash, Hasher};
-
     wit_bindgen::generate!({
         skip: ["init-plugin"],
         path: "./src/api.wit",
@@ -52,18 +50,25 @@ mod wit {
         },
     });
 
-    impl Hash for Key {
-        fn hash<H: Hasher>(&self, state: &mut H) {
-            let discriminant = std::mem::discriminant(self);
-            core::hash::Hash::hash(&discriminant, state);
+    impl Keyboard {
+        pub fn pressed(&self, keys: Keys) -> bool {
+            self.pressed.intersects(keys)
+        }
+
+        pub fn just_pressed(&self, keys: Keys) -> bool {
+            self.just_pressed.intersects(keys)
+        }
+
+        pub fn just_released(&self, keys: Keys) -> bool {
+            self.just_released.intersects(keys)
         }
     }
 }
 
 pub use wit::{
-    Key, KeyboardKey, delta_time, get_block, get_block_state, get_camera_transform,
-    get_model_transform, get_models, get_player_transform, keyboard_input, log,
-    set_camera_transform, set_player_transform,
+    Keyboard, Keys, delta_time, get_block, get_block_state, get_camera_transform, get_keyboard,
+    get_model_transform, get_models, get_player_transform, log, set_camera_transform,
+    set_player_transform,
 };
 
 pub mod math {

@@ -2,11 +2,9 @@ use std::collections::HashMap;
 
 use bevy::{
     camera::primitives::Aabb,
-    ecs::{message::MessageCursor, system::SystemState},
-    input::{ButtonState, keyboard::KeyboardInput},
+    ecs::message::MessageCursor,
     math::{Mat3A, Vec3A},
     prelude::*,
-    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use fmc_protocol::messages;
 use wasmtime::{
@@ -21,6 +19,7 @@ use crate::{
     networking::NetworkClient,
     player::{Head, Player},
     settings::Settings,
+    ui::KeyboardFocus,
     world::{BlockPosition, Origin, WorldMap},
 };
 
@@ -33,14 +32,13 @@ impl Plugin for WasmPlugin {
         wit::Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut WasmState| state)
             .unwrap();
 
-        let keyboard_events = SystemState::new(app.world_mut());
         app.insert_resource(WasmHost {
             engine,
             store,
             linker,
             enabled: HashMap::new(),
             disabled: HashMap::new(),
-            keyboard_events,
+            keyboard: wit::Keyboard::empty(),
         });
 
         app.add_systems(
@@ -133,23 +131,32 @@ fn run_plugins(world: &mut World, mut data_cursor: Local<MessageCursor<messages:
             .unwrap();
     }
 
-    host.cache_keyboard_input();
+    host.update_keyboard(world);
 
     let time = world.get_resource::<Time>().unwrap();
     for plugin in host.enabled.values_mut() {
+        // Reset keyboard in case previous plugin had fixed update frequency and cleared the
+        // just_pressed/released.
+        host.store.data_mut().keyboard = host.keyboard;
+
         if let Some(timer) = &mut plugin.update_frequency {
-            // The state time is the delta time exposed to the plugin
-            let state = host.store.data_mut();
-            state.delta_time = timer.duration().as_secs_f32().min(time.delta_secs());
+            host.store.data_mut().delta_time =
+                timer.duration().as_secs_f32().min(time.delta_secs());
 
             timer.tick(time.delta());
 
             for _ in 0..timer.times_finished_this_tick().max(1) as usize {
                 plugin.plugin.call_update(&mut host.store).unwrap();
+
+                // On any subsequent run we clear all just_pressed/just_released so they don't
+                // get handled twice.
+                host.store.data_mut().keyboard = wit::Keyboard {
+                    pressed: host.keyboard.pressed,
+                    ..wit::Keyboard::empty()
+                };
             }
         } else {
-            let state = host.store.data_mut();
-            state.delta_time = time.delta_secs();
+            host.store.data_mut().delta_time = time.delta_secs();
             plugin.plugin.call_update(&mut host.store).unwrap();
         }
     }
@@ -271,38 +278,72 @@ pub(super) struct WasmHost {
     linker: Linker<WasmState>,
     enabled: HashMap<String, Instance>,
     disabled: HashMap<String, Instance>,
-    keyboard_events: SystemState<MessageReader<'static, 'static, KeyboardInput>>,
+    keyboard: wit::Keyboard,
 }
 
 impl WasmHost {
-    fn cache_keyboard_input(&mut self) {
-        let state = self.store.data_mut();
-        state.keyboard_events.clear();
-        for key in self.keyboard_events.get_mut(state.world()).unwrap().read() {
-            let wit_key = match key.key_code {
-                KeyCode::KeyW => wit::Key::KeyW,
-                KeyCode::KeyA => wit::Key::KeyA,
-                KeyCode::KeyS => wit::Key::KeyS,
-                KeyCode::KeyD => wit::Key::KeyD,
-                KeyCode::Space => wit::Key::Space,
-                KeyCode::ShiftLeft | KeyCode::ShiftRight => wit::Key::Shift,
-                KeyCode::ControlLeft | KeyCode::ControlRight => wit::Key::Control,
-                _ => continue,
+    fn update_keyboard(&mut self, world: &World) {
+        fn to_keys(key_codes: impl Iterator<Item = &KeyCode>) -> wit::Keys {
+            key_codes.fold(wit::Keys::empty(), |keys, key_code| {
+                keys | match key_code {
+                    KeyCode::KeyW => wit::Keys::KEY_W,
+                    KeyCode::KeyA => wit::Keys::KEY_A,
+                    KeyCode::KeyS => wit::Keys::KEY_S,
+                    KeyCode::KeyD => wit::Keys::KEY_D,
+                    KeyCode::Space => wit::Keys::SPACE,
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => wit::Keys::SHIFT,
+                    KeyCode::ControlLeft | KeyCode::ControlRight => wit::Keys::CONTROL,
+                    _ => wit::Keys::empty(),
+                }
+            })
+        }
+
+        let previous = self.keyboard.pressed;
+
+        let (pressed, input_just_pressed, input_just_released) =
+            if *world.resource::<KeyboardFocus>() == KeyboardFocus::Full {
+                (wit::Keys::empty(), wit::Keys::empty(), wit::Keys::empty())
+            } else {
+                let input = world.resource::<ButtonInput<KeyCode>>();
+                (
+                    to_keys(input.get_pressed()),
+                    to_keys(input.get_just_pressed()),
+                    to_keys(input.get_just_released()),
+                )
             };
-            state.keyboard_events.push(wit::KeyboardKey {
-                key: wit_key,
-                released: key.state == ButtonState::Released,
-                repeat: key.repeat,
-            });
+
+        self.keyboard = wit::Keyboard {
+            pressed,
+            just_pressed: (pressed | input_just_pressed) & !previous,
+            just_released: (previous | input_just_released) & !pressed,
+        };
+    }
+}
+
+impl wit::Keyboard {
+    fn empty() -> Self {
+        Self {
+            pressed: wit::Keys::empty(),
+            just_pressed: wit::Keys::empty(),
+            just_released: wit::Keys::empty(),
         }
     }
 }
 
-#[derive(Default)]
 struct WasmState {
     delta_time: f32,
-    keyboard_events: Vec<wit::KeyboardKey>,
+    keyboard: wit::Keyboard,
     _world: Option<*mut World>,
+}
+
+impl Default for WasmState {
+    fn default() -> Self {
+        Self {
+            delta_time: 0.0,
+            keyboard: wit::Keyboard::empty(),
+            _world: None,
+        }
+    }
 }
 
 impl WasmState {
@@ -326,21 +367,8 @@ impl wit::PluginImports for WasmState {
         self.delta_time
     }
 
-    fn keyboard_input(&mut self) -> Vec<wit::KeyboardKey> {
-        if self
-            .world()
-            .query_filtered::<&CursorOptions, With<PrimaryWindow>>()
-            .single(self.world())
-            .unwrap()
-            .grab_mode
-            == CursorGrabMode::None
-        {
-            // TODO: Waiting for KeyboardFocus implementation
-            //
-            // The cursor being free is a weak signal keyboard input should not be captured.
-            return Vec::new();
-        };
-        self.keyboard_events.clone()
+    fn get_keyboard(&mut self) -> wit::Keyboard {
+        self.keyboard
     }
 
     fn get_player_transform(&mut self) -> wit::Transform {

@@ -18,7 +18,7 @@ use crate::{
 
 use self::items::{CursorItemBox, ItemBoxSection, ItemBoxText};
 
-use super::{CursorVisibility, UiState};
+use super::{CursorVisibility, KeyboardFocus, UiState, client::GuiState};
 
 pub mod items;
 pub mod key_bindings;
@@ -43,7 +43,7 @@ impl Plugin for ServerInterfacesPlugin {
                     button_interaction.run_if(in_state(UiState::ServerInterfaces)),
                     handle_server_node_visibility_updates,
                     handle_server_interface_visibility_updates,
-                    handle_visibility_events,
+                    (handle_visibility_events, update_keyboard_focus).chain(),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -422,18 +422,6 @@ struct InterfaceConfig {
     keyboard_focus: KeyboardFocus,
 }
 
-// TODO: This is not fully implemented. Should allow you to move around when some interfaces are open
-#[derive(Deserialize, Default, PartialEq, Clone, Copy, Debug)]
-enum KeyboardFocus {
-    // Keyboard focus is not taken
-    #[default]
-    None,
-    // Takes away movement, other keys work
-    Movement,
-    // Interface consumes all keyboard input, only Escape will close it.
-    Full,
-}
-
 // Wrapper for 'Style' that is deserializable
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
@@ -765,6 +753,24 @@ fn handle_visibility_events(
             }
         }
     }
+}
+
+fn update_keyboard_focus(
+    gui_state: Res<State<GuiState>>,
+    interface_query: Query<(&Visibility, &InterfaceConfig)>,
+    mut keyboard_focus: ResMut<KeyboardFocus>,
+) {
+    let interface_has_focus = interface_query.iter().any(|(visibility, config)| {
+        *visibility != Visibility::Hidden && config.keyboard_focus == KeyboardFocus::Full
+    });
+
+    let focus = if *gui_state.get() != GuiState::None || interface_has_focus {
+        KeyboardFocus::Full
+    } else {
+        KeyboardFocus::None
+    };
+
+    keyboard_focus.set_if_neq(focus);
 }
 
 fn interface_visibility(
